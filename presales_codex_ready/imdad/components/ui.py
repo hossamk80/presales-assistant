@@ -39,7 +39,7 @@ def ai_generate_button(
             label_visibility="collapsed",
         )
     with col_btn:
-        generate = st.button(f"⚡ {label}", key=f"btn_{key}", type="primary", use_container_width=True)
+        generate = st.button(f"⚡ {label}", key=f"btn_{key}", type="primary", width="stretch")
 
     if generate:
         with st.spinner("جاري التوليد..."):

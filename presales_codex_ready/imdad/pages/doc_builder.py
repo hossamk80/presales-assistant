@@ -236,7 +236,7 @@ def render():
         export_clicked = st.button(
             "📥 بناء وتصدير العرض الفني (Word)",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             disabled=has_placeholders,
         )
 

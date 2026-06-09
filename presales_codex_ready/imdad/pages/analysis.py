@@ -19,14 +19,14 @@ def render():
             label_visibility="collapsed",
         )
     with col_clear:
-        if st.session_state.get("rfp_raw_text") and st.button("🗑️ مسح", use_container_width=True):
+        if st.session_state.get("rfp_raw_text") and st.button("🗑️ مسح", width="stretch"):
             from utils.state import reset_analysis
             reset_analysis()
             st.rerun()
 
     col_extract, col_status = st.columns([2, 3])
     with col_extract:
-        if st.button("📂 استخراج النصوص", type="primary", use_container_width=True, disabled=not files):
+        if st.button("📂 استخراج النصوص", type="primary", width="stretch", disabled=not files):
             with st.spinner("جاري الاستخراج..."):
                 text, names = extract_text_from_files(files)
                 if text:
