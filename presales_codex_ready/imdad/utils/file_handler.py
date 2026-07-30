@@ -198,23 +198,30 @@ def _add_page_numbers(doc):
         _add_field(footer, " PAGE ")
 
 
-def _render_blocks_docx(doc, markdown: str, base_level: int = 1):
-    """كتابة كتل Markdown في مستند Word مع الحفاظ على البنية."""
+def _para_dir(paragraph, rtl: bool, center: bool = False):
+    """يضبط محاذاة الفقرة واتجاهها حسب لغة المخرجات."""
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+    if center:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    else:
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT if rtl else WD_ALIGN_PARAGRAPH.LEFT
+    if rtl:
+        _set_rtl(paragraph)
+    return paragraph
+
+
+def _render_blocks_docx(doc, markdown: str, base_level: int = 1, rtl: bool = True):
+    """كتابة كتل Markdown في مستند Word مع الحفاظ على البنية."""
     for block in parse_blocks(markdown):
         btype = block["type"]
 
         if btype == "heading":
             level = min(base_level + block["level"] - 1, 9)
-            p = doc.add_heading(block["text"], level=level)
-            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            _set_rtl(p)
+            _para_dir(doc.add_heading(block["text"], level=level), rtl)
 
         elif btype == "paragraph":
-            p = doc.add_paragraph(block["text"])
-            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            _set_rtl(p)
+            _para_dir(doc.add_paragraph(block["text"]), rtl)
 
         elif btype in ("bullets", "numbered"):
             style = "List Bullet" if btype == "bullets" else "List Number"
@@ -222,22 +229,22 @@ def _render_blocks_docx(doc, markdown: str, base_level: int = 1):
                 try:
                     p = doc.add_paragraph(item, style=style)
                 except KeyError:
-                    p = doc.add_paragraph(("• " if btype == "bullets" else "") + item)
-                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                _set_rtl(p)
+                    p = doc.add_paragraph(("\u2022 " if btype == "bullets" else "") + item)
+                _para_dir(p, rtl)
 
         elif btype == "table":
-            _add_docx_table(doc, block["header"], block["rows"])
+            _add_docx_table(doc, block["header"], block["rows"], rtl=rtl)
 
 
-def _add_docx_table(doc, header: list, rows: list):
-    """جدول Word بترويسة، بترتيب أعمدة مقلوب ليناسب القراءة من اليمين."""
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-
+def _add_docx_table(doc, header: list, rows: list, rtl: bool = True):
+    """
+    جدول Word بترويسة. في العربية تُقلب الأعمدة ليبدأ العمود الأول من اليمين.
+    """
     if not header:
         return
-    header = list(reversed(header))
-    rows = [list(reversed(r)) for r in rows]
+    if rtl:
+        header = list(reversed(header))
+        rows = [list(reversed(r)) for r in rows]
 
     table = doc.add_table(rows=1, cols=len(header))
     try:
@@ -249,8 +256,7 @@ def _add_docx_table(doc, header: list, rows: list):
         cell = table.rows[0].cells[i]
         cell.text = str(col)
         for p in cell.paragraphs:
-            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            _set_rtl(p)
+            _para_dir(p, rtl)
             for run in p.runs:
                 run.bold = True
 
@@ -259,8 +265,7 @@ def _add_docx_table(doc, header: list, rows: list):
         for i, val in enumerate(row[: len(header)]):
             cells[i].text = "" if val is None else str(val)
             for p in cells[i].paragraphs:
-                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                _set_rtl(p)
+                _para_dir(p, rtl)
     doc.add_paragraph()
 
 
@@ -280,6 +285,7 @@ def build_word_document(
     df_boq: Optional[pd.DataFrame] = None,
     include_toc: bool = True,
     include_page_numbers: bool = True,
+    rtl: bool = True,
 ) -> BytesIO:
     """
     يبني مستند Word من قائمة أقسام مرتّبة.
@@ -290,9 +296,17 @@ def build_word_document(
         template_bytes: قالب Word للشركة يُحقن المحتوى بعده.
     """
     from docx import Document
-    from docx.shared import Cm, Pt
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.section import WD_SECTION
+    from docx.shared import Cm
+
+    doc_title = "العرض الفني" if rtl else "Technical Proposal"
+    submitted_by = "مقدَّم من" if rtl else "Submitted by"
+    date_label = "التاريخ" if rtl else "Date"
+    toc_title = "فهرس المحتويات" if rtl else "Table of Contents"
+    toc_note = (
+        "(إذا ظهر الفهرس فارغاً، اضغط داخله ثم F9 لتحديثه.)" if rtl
+        else "(If the table of contents is empty, click inside it and press F9.)"
+    )
+    empty_note = "[هذا القسم فارغ]" if rtl else "[This section is empty]"
 
     if template_bytes:
         doc = Document(BytesIO(template_bytes))
@@ -307,64 +321,42 @@ def build_word_document(
             section.right_margin = Cm(3)
 
     # ── صفحة العنوان ──────────────────────────────────────────────────────────
-    title = doc.add_heading("العرض الفني", 0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _set_rtl(title)
+    _para_dir(doc.add_heading(doc_title, 0), rtl, center=True)
     if company_name:
-        sub = doc.add_paragraph(f"مقدَّم من: {company_name}")
-        sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        _set_rtl(sub)
-    date_p = doc.add_paragraph(f"التاريخ: {datetime.date.today().strftime('%Y/%m/%d')}")
-    date_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _set_rtl(date_p)
+        _para_dir(doc.add_paragraph(f"{submitted_by}: {company_name}"), rtl, center=True)
+    _para_dir(
+        doc.add_paragraph(f"{date_label}: {datetime.date.today().strftime('%Y/%m/%d')}"),
+        rtl, center=True,
+    )
     doc.add_page_break()
 
     # ── فهرس المحتويات ────────────────────────────────────────────────────────
     if include_toc:
-        toc_head = doc.add_heading("فهرس المحتويات", 1)
-        toc_head.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        _set_rtl(toc_head)
-        toc_p = doc.add_paragraph()
-        _add_field(toc_p, r' TOC \o "1-3" \h \z \u ')
-        note = doc.add_paragraph(
-            "(إذا ظهر الفهرس فارغاً، اضغط داخله ثم F9 لتحديثه.)"
-        )
-        note.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        _set_rtl(note)
+        _para_dir(doc.add_heading(toc_title, 1), rtl)
+        _add_field(doc.add_paragraph(), r' TOC \o "1-3" \h \z \u ')
+        _para_dir(doc.add_paragraph(toc_note), rtl)
         _enable_update_fields(doc)
         doc.add_page_break()
 
     # ── الأقسام ───────────────────────────────────────────────────────────────
     for idx, sec in enumerate(sections):
         kind = sec.get("kind")
-        heading = doc.add_heading(sec.get("title", ""), 1)
-        heading.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        _set_rtl(heading)
+        _para_dir(doc.add_heading(sec.get("title", ""), 1), rtl)
 
-        if kind == "table_compliance":
-            block = _df_to_table_block(df_compliance)
+        if kind in ("table_compliance", "table_boq"):
+            block = _df_to_table_block(
+                df_compliance if kind == "table_compliance" else df_boq
+            )
             if block:
-                _add_docx_table(doc, *block)
+                _add_docx_table(doc, *block, rtl=rtl)
             else:
-                p = doc.add_paragraph("[لا توجد بيانات في جدول الامتثال]")
-                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                _set_rtl(p)
-        elif kind == "table_boq":
-            block = _df_to_table_block(df_boq)
-            if block:
-                _add_docx_table(doc, *block)
-            else:
-                p = doc.add_paragraph("[لا توجد بيانات في جدول الكميات]")
-                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                _set_rtl(p)
+                _para_dir(doc.add_paragraph(empty_note), rtl)
         else:
             content = (sec.get("content") or "").strip()
             if content:
-                _render_blocks_docx(doc, content, base_level=2)
+                _render_blocks_docx(doc, content, base_level=2, rtl=rtl)
             else:
-                p = doc.add_paragraph("[هذا القسم فارغ]")
-                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                _set_rtl(p)
+                _para_dir(doc.add_paragraph(empty_note), rtl)
 
         if idx < len(sections) - 1:
             doc.add_page_break()
@@ -412,15 +404,19 @@ def _find_arabic_font() -> tuple[Optional[str], Optional[str]]:
     return None, None
 
 
-def _shape(text: str) -> str:
+def _shape(text: str, rtl: bool = True) -> str:
     """تشكيل الحروف العربية وترتيبها بصرياً للعرض في PDF."""
+    if not rtl:
+        return str(text)
+
     import arabic_reshaper
     from bidi.algorithm import get_display
 
     return get_display(arabic_reshaper.reshape(str(text)))
 
 
-def _wrap_shaped(text: str, font: str, size: float, max_width: float) -> str:
+def _wrap_shaped(text: str, font: str, size: float, max_width: float,
+                 rtl: bool = True) -> str:
     """
     يلفّ النص يدوياً ثم يشكّل كل سطر على حدة.
 
@@ -433,14 +429,14 @@ def _wrap_shaped(text: str, font: str, size: float, max_width: float) -> str:
     lines, current = [], ""
     for word in str(text).split():
         trial = f"{current} {word}".strip()
-        if stringWidth(_shape(trial), font, size) <= max_width or not current:
+        if stringWidth(_shape(trial, rtl), font, size) <= max_width or not current:
             current = trial
         else:
             lines.append(current)
             current = word
     if current:
         lines.append(current)
-    return "<br/>".join(escape(_shape(ln)) for ln in lines) or "&nbsp;"
+    return "<br/>".join(escape(_shape(ln, rtl)) for ln in lines) or "&nbsp;"
 
 
 def _rtl_toc_class():
@@ -452,34 +448,39 @@ def _rtl_toc_class():
     نستبدل بناء الجدول فقط: عمود ضيّق لرقم الصفحة على اليسار، وعمود العنوان
     على اليمين. باقي آلية إعادة البناء ترثها كما هي.
     """
-    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib.enums import TA_LEFT, TA_RIGHT
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, Spacer, Table
     from reportlab.platypus.tableofcontents import TableOfContents
 
     class _RtlToc(TableOfContents):
+        def __init__(self, rtl: bool = True):
+            super().__init__()
+            self._rtl = rtl
+
         def wrap(self, availWidth, availHeight):
             entries = self._lastEntries or [(0, "", 0, None)]
             num_w = 1.6 * cm
-            rows, styles = [], []
+            # في العربية رقم الصفحة على اليسار والعنوان على اليمين، والعكس بالإنجليزية
+            widths = (num_w, availWidth - num_w) if self._rtl else (availWidth - num_w, num_w)
+            rows = []
 
             for level, text, page_num, _key in entries:
                 style = self.getLevelStyle(level)
                 num_style = ParagraphStyle(
                     f"tocnum{level}", parent=style,
-                    alignment=TA_LEFT, rightIndent=0, leftIndent=0,
+                    alignment=TA_LEFT if self._rtl else TA_RIGHT,
+                    rightIndent=0, leftIndent=0,
                 )
                 if style.spaceBefore:
                     rows.append([Spacer(1, style.spaceBefore), Spacer(1, style.spaceBefore)])
-                rows.append([
-                    Paragraph(str(page_num), num_style),
-                    Paragraph(text, style),
-                ])
+                cells = [Paragraph(str(page_num), num_style), Paragraph(text, style)]
+                if not self._rtl:
+                    cells.reverse()
+                rows.append(cells)
 
-            self._table = Table(
-                rows, colWidths=(num_w, availWidth - num_w), style=self.tableStyle
-            )
+            self._table = Table(rows, colWidths=widths, style=self.tableStyle)
             self.width, self.height = self._table.wrapOn(self.canv, availWidth, availHeight)
             return self.width, self.height
 
@@ -493,15 +494,16 @@ def build_pdf_document(
     df_boq: Optional[pd.DataFrame] = None,
     include_toc: bool = True,
     include_page_numbers: bool = True,
+    rtl: bool = True,
 ) -> BytesIO:
     """
-    يبني نسخة PDF من نفس الأقسام، بتشكيل عربي صحيح ومحاذاة لليمين.
+    يبني نسخة PDF من نفس الأقسام. في العربية يُشكَّل النص ويُحاذى لليمين.
 
     Raises:
         ImportError: إذا لم تكن مكتبات الـ PDF أو خط عربي متوفراً.
     """
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
@@ -529,9 +531,11 @@ def build_pdf_document(
     pdfmetrics.registerFont(TTFont(FONT, regular))
     pdfmetrics.registerFont(TTFont(FONT_B, bold or regular))
 
+    side = TA_RIGHT if rtl else TA_LEFT
+
     styles = getSampleStyleSheet()
     body = ParagraphStyle("ArBody", parent=styles["Normal"], fontName=FONT,
-                          fontSize=11, leading=19, alignment=TA_RIGHT, spaceAfter=6)
+                          fontSize=11, leading=19, alignment=side, spaceAfter=6)
     h1 = ParagraphStyle("ArH1", parent=body, fontName=FONT_B, fontSize=17,
                         leading=26, spaceBefore=10, spaceAfter=10)
     h2 = ParagraphStyle("ArH2", parent=body, fontName=FONT_B, fontSize=14,
@@ -565,7 +569,7 @@ def build_pdf_document(
             return
         canvas.saveState()
         canvas.setFont(FONT, 9)
-        canvas.drawCentredString(A4[0] / 2, margin / 2, _shape(str(doc_.page)))
+        canvas.drawCentredString(A4[0] / 2, margin / 2, str(doc_.page))
         canvas.restoreState()
 
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="body")
@@ -573,42 +577,47 @@ def build_pdf_document(
 
     def P(text, style, width=None):
         return Paragraph(_wrap_shaped(text, style.fontName, style.fontSize,
-                                      width or avail), style)
+                                      width or avail, rtl), style)
 
     def H(text, style, level):
         """عنوان يُسجَّل في فهرس المحتويات."""
         p = P(text, style)
         p._toc_level = level
-        p._toc_text = _shape(text)
+        p._toc_text = _shape(text, rtl)
         return p
 
     story = []
 
     # ── صفحة العنوان ──────────────────────────────────────────────────────────
     story.append(Spacer(1, 6 * cm))
-    story.append(P("العرض الفني", title_style))
+    story.append(P("العرض الفني" if rtl else "Technical Proposal", title_style))
     story.append(Spacer(1, 1 * cm))
     if company_name:
-        story.append(P(f"مقدَّم من: {company_name}", center))
-    story.append(P(f"التاريخ: {datetime.date.today().strftime('%Y/%m/%d')}", center))
+        story.append(P(
+            f"{'مقدَّم من' if rtl else 'Submitted by'}: {company_name}", center))
+    story.append(P(
+        f"{'التاريخ' if rtl else 'Date'}: "
+        f"{datetime.date.today().strftime('%Y/%m/%d')}", center))
     story.append(PageBreak())
 
     # ── الفهرس ────────────────────────────────────────────────────────────────
     if include_toc:
-        story.append(P("فهرس المحتويات", h1))
-        toc = _rtl_toc_class()()
+        story.append(P("فهرس المحتويات" if rtl else "Table of Contents", h1))
+        toc = _rtl_toc_class()(rtl=rtl)
         toc.levelStyles = [
             ParagraphStyle("toc1", parent=body, fontName=FONT_B, fontSize=12,
-                           leading=22, alignment=TA_RIGHT, spaceBefore=4),
+                           leading=22, alignment=side, spaceBefore=4),
             ParagraphStyle("toc2", parent=body, fontName=FONT, fontSize=10.5,
-                           leading=18, alignment=TA_RIGHT, rightIndent=20),
+                           leading=18, alignment=side,
+                           **({"rightIndent": 20} if rtl else {"leftIndent": 20})),
         ]
         story.append(toc)
         story.append(PageBreak())
 
     def table_flowable(header: list, rows: list):
-        header = list(reversed(header))
-        rows = [list(reversed(r)) for r in rows]
+        if rtl:
+            header = list(reversed(header))
+            rows = [list(reversed(r)) for r in rows]
         col_w = avail / max(len(header), 1)
         cell = ParagraphStyle("cell", parent=body, fontSize=9, leading=14, spaceAfter=0)
         cell_b = ParagraphStyle("cellb", parent=cell, fontName=FONT_B)
@@ -646,7 +655,8 @@ def build_pdf_document(
         else:
             content = (sec.get("content") or "").strip()
             if not content:
-                story.append(P("[هذا القسم فارغ]", body))
+                story.append(P(
+                    "[هذا القسم فارغ]" if rtl else "[This section is empty]", body))
             for block in parse_blocks(content):
                 btype = block["type"]
                 if btype == "heading":
@@ -657,7 +667,8 @@ def build_pdf_document(
                 elif btype in ("bullets", "numbered"):
                     for n, item in enumerate(block["items"], start=1):
                         marker = "•" if btype == "bullets" else f"{n}."
-                        story.append(P(f"{item} {marker}", body))
+                        story.append(P(
+                            f"{item} {marker}" if rtl else f"{marker} {item}", body))
                 elif btype == "table":
                     story.append(table_flowable(block["header"], block["rows"]))
                     story.append(Spacer(1, 0.3 * cm))

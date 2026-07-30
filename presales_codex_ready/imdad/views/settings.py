@@ -4,7 +4,13 @@ pages/settings.py — System Settings: API Keys + Data Management
 import streamlit as st
 import json
 from utils.state import get_state_snapshot, load_state_snapshot
-from utils.ai_engine import DEFAULT_MODEL, MODEL_NAMES, resolve_model
+from utils.ai_engine import (
+    DEFAULT_LANGUAGE,
+    DEFAULT_MODEL,
+    LANGUAGES,
+    MODEL_NAMES,
+    resolve_model,
+)
 
 
 def render_settings():
@@ -70,6 +76,21 @@ def render_settings():
             index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
             key="model_pref_radio",
             help="Flash: متوازن وسريع. Pro: أدق للمهام المعقدة. Flash-Lite: الأرخص للمهام البسيطة.",
+        )
+
+    with st.expander("🌐 لغة المخرجات", expanded=False):
+        st.caption(
+            "تتحكم بلغة كل ما يولّده النظام: التحليلات وأقسام العرض والمراجعة، "
+            "واتجاه الكتابة في ملفي Word و PDF."
+        )
+        codes = list(LANGUAGES)
+        current_lang = st.session_state.get("output_language", DEFAULT_LANGUAGE)
+        st.session_state["output_language"] = st.radio(
+            "اللغة:",
+            codes,
+            index=codes.index(current_lang) if current_lang in codes else 0,
+            format_func=lambda c: LANGUAGES[c]["label"],
+            key="output_language_radio",
         )
 
 

@@ -33,6 +33,51 @@ def resolve_model(model_choice: str) -> str:
     return MODELS.get(model_choice, MODELS[DEFAULT_MODEL])
 
 
+# ─── اللغة ────────────────────────────────────────────────────────────────────
+
+LANGUAGES = {
+    "ar": {
+        "label": "العربية",
+        "rtl": True,
+        "instruction": "الرد باللغة العربية فقط.",
+    },
+    "en": {
+        "label": "English",
+        "rtl": False,
+        "instruction": (
+            "Respond in English only. Use professional bid-writing register "
+            "suited to Saudi government tenders."
+        ),
+    },
+    "both": {
+        "label": "العربية والإنجليزية",
+        "rtl": True,
+        "instruction": (
+            "اكتب المحتوى مرتين: أولاً بالعربية كاملاً، ثم افصل بسطر يحتوي "
+            "`---` وحده، ثم اكتب الترجمة الإنجليزية الكاملة لنفس المحتوى "
+            "تحت عنوان `## English Version`. يجب أن تتطابق النسختان في "
+            "المعنى والبنية."
+        ),
+    },
+}
+DEFAULT_LANGUAGE = "ar"
+
+
+def language_instruction(language: str) -> str:
+    return LANGUAGES.get(language, LANGUAGES[DEFAULT_LANGUAGE])["instruction"]
+
+
+def is_rtl(language: str) -> bool:
+    return LANGUAGES.get(language, LANGUAGES[DEFAULT_LANGUAGE])["rtl"]
+
+
+def build_prompt(prompt_key: str, language: str = DEFAULT_LANGUAGE, **fields) -> str:
+    """يملأ قالب تعليمات مع تعليمة اللغة المناسبة."""
+    return PROMPTS[prompt_key].format(
+        language_instruction=language_instruction(language), **fields
+    )
+
+
 def estimate_tokens(text: str) -> int:
     """تقدير سريع محلي لعدد التوكنز (بدون استدعاء الشبكة)."""
     return int(len(str(text)) / CHARS_PER_TOKEN)
@@ -132,7 +177,7 @@ _MERGE_PROMPT = """فيما يلي نتائج تحليل أجزاء متتابع
 نتائج الأجزاء:
 {partials}
 
-أعطِ التحليل المدموج النهائي فقط، بنفس الهيكل، وباللغة العربية."""
+أعطِ التحليل المدموج النهائي فقط وبنفس الهيكل. {language_instruction}"""
 
 
 def ai_generate(
@@ -140,6 +185,8 @@ def ai_generate(
     model_choice: str = DEFAULT_MODEL,
     rfp_context: str = "",
     on_progress: Optional[Callable[[str], None]] = None,
+    extra_context: str = "",
+    language: str = DEFAULT_LANGUAGE,
 ) -> Optional[str]:
     """
     توليد محتوى بالذكاء الاصطناعي.
@@ -158,6 +205,8 @@ def ai_generate(
         النص المولَّد أو None عند الفشل
     """
     model_id = resolve_model(model_choice)
+    if extra_context:
+        prompt = f"{prompt}\n{extra_context}"
 
     if not rfp_context:
         return _call(prompt, model_id)
@@ -192,7 +241,9 @@ def ai_generate(
         on_progress("دمج نتائج الأجزاء…")
     return _call(
         _MERGE_PROMPT.format(
-            original_prompt=prompt, partials="\n\n".join(partials)
+            original_prompt=prompt,
+            partials="\n\n".join(partials),
+            language_instruction=language_instruction(language),
         ),
         model_id,
     )
@@ -447,7 +498,7 @@ PROMPTS = {
 ### 💡 التوصية النهائية
 (فقرة مختصرة)
 
-الرد باللغة العربية فقط.""",
+{language_instruction}""",
 
     "eval_matrix": """أنت محلل عطاءات. استخرج من الكراسة التالية مصفوفة معايير التقييم والأوزان.
 
@@ -460,7 +511,7 @@ PROMPTS = {
 ### 📌 ملاحظات استراتيجية
 - (توصيات لتعظيم الدرجة في كل معيار)
 
-الرد باللغة العربية فقط.""",
+{language_instruction}""",
 
     "compliance": """أنت مستشار امتثال. استخرج من الكراسة جميع الشروط الإلزامية القانونية والتقنية.
 
@@ -479,7 +530,7 @@ PROMPTS = {
 ### ⚡ فجوات الامتثال المحتملة
 - (مناطق الخطر التي تحتاج معالجة)
 
-الرد باللغة العربية فقط.""",
+{language_instruction}""",
 
     "scope": """أنت مهندس حلول. اكتب قسم "فهمنا للنطاق والمتطلبات" في عرض فني، مستنداً إلى كراسة الشروط المرفقة.
 
@@ -493,7 +544,7 @@ PROMPTS = {
 ### 5. عوامل النجاح الحرجة
 
 اكتبه بصيغة عرض مقدَّم للجهة (نحن نفهم أن...) لا بصيغة تقرير داخلي.
-الرد باللغة العربية فقط.""",
+{language_instruction}""",
 
     "methodology": """أنت مهندس حلول متخصص في مشاريع تقنية المعلومات الحكومية السعودية.
 اكتب منهجية فنية احترافية للعرض.
@@ -511,7 +562,7 @@ PROMPTS = {
 ### 4. مزايانا التنافسية
 ### 5. ضمان الجودة وإدارة المخاطر
 
-الرد باللغة العربية فقط.""",
+{language_instruction}""",
 
     "section": """أنت مهندس حلول متخصص في إعداد العروض الفنية للمنافسات الحكومية السعودية.
 اكتب قسم **"{title}"** من العرض الفني.
@@ -529,7 +580,7 @@ PROMPTS = {
 - إن لزمت معلومة لا تملكها، ضعها بين أقواس مربعة [ ] ليعبّئها الفريق لاحقاً.
 - ابدأ بعنوان القسم كترويسة من المستوى الثاني (##) ثم قسّمه لعناوين فرعية.
 
-الرد باللغة العربية فقط.""",
+{language_instruction}""",
 
     "apply_finding": """أنت محرّر عروض فنية. أعد كتابة القسم التالي من العرض الفني
 بحيث تعالج الملاحظة المرصودة، مع الإبقاء على كل المحتوى السليم كما هو.
@@ -566,7 +617,7 @@ PROMPTS = {
 ### 4. نقاط التحكم والتسليمات الرئيسية
 ### 5. إدارة المخاطر والطوارئ
 
-الرد باللغة العربية فقط.""",
+{language_instruction}""",
 }
 
 

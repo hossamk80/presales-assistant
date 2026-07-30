@@ -5,7 +5,7 @@ Prevents re-initialization bugs and provides typed defaults.
 import pandas as pd
 import streamlit as st
 
-from utils.ai_engine import DEFAULT_MODEL
+from utils.ai_engine import DEFAULT_LANGUAGE, DEFAULT_MODEL
 
 # ─── Default DataFrames ────────────────────────────────────────────────────────
 DEFAULT_COMPLIANCE_DF = pd.DataFrame({
@@ -73,6 +73,7 @@ STATE_SCHEMA = {
     "api_openai": "",
     "api_claude": "",
     "ai_model_preference": DEFAULT_MODEL,
+    "output_language": DEFAULT_LANGUAGE,
 
     # Company Profile
     "c_name": "",
@@ -175,27 +176,69 @@ def get_state_snapshot() -> dict:
     snapshot = {}
     for key in STATE_SCHEMA:
         val = st.session_state.get(key)
-        if isinstance(val, str):
-            snapshot[key] = val
-        elif isinstance(val, list):
-            snapshot[key] = val
-        elif isinstance(val, bool):
+        if isinstance(val, (str, list, bool, int, float)):
             snapshot[key] = val
         elif isinstance(val, pd.DataFrame):
             snapshot[key] = val.to_dict(orient="records")
+
+    # أقسام أضافها الذكاء الاصطناعي ديناميكياً ليست ضمن المخطط الثابت
+    snapshot["_dynamic_sections"] = {
+        k: v for k, v in st.session_state.items()
+        if k.startswith("sec_ai_") and isinstance(v, str)
+    }
     return snapshot
 
 
 def load_state_snapshot(data: dict):
     """Import state from a saved snapshot."""
     for key, val in data.items():
+        if key == "_dynamic_sections":
+            continue
         if key not in STATE_SCHEMA:
             continue
         default = STATE_SCHEMA[key]
-        if isinstance(default, pd.DataFrame) and isinstance(val, list):
-            try:
-                st.session_state[key] = pd.DataFrame(val)
-            except Exception:
-                pass
-        elif type(default) == type(val) or (isinstance(default, str) and isinstance(val, str)):
+        if isinstance(default, pd.DataFrame):
+            if isinstance(val, list):
+                try:
+                    st.session_state[key] = pd.DataFrame(val)
+                except Exception:
+                    pass
+        elif type(default) is type(val) or (isinstance(default, str) and isinstance(val, str)):
             st.session_state[key] = val
+
+    for key, val in (data.get("_dynamic_sections") or {}).items():
+        st.session_state[key] = val
+
+    # مفاتيح المحرّرات تحمل نص الجلسة السابقة — نُبطلها ليعرض كلٌّ منها المحمَّل
+    for key in [k for k in list(st.session_state) if k.startswith(("ta_", "de_", "inc_"))]:
+        del st.session_state[key]
+
+
+# ─── ربط الحالة بالتخزين الدائم ────────────────────────────────────────────────
+
+# مفاتيح ملف الشركة تُحفظ مستقلة عن المنافسة لأنها ثابتة عبر كل العطاءات
+COMPANY_KEYS = [
+    "c_name", "c_cr", "c_vat", "c_phone", "c_email", "c_web",
+    "c_address", "c_overview", "c_cover_template",
+]
+
+
+def get_company_snapshot() -> dict:
+    return {k: st.session_state.get(k, "") for k in COMPANY_KEYS}
+
+
+def load_company_snapshot(data: dict):
+    for key in COMPANY_KEYS:
+        if key in data and isinstance(data[key], str):
+            st.session_state[key] = data[key]
+
+
+def get_project_snapshot() -> dict:
+    """حالة المنافسة وحدها — بلا ملف الشركة وبلا مفاتيح الـ API."""
+    snapshot = get_state_snapshot()
+    for key in COMPANY_KEYS:
+        snapshot.pop(key, None)
+    for key in list(snapshot):
+        if key.startswith("api_"):
+            snapshot.pop(key)
+    return snapshot

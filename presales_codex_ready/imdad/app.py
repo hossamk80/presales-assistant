@@ -15,11 +15,21 @@ st.set_page_config(
 )
 
 # ─── Imports (after page config) ──────────────────────────────────────────────
-from utils.state import init_state
+from utils.state import init_state, load_company_snapshot
 from utils.ai_engine import estimate_tokens
+from utils import db
 
 # ─── Initialize Session State ─────────────────────────────────────────────────
 init_state()
+
+# ملف الشركة يُحمَّل من القرص مرة واحدة لكل جلسة
+if not st.session_state.get("_company_loaded"):
+    _company, _template, _logo = db.load_company()
+    if _company:
+        load_company_snapshot(_company)
+    if _template:
+        st.session_state["c_word_template_bytes"] = _template
+    st.session_state["_company_loaded"] = True
 
 # ─── Global Styles ────────────────────────────────────────────────────────────
 st.markdown("""
@@ -255,6 +265,7 @@ with st.sidebar:
         "nav",
         options=[
             "🏠 لوحة التحكم",
+            "📁 المنافسات",
             "🚀 مساحة العمل",
             "🏢 ملف الشركة",
             "⚙️ إعدادات النظام",
@@ -268,6 +279,15 @@ with st.sidebar:
     st.divider()
 
     # Status Panel
+    project_name = st.session_state.get("_project_name")
+    st.markdown(
+        f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:4px;">
+            <div>{'📂' if project_name else '📁'} &nbsp; المنافسة:
+            {project_name or 'لم تُفتح — العمل غير محفوظ'}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
     company = st.session_state.get("c_name")
     api_ok = bool(st.session_state.get("api_gemini"))
     rfp_ok = bool(st.session_state.get("rfp_raw_text"))
@@ -362,6 +382,12 @@ if nav == "🏠 لوحة التحكم":
             """, unsafe_allow_html=True)
 
 
+# ── Projects ──────────────────────────────────────────────────────────────────
+elif nav == "📁 المنافسات":
+    from views import projects
+    projects.render()
+
+
 # ── Workspace ─────────────────────────────────────────────────────────────────
 elif nav == "🚀 مساحة العمل":
     st.title("🚀 مساحة العمل")
@@ -403,3 +429,9 @@ elif nav == "💾 إدارة البيانات":
     st.title("💾 إدارة البيانات")
     from views import settings
     settings.render_data()
+
+
+# ─── Auto-save ────────────────────────────────────────────────────────────────
+# يُنفَّذ بعد رسم الصفحة، فيلتقط أي تغيير أحدثه المستخدم في هذه الدورة.
+from views.projects import autosave  # noqa: E402
+autosave()

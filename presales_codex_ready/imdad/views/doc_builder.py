@@ -7,7 +7,9 @@ views/doc_builder.py — Tab 3: منشئ العرض الفني
 import re
 import streamlit as st
 
+from utils import knowledge
 from utils.ai_engine import (
+    DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
     EXTRACT_PROMPTS,
     MODEL_NAMES,
@@ -15,6 +17,9 @@ from utils.ai_engine import (
     PROMPTS,
     ai_generate,
     ai_generate_json,
+    build_prompt,
+    is_rtl,
+    language_instruction,
 )
 from utils.file_handler import build_pdf_document, build_word_document
 from utils.state import get_sections, reset_sections, section_content_key, set_sections
@@ -79,7 +84,7 @@ def _render_outline_designer():
             status = st.empty()
             with st.spinner("جاري اقتراح الهيكل..."):
                 result = ai_generate_json(
-                    EXTRACT_PROMPTS["outline"],
+                    EXTRACT_PROMPTS["outline"] + f"\n{language_instruction(_language())}",
                     schema=OUTLINE_SCHEMA,
                     model_choice=model,
                     rfp_context=rfp,
@@ -214,34 +219,50 @@ def _render_section_list(sections: list):
 # ─── تحرير الأقسام ────────────────────────────────────────────────────────────
 
 
+def _language() -> str:
+    return st.session_state.get("output_language", DEFAULT_LANGUAGE)
+
+
 def _section_prompt(sec: dict) -> str:
     """يبني تعليمات التوليد للقسم: قالب متخصص إن وُجد، وإلا القالب العام."""
+    lang = _language()
     company = st.session_state.get("c_overview") or st.session_state.get("c_name", "")
     eval_weights = st.session_state.get("sum_eval") or "غير محدد"
     compliance = st.session_state.get("sum_comp") or "غير محدد"
 
     prompt_key = sec.get("prompt_key")
     if prompt_key == "methodology":
-        return PROMPTS["methodology"].format(
+        return build_prompt(
+            "methodology", lang,
             company_overview=company,
             eval_weights=eval_weights,
             compliance_summary=compliance,
         )
     if prompt_key == "project_plan":
-        return PROMPTS["project_plan"].format(
+        return build_prompt(
+            "project_plan", lang,
             company_name=st.session_state.get("c_name", "الشركة"),
             project_context=st.session_state.get("sum_gonogo", ""),
         )
     if prompt_key and prompt_key in PROMPTS:
-        return PROMPTS[prompt_key]
+        return build_prompt(prompt_key, lang)
 
-    return PROMPTS["section"].format(
+    return build_prompt(
+        "section", lang,
         title=sec["title"],
         guidance=sec.get("guidance") or "غطِّ ما تقتضيه طبيعة هذا القسم في عرض فني حكومي.",
         company_overview=company,
         eval_weights=eval_weights,
         compliance_summary=compliance,
     )
+
+
+def _kb_context(sec: dict) -> str:
+    """يسترجع من مستودع معرفة الشركة ما يخص هذا القسم تحديداً."""
+    if not knowledge.is_populated() or not st.session_state.get("api_gemini"):
+        return ""
+    query = " ".join(filter(None, [sec.get("title"), sec.get("guidance")]))
+    return knowledge.build_context(query)
 
 
 def _render_editors(sections: list):
@@ -301,9 +322,10 @@ def _render_cover_editor(sec: dict):
                 out = ai_generate(
                     f"اكتب خطاب تقديم احترافي موجز لشركة "
                     f"{st.session_state.get('c_name', 'الشركة')} للتقدم لهذه المنافسة الحكومية. "
-                    f"لا تخترع أرقاماً أو مراجع. باللغة العربية.",
+                    f"لا تخترع أرقاماً أو مراجع.\n{language_instruction(_language())}",
                     model_choice=model,
                     rfp_context=st.session_state.get("rfp_raw_text", ""),
+                    language=_language(),
                 )
             if out:
                 st.session_state["sec_cover"] = out
@@ -343,6 +365,8 @@ def _render_ai_editor(sec: dict):
                     model_choice=model,
                     rfp_context=st.session_state.get("rfp_raw_text", ""),
                     on_progress=lambda m: status.caption(f"⏳ {m}"),
+                    extra_context=_kb_context(sec),
+                    language=_language(),
                 )
             status.empty()
             if out:
@@ -455,6 +479,7 @@ def _render_export(sections: list):
                         df_boq=st.session_state.get("df_boq"),
                         include_toc=include_toc,
                         include_page_numbers=include_pageno,
+                        rtl=is_rtl(_language()),
                     )
                 st.session_state["_built_docx"] = bio.getvalue()
                 st.success("✅ تم بناء ملف Word.")
@@ -474,6 +499,7 @@ def _render_export(sections: list):
                         df_boq=st.session_state.get("df_boq"),
                         include_toc=include_toc,
                         include_page_numbers=include_pageno,
+                        rtl=is_rtl(_language()),
                     )
                 st.session_state["_built_pdf"] = bio.getvalue()
                 st.success("✅ تم بناء ملف PDF.")

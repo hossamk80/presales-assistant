@@ -6,3 +6,7 @@ __pycache__/
 *.docx
 !**/templates/*.docx
 .DS_Store
+
+# قاعدة بيانات المنافسات ومستودع المعرفة (بيانات محلية للشركة)
+presales_codex_ready/imdad/data/
+*.db

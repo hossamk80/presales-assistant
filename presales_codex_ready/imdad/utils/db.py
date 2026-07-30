@@ -1,0 +1,249 @@
+"""
+utils/db.py — التخزين الدائم (SQLite)
+
+قبل هذه الطبقة كان كل شيء في session_state ويضيع بإغلاق المتصفح. الآن:
+  · كل منافسة مشروع مستقل له تحليلاته وأقسامه وجداوله وملاحظات مراجعته.
+  · ملف الشركة يُحفظ مرة واحدة ويُشارَك بين كل المنافسات.
+  · مستودع المعرفة (مستندات + متجهات التضمين) يُحفظ للشركة كذلك.
+
+قاعدة البيانات ملف واحد على القرص — لا خادم ولا خدمة خارجية، اتساقاً مع كون
+النظام يعمل محلياً وبيانات العطاءات لا تغادر الجهاز.
+"""
+import json
+import os
+import sqlite3
+import threading
+from contextlib import contextmanager
+from datetime import datetime
+from typing import Any, Optional
+
+APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(APP_DIR, "data")
+DB_PATH = os.environ.get("IMDAD_DB_PATH") or os.path.join(DATA_DIR, "imdad.db")
+
+_local = threading.local()
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS projects (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    reference   TEXT DEFAULT '',
+    entity      TEXT DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    payload     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS company (
+    id       INTEGER PRIMARY KEY CHECK (id = 1),
+    payload  TEXT NOT NULL,
+    template BLOB,
+    logo     BLOB
+);
+
+CREATE TABLE IF NOT EXISTS kb_documents (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    category   TEXT NOT NULL,
+    added_at   TEXT NOT NULL,
+    char_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS kb_chunks (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id    INTEGER NOT NULL REFERENCES kb_documents(id) ON DELETE CASCADE,
+    ordinal   INTEGER NOT NULL,
+    text      TEXT NOT NULL,
+    dims      INTEGER NOT NULL,
+    embedding BLOB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id);
+"""
+
+
+def _connect() -> sqlite3.Connection:
+    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.executescript(SCHEMA)
+    return conn
+
+
+def get_conn() -> sqlite3.Connection:
+    """اتصال لكل خيط — Streamlit يعيد التشغيل على خيوط مختلفة."""
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = _local.conn = _connect()
+    return conn
+
+
+@contextmanager
+def transaction():
+    conn = get_conn()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# ─── المنافسات ────────────────────────────────────────────────────────────────
+
+
+def list_projects() -> list:
+    rows = get_conn().execute(
+        "SELECT id, name, reference, entity, created_at, updated_at "
+        "FROM projects ORDER BY updated_at DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_project(name: str, payload: dict, reference: str = "", entity: str = "") -> int:
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO projects (name, reference, entity, created_at, updated_at, payload) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (name, reference, entity, _now(), _now(),
+             json.dumps(payload, ensure_ascii=False)),
+        )
+        return cur.lastrowid
+
+
+def load_project(project_id: int) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    data = dict(row)
+    data["payload"] = json.loads(data["payload"])
+    return data
+
+
+def save_project(project_id: int, payload: dict, name: Optional[str] = None,
+                 reference: Optional[str] = None, entity: Optional[str] = None):
+    sets = ["updated_at = ?", "payload = ?"]
+    args: list[Any] = [_now(), json.dumps(payload, ensure_ascii=False)]
+    for column, value in (("name", name), ("reference", reference), ("entity", entity)):
+        if value is not None:
+            sets.append(f"{column} = ?")
+            args.append(value)
+    args.append(project_id)
+    with transaction() as conn:
+        conn.execute(f"UPDATE projects SET {', '.join(sets)} WHERE id = ?", args)
+
+
+def delete_project(project_id: int):
+    with transaction() as conn:
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+
+
+def duplicate_project(project_id: int, new_name: str) -> Optional[int]:
+    src = load_project(project_id)
+    if src is None:
+        return None
+    return create_project(new_name, src["payload"], src["reference"], src["entity"])
+
+
+# ─── ملف الشركة ───────────────────────────────────────────────────────────────
+
+
+def load_company() -> tuple[dict, Optional[bytes], Optional[bytes]]:
+    row = get_conn().execute("SELECT * FROM company WHERE id = 1").fetchone()
+    if row is None:
+        return {}, None, None
+    return json.loads(row["payload"]), row["template"], row["logo"]
+
+
+def save_company(payload: dict, template: Optional[bytes] = None,
+                 logo: Optional[bytes] = None):
+    """يحفظ ملف الشركة. القالب والشعار يُحدَّثان فقط عند تمرير قيمة صريحة."""
+    existing = get_conn().execute("SELECT * FROM company WHERE id = 1").fetchone()
+    if existing is None:
+        with transaction() as conn:
+            conn.execute(
+                "INSERT INTO company (id, payload, template, logo) VALUES (1, ?, ?, ?)",
+                (json.dumps(payload, ensure_ascii=False), template, logo),
+            )
+        return
+
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE company SET payload = ?, template = ?, logo = ? WHERE id = 1",
+            (
+                json.dumps(payload, ensure_ascii=False),
+                existing["template"] if template is None else template,
+                existing["logo"] if logo is None else logo,
+            ),
+        )
+
+
+def clear_company_template():
+    with transaction() as conn:
+        conn.execute("UPDATE company SET template = NULL WHERE id = 1")
+
+
+# ─── مستودع المعرفة ───────────────────────────────────────────────────────────
+
+
+def add_kb_document(name: str, category: str, char_count: int) -> int:
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO kb_documents (name, category, added_at, char_count) "
+            "VALUES (?, ?, ?, ?)",
+            (name, category, _now(), char_count),
+        )
+        return cur.lastrowid
+
+
+def add_kb_chunks(doc_id: int, chunks: list):
+    """chunks: [(ordinal, text, dims, embedding_bytes)]"""
+    with transaction() as conn:
+        conn.executemany(
+            "INSERT INTO kb_chunks (doc_id, ordinal, text, dims, embedding) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [(doc_id, o, t, d, e) for o, t, d, e in chunks],
+        )
+
+
+def list_kb_documents() -> list:
+    rows = get_conn().execute(
+        "SELECT d.*, COUNT(c.id) AS chunks FROM kb_documents d "
+        "LEFT JOIN kb_chunks c ON c.doc_id = d.id "
+        "GROUP BY d.id ORDER BY d.added_at DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def all_kb_chunks(categories: Optional[list] = None) -> list:
+    sql = (
+        "SELECT c.id, c.text, c.dims, c.embedding, d.name AS doc_name, "
+        "d.category FROM kb_chunks c JOIN kb_documents d ON d.id = c.doc_id"
+    )
+    args: list[Any] = []
+    if categories:
+        sql += f" WHERE d.category IN ({','.join('?' * len(categories))})"
+        args = list(categories)
+    return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
+
+
+def delete_kb_document(doc_id: int):
+    with transaction() as conn:
+        conn.execute("DELETE FROM kb_chunks WHERE doc_id = ?", (doc_id,))
+        conn.execute("DELETE FROM kb_documents WHERE id = ?", (doc_id,))
+
+
+def kb_stats() -> dict:
+    row = get_conn().execute(
+        "SELECT (SELECT COUNT(*) FROM kb_documents) AS docs, "
+        "(SELECT COUNT(*) FROM kb_chunks) AS chunks"
+    ).fetchone()
+    return dict(row)

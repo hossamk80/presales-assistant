@@ -8,15 +8,20 @@ import datetime
 import streamlit as st
 
 from utils.ai_engine import (
+    DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
     MODEL_NAMES,
-    PROMPTS,
     REVIEW_LENSES,
     REVIEW_SCHEMA,
     ai_generate,
     ai_generate_json,
+    build_prompt,
 )
 from utils.state import get_sections, section_content_key
+
+def _language() -> str:
+    return st.session_state.get("output_language", DEFAULT_LANGUAGE)
+
 
 SEVERITY_ORDER = {"حرجة": 0, "متوسطة": 1, "طفيفة": 2}
 SEVERITY_STYLE = {
@@ -106,7 +111,8 @@ def _apply_finding(finding: dict, sections: list, model: str) -> bool:
     ckey = section_content_key(sec["key"])
     with st.spinner(f"جاري تحسين «{sec['title']}»..."):
         revised = ai_generate(
-            PROMPTS["apply_finding"].format(
+            build_prompt(
+                "apply_finding", _language(),
                 title=sec["title"],
                 lens=finding["lens_label"],
                 severity=finding["severity"],
@@ -117,6 +123,7 @@ def _apply_finding(finding: dict, sections: list, model: str) -> bool:
             ),
             model_choice=model,
             rfp_context=st.session_state.get("rfp_raw_text", ""),
+            language=_language(),
         )
 
     if not revised:
