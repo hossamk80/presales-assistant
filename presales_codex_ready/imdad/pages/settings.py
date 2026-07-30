@@ -102,14 +102,14 @@ def render_data():
         st.warning("⚠️ هذه العمليات لا يمكن التراجع عنها.")
         c1, c2 = st.columns(2)
         with c1:
-            if st.button("🗑️ مسح تحليل الكراسة فقط", use_container_width=True):
+            if st.button("🗑️ مسح تحليل الكراسة فقط", width="stretch"):
                 from utils.state import reset_analysis
                 reset_analysis()
                 st.success("تم مسح بيانات التحليل.")
                 st.rerun()
         with c2:
             confirm = st.checkbox("تأكيد مسح كل شيء")
-            if st.button("🗑️ مسح جميع البيانات", use_container_width=True, disabled=not confirm):
+            if st.button("🗑️ مسح جميع البيانات", width="stretch", disabled=not confirm):
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
                 st.rerun()

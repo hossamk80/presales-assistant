@@ -89,7 +89,7 @@ def render():
             with col_info:
                 st.info("✅ قالب الشركة محفوظ ومفعّل.")
             with col_remove:
-                if st.button("🗑️ حذف القالب", use_container_width=True):
+                if st.button("🗑️ حذف القالب", width="stretch"):
                     st.session_state["c_word_template_bytes"] = None
                     st.rerun()
 

@@ -1,25 +1,40 @@
 # IMDAD Pre-Sales Assistant
 
-Streamlit application for RFP analysis, compliance matrix, BOQ review, and technical proposal generation.
+تطبيق Streamlit عربي لإدارة مرحلة ما قبل البيع وتحليل كراسات الشروط، يشمل رفع ملفات RFP، تشغيل تحليلات ذكية، مراجعة جداول الامتثال وBOQ، وبناء عرض فني قابل للتصدير.
 
-## Run
-
-```bash
-cd imdad
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run app.py --server.address 0.0.0.0 --server.port 8501
-```
-
-## Main entry point
+## مجلد التطبيق الرئيسي
 
 ```text
-imdad/app.py
+presales_codex_ready/imdad
 ```
 
-## Notes
+## ملف التشغيل الرئيسي
 
-- Add your Google Gemini API key from the app settings page.
-- Current AI provider implemented: Google Gemini.
-- OpenAI and Claude fields are placeholders only.
+```text
+presales_codex_ready/imdad/app.py
+```
+
+## أوامر التشغيل
+
+من جذر المستودع:
+
+```bash
+cd presales_codex_ready/imdad
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+streamlit run app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
+```
+
+ثم افتح:
+
+```text
+http://localhost:8501
+```
+
+## ملاحظات
+
+- أدخل مفتاح Google Gemini API من صفحة إعدادات النظام داخل التطبيق.
+- موفر الذكاء الاصطناعي المفعّل حالياً هو Google Gemini.
+- حقول OpenAI وClaude موجودة كخيارات/حقول إعدادات فقط وليست موفرات مفعّلة حالياً.

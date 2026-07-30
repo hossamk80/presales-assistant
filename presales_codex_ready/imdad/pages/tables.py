@@ -28,14 +28,14 @@ def render():
 
         with col_reset:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("↩️ إعادة ضبط", key="reset_comp", use_container_width=True):
+            if st.button("↩️ إعادة ضبط", key="reset_comp", width="stretch"):
                 st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
                 st.rerun()
 
         edited_comp = st.data_editor(
             st.session_state["df_compliance"],
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             key="de_compliance",
             column_config={
                 "الالتزام": st.column_config.SelectboxColumn(
@@ -57,14 +57,14 @@ def render():
     with st.expander("📦 جدول الكميات (Bill of Quantities — BOQ)", expanded=True):
         col_info2, col_actions = st.columns([3, 2])
         with col_actions:
-            if st.button("↩️ إعادة ضبط الجدول", key="reset_boq", use_container_width=True):
+            if st.button("↩️ إعادة ضبط الجدول", key="reset_boq", width="stretch"):
                 st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
                 st.rerun()
 
         edited_boq = st.data_editor(
             st.session_state.get("df_boq", DEFAULT_BOQ_DF.copy()),
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             key="de_boq",
             column_config={
                 "البند": st.column_config.TextColumn("البند / الخدمة", width="large"),
@@ -85,7 +85,7 @@ def render():
     col_e1, col_e2 = st.columns(2)
 
     with col_e1:
-        if st.button("📥 تصدير Compliance Matrix (CSV)", use_container_width=True):
+        if st.button("📥 تصدير Compliance Matrix (CSV)", width="stretch"):
             csv = st.session_state["df_compliance"].to_csv(index=False, encoding="utf-8-sig")
             st.download_button(
                 "⬇️ تحميل compliance_matrix.csv",
@@ -96,7 +96,7 @@ def render():
             )
 
     with col_e2:
-        if st.button("📥 تصدير BOQ (CSV)", use_container_width=True):
+        if st.button("📥 تصدير BOQ (CSV)", width="stretch"):
             csv = st.session_state["df_boq"].to_csv(index=False, encoding="utf-8-sig")
             st.download_button(
                 "⬇️ تحميل boq.csv",
