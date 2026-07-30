@@ -361,7 +361,7 @@ if nav == "🏠 لوحة التحكم":
 elif nav == "🚀 مساحة العمل":
     st.title("🚀 مساحة العمل")
 
-    from pages import analysis, tables, doc_builder
+    from views import analysis, tables, doc_builder
 
     tab1, tab2, tab3 = st.tabs([
         "📥 1. التحليل والمخاطر",
@@ -379,19 +379,19 @@ elif nav == "🚀 مساحة العمل":
 # ── Company Profile ───────────────────────────────────────────────────────────
 elif nav == "🏢 ملف الشركة":
     st.title("🏢 ملف الشركة")
-    from pages import company
+    from views import company
     company.render()
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
 elif nav == "⚙️ إعدادات النظام":
     st.title("⚙️ إعدادات النظام")
-    from pages import settings
+    from views import settings
     settings.render_settings()
 
 
 # ── Data Management ───────────────────────────────────────────────────────────
 elif nav == "💾 إدارة البيانات":
     st.title("💾 إدارة البيانات")
-    from pages import settings
+    from views import settings
     settings.render_data()

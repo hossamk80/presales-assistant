@@ -57,10 +57,11 @@ def render():
             label="توليد تقرير Go/No-Go",
             key="gonogo",
             model_key="m1",
-            on_generate=lambda model: ai_generate(
+            on_generate=lambda model, report: ai_generate(
                 PROMPTS["gonogo"],
                 model_choice=model,
                 rfp_context=st.session_state["rfp_raw_text"],
+                on_progress=report,
             ),
             result_state_key="analysis_gonogo",
             summary_state_key="sum_gonogo",
@@ -74,10 +75,11 @@ def render():
             label="استخراج الأوزان",
             key="eval",
             model_key="m2",
-            on_generate=lambda model: ai_generate(
+            on_generate=lambda model, report: ai_generate(
                 PROMPTS["eval_matrix"],
                 model_choice=model,
                 rfp_context=st.session_state["rfp_raw_text"],
+                on_progress=report,
             ),
             result_state_key="evaluation_matrix",
             summary_state_key="sum_eval",
@@ -91,10 +93,11 @@ def render():
             label="فحص الشروط الإلزامية",
             key="compliance",
             model_key="m3",
-            on_generate=lambda model: ai_generate(
+            on_generate=lambda model, report: ai_generate(
                 PROMPTS["compliance"],
                 model_choice=model,
                 rfp_context=st.session_state["rfp_raw_text"],
+                on_progress=report,
             ),
             result_state_key="compliance_check",
             summary_state_key="sum_comp",

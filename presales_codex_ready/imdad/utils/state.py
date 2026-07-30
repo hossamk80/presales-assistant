@@ -5,6 +5,8 @@ Prevents re-initialization bugs and provides typed defaults.
 import pandas as pd
 import streamlit as st
 
+from utils.ai_engine import DEFAULT_MODEL
+
 # ─── Default DataFrames ────────────────────────────────────────────────────────
 DEFAULT_COMPLIANCE_DF = pd.DataFrame({
     "المتطلب التقني": [""],
@@ -30,7 +32,7 @@ STATE_SCHEMA = {
     "api_gemini": "",
     "api_openai": "",
     "api_claude": "",
-    "ai_model_preference": "Gemini 1.5 Flash",
+    "ai_model_preference": DEFAULT_MODEL,
 
     # Company Profile
     "c_name": "",

@@ -95,10 +95,11 @@ def render():
                 label="توليد فهم النطاق",
                 key="scope",
                 model_key="m_scope",
-                on_generate=lambda model: ai_generate(
-                    PROMPTS["gonogo"],  # reuse context
+                on_generate=lambda model, report: ai_generate(
+                    PROMPTS["scope"],
                     model_choice=model,
                     rfp_context=st.session_state.get("rfp_raw_text", ""),
+                    on_progress=report,
                 ),
                 result_state_key="sec_scope",
                 summary_state_key=None,
@@ -113,7 +114,7 @@ def render():
                 label="توليد المنهجية",
                 key="methodology",
                 model_key="m_meth",
-                on_generate=lambda model: ai_generate(
+                on_generate=lambda model, report: ai_generate(
                     PROMPTS["methodology"].format(
                         company_overview=st.session_state.get("c_overview") or st.session_state.get("c_name", ""),
                         eval_weights=st.session_state.get("sum_eval", "غير محدد"),
@@ -121,6 +122,7 @@ def render():
                     ),
                     model_choice=model,
                     rfp_context=st.session_state.get("rfp_raw_text", ""),
+                    on_progress=report,
                 ),
                 result_state_key="sec_methodology",
                 summary_state_key=None,

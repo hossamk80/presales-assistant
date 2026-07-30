@@ -4,6 +4,7 @@ pages/settings.py — System Settings: API Keys + Data Management
 import streamlit as st
 import json
 from utils.state import get_state_snapshot, load_state_snapshot
+from utils.ai_engine import DEFAULT_MODEL, MODEL_NAMES, resolve_model
 
 
 def render_settings():
@@ -51,19 +52,24 @@ def render_settings():
             else:
                 with st.spinner("جاري الاختبار..."):
                     try:
-                        import google.generativeai as genai
-                        genai.configure(api_key=st.session_state["api_gemini"])
-                        model = genai.GenerativeModel("gemini-1.5-flash")
-                        response = model.generate_content("قل 'الاتصال يعمل' فقط.")
+                        from google import genai
+                        client = genai.Client(api_key=st.session_state["api_gemini"])
+                        response = client.models.generate_content(
+                            model=resolve_model(DEFAULT_MODEL),
+                            contents="قل 'الاتصال يعمل' فقط.",
+                        )
                         st.success(f"✅ الاتصال يعمل! رد النموذج: {response.text.strip()[:80]}")
                     except Exception as e:
                         st.error(f"❌ فشل الاتصال: {e}")
 
     with st.expander("🤖 تفضيلات النموذج الافتراضي"):
+        current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
         st.session_state["ai_model_preference"] = st.radio(
             "النموذج الافتراضي:",
-            ["Gemini 1.5 Flash", "Gemini 1.5 Pro"],
-            help="Flash: أسرع وأرخص. Pro: أكثر دقة للمهام المعقدة.",
+            MODEL_NAMES,
+            index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
+            key="model_pref_radio",
+            help="Flash: متوازن وسريع. Pro: أدق للمهام المعقدة. Flash-Lite: الأرخص للمهام البسيطة.",
         )
 
 

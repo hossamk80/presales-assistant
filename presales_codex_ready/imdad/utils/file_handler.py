@@ -5,13 +5,49 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 from typing import List, Optional
-import traceback
+
+# أقل عدد أحرف في الصفحة يُعتبر معه استخراج النص ناجحاً.
+# ما دون ذلك يرجّح أن الصفحة صورة ممسوحة ضوئياً.
+MIN_CHARS_PER_PAGE = 40
+
+
+def ocr_available() -> bool:
+    """هل أدوات الـ OCR الاختيارية مثبّتة؟"""
+    try:
+        import pytesseract  # noqa: F401
+        from pdf2image import convert_from_bytes  # noqa: F401
+    except ImportError:
+        return False
+    try:
+        import pytesseract
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception:
+        return False
+
+
+def _ocr_pdf(file_bytes: bytes, file_name: str) -> str:
+    """
+    تشغيل OCR على ملف PDF ممسوح ضوئياً (عربي + إنجليزي).
+    يتطلب: pytesseract + pdf2image + tesseract-ocr مع حزمة اللغة العربية.
+    """
+    import pytesseract
+    from pdf2image import convert_from_bytes
+
+    pages = convert_from_bytes(file_bytes, dpi=300)
+    out = []
+    progress = st.progress(0.0, text=f"OCR — {file_name}")
+    for i, page in enumerate(pages, start=1):
+        out.append(pytesseract.image_to_string(page, lang="ara+eng"))
+        progress.progress(i / len(pages), text=f"OCR — {file_name} ({i}/{len(pages)})")
+    progress.empty()
+    return "\n".join(out)
 
 
 def extract_text_from_files(files: list) -> tuple[str, list]:
     """
     Extract text from uploaded files. Returns (combined_text, list_of_filenames).
-    Handles: PDF, DOCX/DOC, XLSX/XLS/CSV, HTML, TXT
+    Handles: PDF (with OCR fallback), DOCX/DOC, XLSX/XLS/CSV, HTML, TXT
     """
     text_parts = []
     file_names = []
@@ -21,14 +57,39 @@ def extract_text_from_files(files: list) -> tuple[str, list]:
         ext = file.name.rsplit(".", 1)[-1].lower()
         try:
             if ext == "pdf":
-                import PyPDF2
-                reader = PyPDF2.PdfReader(file)
+                from pypdf import PdfReader
+
+                raw = file.getvalue()
+                reader = PdfReader(BytesIO(raw))
+                page_count = len(reader.pages)
                 pages_text = []
                 for page in reader.pages:
                     t = page.extract_text()
                     if t:
                         pages_text.append(t)
-                text_parts.append(f"\n\n=== {file.name} ===\n" + "\n".join(pages_text))
+                extracted = "\n".join(pages_text)
+
+                # كشف الملفات الممسوحة ضوئياً: نص ضئيل مقارنة بعدد الصفحات
+                is_scanned = page_count > 0 and len(extracted.strip()) < MIN_CHARS_PER_PAGE * page_count
+
+                if is_scanned:
+                    if ocr_available():
+                        st.info(f"🔍 `{file.name}` يبدو ممسوحاً ضوئياً — جاري تشغيل OCR ({page_count} صفحة)...")
+                        try:
+                            extracted = _ocr_pdf(raw, file.name)
+                            st.success(f"✅ اكتمل OCR لـ `{file.name}` — {len(extracted):,} حرف.")
+                        except Exception as ocr_err:
+                            st.error(f"❌ فشل OCR لـ `{file.name}`: {ocr_err}")
+                    else:
+                        st.error(
+                            f"🚨 `{file.name}` ملف PDF ممسوح ضوئياً ولم يُستخرَج منه نص يُذكر "
+                            f"({len(extracted.strip()):,} حرف من {page_count} صفحة). "
+                            "**سيُحلَّل هذا الملف ناقصاً.** لتفعيل OCR ثبّت: "
+                            "`pip install pytesseract pdf2image` + حزمة النظام "
+                            "`tesseract-ocr tesseract-ocr-ara poppler-utils`."
+                        )
+
+                text_parts.append(f"\n\n=== {file.name} ===\n" + extracted)
 
             elif ext in ("docx", "doc"):
                 import docx2txt
