@@ -23,6 +23,46 @@ DEFAULT_BOQ_DF = pd.DataFrame({
     "ملاحظات": [""]
 })
 
+# ─── هيكل العرض الفني ──────────────────────────────────────────────────────────
+# كل قسم: key فريد · title العنوان · include هل يُدرج · kind نوع المحتوى
+#   kind = "cover" خطاب التقديم · "docinfo" إشعار السرية
+#        · "ai" نص يولّده الذكاء الاصطناعي
+#        · "table_compliance" / "table_boq" جدول يُحقن من التبويب الثاني
+# prompt_key اختياري: يستخدم قالب تعليمات متخصص بدل القالب العام.
+# guidance: ما ينبغي أن يغطيه القسم — يُمرَّر للنموذج عند التوليد.
+DEFAULT_SECTIONS = [
+    {"key": "cover", "title": "خطاب التقديم", "kind": "cover", "include": True,
+     "guidance": "خطاب رسمي موجز لتقديم العرض للجهة."},
+    {"key": "docinfo", "title": "معلومات المستند وإشعار السرية", "kind": "docinfo", "include": True,
+     "guidance": "إشعار سرية ومعلومات المستند."},
+    {"key": "exec", "title": "الملخص التنفيذي", "kind": "ai", "include": False,
+     "guidance": "ملخص تنفيذي يبرز فهم المشروع والحل المقترح وأبرز مزايا الشركة."},
+    {"key": "scope", "title": "فهم النطاق والمتطلبات", "kind": "ai", "include": False,
+     "prompt_key": "scope",
+     "guidance": "إثبات فهم دقيق لنطاق العمل والتسليمات والافتراضات."},
+    {"key": "methodology", "title": "المنهجية الفنية والحل المقترح", "kind": "ai", "include": True,
+     "prompt_key": "methodology",
+     "guidance": "المنهجية وأسلوب التنفيذ والحل التقني والمزايا التنافسية وضمان الجودة."},
+    {"key": "gov", "title": "حوكمة المشروع ومستويات الخدمة (SLAs)", "kind": "ai", "include": False,
+     "guidance": "هيكل الإشراف وآليات التصعيد ومستويات الخدمة ومؤشرات الأداء."},
+    {"key": "plan", "title": "خطة المشروع والجدول الزمني", "kind": "ai", "include": True,
+     "prompt_key": "project_plan",
+     "guidance": "المراحل والجدول الزمني والموارد والتسليمات وإدارة المخاطر."},
+    {"key": "team", "title": "هيكلة الفريق والسير الذاتية", "kind": "ai", "include": False,
+     "guidance": "الهيكل التنظيمي للفريق والأدوار والخبرات المطلوبة."},
+    {"key": "external", "title": "المتطلبات الخارجية والضمانات", "kind": "ai", "include": False,
+     "guidance": "الضمانات والتأمينات والمتطلبات التي تقع على الجهة."},
+    {"key": "compliance_table", "title": "جدول الامتثال بالمواصفات", "kind": "table_compliance", "include": True,
+     "guidance": ""},
+    {"key": "boq_table", "title": "جدول الكميات (BOQ)", "kind": "table_boq", "include": False,
+     "guidance": ""},
+]
+
+
+def section_content_key(key: str) -> str:
+    """مفتاح تخزين محتوى القسم في session_state."""
+    return f"sec_{key}"
+
 # ─── Schema: (key, default_value) ─────────────────────────────────────────────
 STATE_SCHEMA = {
     # Navigation
@@ -68,6 +108,14 @@ STATE_SCHEMA = {
     "sec_external": "",
     "sec_cover_use_template": True,
 
+    # Proposal Outline
+    "proposal_sections": DEFAULT_SECTIONS,
+    "outline_source": "افتراضي",
+
+    # Pre-submission Review
+    "review_findings": [],
+    "review_ran_at": "",
+
     # Tables
     "df_compliance": DEFAULT_COMPLIANCE_DF,
     "df_boq": DEFAULT_BOQ_DF,
@@ -76,6 +124,21 @@ STATE_SCHEMA = {
     "ai_generating": False,
     "last_export_filename": "",
 }
+
+
+def get_sections() -> list:
+    """هيكل العرض الحالي (نسخة قابلة للتعديل)."""
+    sections = st.session_state.get("proposal_sections") or DEFAULT_SECTIONS
+    return [dict(s) for s in sections]
+
+
+def set_sections(sections: list, source: str = "مخصص"):
+    st.session_state["proposal_sections"] = [dict(s) for s in sections]
+    st.session_state["outline_source"] = source
+
+
+def reset_sections():
+    set_sections(DEFAULT_SECTIONS, source="افتراضي")
 
 
 def init_state():
@@ -95,8 +158,16 @@ def reset_analysis():
     ]
     for key in analysis_keys:
         st.session_state[key] = STATE_SCHEMA[key]
+
+    # أقسام أضافها الذكاء الاصطناعي ديناميكياً (sec_ai_*) ليست في المخطط الثابت
+    for key in [k for k in st.session_state if k.startswith("sec_ai_")]:
+        del st.session_state[key]
+
     st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
+    st.session_state["review_findings"] = []
+    st.session_state["review_ran_at"] = ""
+    reset_sections()
 
 
 def get_state_snapshot() -> dict:

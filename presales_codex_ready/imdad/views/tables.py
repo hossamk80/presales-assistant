@@ -1,10 +1,132 @@
 """
-pages/tables.py — Tab 2: Compliance Matrix + BOQ Editor
+views/tables.py — Tab 2: Compliance Matrix + BOQ Editor
+
+الجداول تُملأ آلياً من الكراسة عبر استخراج مُهيكل (JSON)، وتبقى قابلة للتحرير.
 """
 import streamlit as st
 import pandas as pd
 from utils.state import DEFAULT_COMPLIANCE_DF, DEFAULT_BOQ_DF
+from utils.ai_engine import (
+    BOQ_SCHEMA,
+    COMPLIANCE_SCHEMA,
+    DEFAULT_MODEL,
+    EXTRACT_PROMPTS,
+    MODEL_NAMES,
+    ai_generate_json,
+)
 from components.ui import status_badge
+
+BOQ_UNITS = ["شهر", "سنة", "قطعة", "ترخيص", "مستخدم", "نقطة", "مشروع", "أخرى"]
+
+
+def _model_picker(key: str) -> str:
+    """منتقي نموذج مضغوط يتبع التفضيل الافتراضي."""
+    current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
+    return st.selectbox(
+        "المحرك:",
+        MODEL_NAMES,
+        index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
+        key=key,
+        label_visibility="collapsed",
+    )
+
+
+def _compliance_to_df(items: list) -> pd.DataFrame:
+    """تحويل المتطلبات المستخرجة إلى شكل جدول الامتثال."""
+    rows = []
+    for it in items:
+        mandatory = bool(it.get("mandatory"))
+        category = it.get("category", "فني")
+        req = str(it.get("requirement", "")).strip()
+        if not req:
+            continue
+        ref = str(it.get("source_ref", "")).strip()
+        note_bits = [f"التصنيف: {category}"]
+        if mandatory:
+            note_bits.append("⛔ شرط استبعاد")
+        if ref:
+            note_bits.append(f"المرجع: {ref}")
+        rows.append({
+            "المتطلب التقني": req,
+            # الالتزام قرار بشري — يبدأ دائماً بانتظار التحقق ولا يفترضه النموذج
+            "الالتزام": "بانتظار التحقق",
+            "التبرير / الملاحظة": " · ".join(note_bits),
+            "الشهادة المطلوبة": str(it.get("certificate", "")).strip(),
+        })
+    return pd.DataFrame(rows) if rows else DEFAULT_COMPLIANCE_DF.copy()
+
+
+def _boq_to_df(items: list) -> pd.DataFrame:
+    """تحويل البنود المستخرجة إلى شكل جدول الكميات."""
+    rows = []
+    for it in items:
+        name = str(it.get("item", "")).strip()
+        if not name:
+            continue
+        try:
+            qty = float(it.get("quantity", 1) or 1)
+        except (TypeError, ValueError):
+            qty = 1.0
+        unit = str(it.get("unit", "")).strip()
+        rows.append({
+            "البند": name,
+            "الوصف": str(it.get("description", "")).strip(),
+            "الكمية": int(qty) if qty == int(qty) else qty,
+            "الوحدة": unit if unit in BOQ_UNITS else "أخرى",
+            "ملاحظات": str(it.get("notes", "")).strip(),
+        })
+    return pd.DataFrame(rows) if rows else DEFAULT_BOQ_DF.copy()
+
+
+def _extraction_bar(kind: str):
+    """
+    شريط الاستخراج الآلي فوق كل جدول.
+    kind: "compliance" أو "boq"
+    """
+    rfp = st.session_state.get("rfp_raw_text", "")
+    if not rfp:
+        st.info("💡 ارفع كراسة الشروط في التبويب الأول لتفعيل التعبئة الآلية لهذا الجدول.")
+        return
+
+    is_comp = kind == "compliance"
+    label = "استخراج المتطلبات من الكراسة" if is_comp else "استخراج بنود الكميات من الكراسة"
+
+    col_model, col_btn = st.columns([3, 2])
+    with col_model:
+        model = _model_picker(f"model_extract_{kind}")
+    with col_btn:
+        clicked = st.button(f"🤖 {label}", key=f"btn_extract_{kind}", type="primary", width="stretch")
+
+    if not clicked:
+        return
+
+    status = st.empty()
+    with st.spinner("جاري الاستخراج..."):
+        result = ai_generate_json(
+            EXTRACT_PROMPTS["compliance_items" if is_comp else "boq_items"],
+            schema=COMPLIANCE_SCHEMA if is_comp else BOQ_SCHEMA,
+            model_choice=model,
+            rfp_context=rfp,
+            merge_key="requirements" if is_comp else "items",
+            on_progress=lambda m: status.caption(f"⏳ {m}"),
+        )
+    status.empty()
+
+    if not result:
+        return
+
+    items = result.get("requirements" if is_comp else "items", []) if isinstance(result, dict) else result
+    if not items:
+        st.warning("⚠️ لم يعثر النموذج على بنود قابلة للاستخراج في الكراسة.")
+        return
+
+    df = _compliance_to_df(items) if is_comp else _boq_to_df(items)
+    st.session_state["df_compliance" if is_comp else "df_boq"] = df
+    # data_editor يحتفظ بتعديلات المستخدم السابقة تحت مفتاحه، فنُبطلها
+    # حتى يعرض الجدول البيانات المستخرجة الجديدة بدل القديمة
+    st.session_state.pop("de_compliance" if is_comp else "de_boq", None)
+    st.success(f"✅ تم استخراج **{len(df)}** بند. راجعها وعدّلها قبل الاعتماد.")
+    st.rerun()
 
 
 def render():
@@ -12,6 +134,9 @@ def render():
 
     # ── Compliance Matrix ──────────────────────────────────────────────────────
     with st.expander("📋 جدول الامتثال بالمواصفات (Compliance Matrix)", expanded=True):
+        _extraction_bar("compliance")
+        st.divider()
+
         col_info, col_reset = st.columns([4, 1])
         with col_info:
             df = st.session_state.get("df_compliance", DEFAULT_COMPLIANCE_DF.copy())
@@ -55,6 +180,9 @@ def render():
 
     # ── BOQ ───────────────────────────────────────────────────────────────────
     with st.expander("📦 جدول الكميات (Bill of Quantities — BOQ)", expanded=True):
+        _extraction_bar("boq")
+        st.divider()
+
         col_info2, col_actions = st.columns([3, 2])
         with col_actions:
             if st.button("↩️ إعادة ضبط الجدول", key="reset_boq", width="stretch"):
@@ -70,10 +198,7 @@ def render():
                 "البند": st.column_config.TextColumn("البند / الخدمة", width="large"),
                 "الوصف": st.column_config.TextColumn("الوصف التفصيلي", width="large"),
                 "الكمية": st.column_config.NumberColumn("الكمية", min_value=0, step=1),
-                "الوحدة": st.column_config.SelectboxColumn(
-                    "الوحدة",
-                    options=["شهر", "سنة", "قطعة", "ترخيص", "مستخدم", "نقطة", "مشروع", "أخرى"],
-                ),
+                "الوحدة": st.column_config.SelectboxColumn("الوحدة", options=BOQ_UNITS),
                 "ملاحظات": st.column_config.TextColumn("ملاحظات"),
             },
         )

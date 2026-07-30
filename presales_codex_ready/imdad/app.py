@@ -309,8 +309,13 @@ if nav == "🏠 لوحة التحكم":
         rfp_text = st.session_state.get("rfp_raw_text", "")
         st.metric("كراسة الشروط", f"{estimate_tokens(rfp_text):,} توكن" if rfp_text else "لم تُحمَّل")
     with c4:
-        sections_done = sum(1 for k in ["sec_methodology", "sec_plan", "sec_cover"] if st.session_state.get(k))
-        st.metric("الأقسام المكتملة", f"{sections_done} / 3")
+        from utils.state import get_sections, section_content_key
+        included = [s for s in get_sections() if s.get("include") and s["kind"] == "ai"]
+        done = sum(
+            1 for s in included
+            if str(st.session_state.get(section_content_key(s["key"]), "")).strip()
+        )
+        st.metric("الأقسام المكتملة", f"{done} / {len(included)}")
 
     st.divider()
 
@@ -318,10 +323,10 @@ if nav == "🏠 لوحة التحكم":
     st.markdown("### 🗺️ خطوات سير العمل")
     steps = [
         ("1", "⚙️ الإعدادات", "أدخل مفتاح Gemini API وبيانات الشركة.", "#3B82F6"),
-        ("2", "🏢 ملف الشركة", "أدخل بيانات الشركة والقالب الرسمي.", "#8B5CF6"),
-        ("3", "📥 رفع الكراسة", "ارفع ملفات RFP واستخرج النصوص.", "#10B981"),
-        ("4", "🤖 التحليل الذكي", "شغّل تحليل Go/No-Go والأوزان والامتثال.", "#F59E0B"),
-        ("5", "📄 بناء العرض", "أنشئ أقسام العرض الفني واستخرج الوثيقة.", "#EF4444"),
+        ("2", "📥 رفع الكراسة", "ارفع ملفات RFP واستخرج النصوص (مع OCR).", "#8B5CF6"),
+        ("3", "🤖 التحليل الذكي", "Go/No-Go والأوزان والامتثال وجدول الكميات.", "#10B981"),
+        ("4", "📄 بناء العرض", "اقترح الهيكل وصُغ كل قسم من الكراسة.", "#F59E0B"),
+        ("5", "🔍 المراجعة والتسليم", "راجع من ثلاث زوايا وصدّر Word أو PDF.", "#EF4444"),
     ]
     cols = st.columns(5)
     for col, (num, title, desc, color) in zip(cols, steps):
@@ -343,8 +348,8 @@ if nav == "🏠 لوحة التحكم":
     f1, f2, f3 = st.columns(3)
     features = [
         ("🤖 تحليل ذكي شامل", "Go/No-Go · مصفوفة التقييم · فجوات الامتثال"),
-        ("📄 منشئ الوثائق", "توليد الأقسام · حقن القوالب · تصدير Word"),
-        ("📊 جداول تفاعلية", "Compliance Matrix · BOQ · تصدير CSV"),
+        ("📄 منشئ الوثائق", "هيكل مقترح · حقن القوالب · تصدير Word و PDF"),
+        ("🔍 مراجعة ثلاثية", "فنية · تجارية · قانونية · تطبيق بنقرة"),
     ]
     for col, (title, desc) in zip([f1, f2, f3], features):
         with col:
@@ -361,12 +366,13 @@ if nav == "🏠 لوحة التحكم":
 elif nav == "🚀 مساحة العمل":
     st.title("🚀 مساحة العمل")
 
-    from views import analysis, tables, doc_builder
+    from views import analysis, tables, doc_builder, review
 
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "📥 1. التحليل والمخاطر",
-        "📊 2. المراجعة وجدول الكميات",
+        "📊 2. الامتثال وجدول الكميات",
         "📄 3. منشئ العرض الفني",
+        "🔍 4. المراجعة والتسليم",
     ])
     with tab1:
         analysis.render()
@@ -374,6 +380,8 @@ elif nav == "🚀 مساحة العمل":
         tables.render()
     with tab3:
         doc_builder.render()
+    with tab4:
+        review.render()
 
 
 # ── Company Profile ───────────────────────────────────────────────────────────
