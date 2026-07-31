@@ -157,6 +157,92 @@ def _extract_single(file) -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+# الهوية البصرية الافتراضية للمستندات المصدَّرة.
+BRAND_COLOR = "003366"          # أزرق مؤسسي
+BRAND_FONT_AR = "Traditional Arabic"
+BRAND_FONT_EN = "Calibri"
+
+
+def _rgb(hex_color: str):
+    """تحويل لون سداسي عشري إلى RGBColor مع تجاهل أي صيغة غير صالحة."""
+    from docx.shared import RGBColor
+
+    value = str(hex_color or "").lstrip("#").strip()
+    try:
+        return RGBColor.from_string(value.upper())
+    except (ValueError, AttributeError):
+        return RGBColor.from_string(BRAND_COLOR)
+
+
+def _set_run_font(run, font_name: str, rtl: bool):
+    """
+    تثبيت الخط على مستوى XML.
+
+    ضبط run.font.name وحده لا يكفي للعربية: Word يعامل العربية كنص معقّد
+    (complex script) فيقرأ الخط من w:cs لا من w:ascii، فيظهر النص العربي بخط
+    آخر رغم ضبط الاسم. نكتب السمات الأربع معاً.
+    """
+    from docx.oxml.ns import qn
+
+    run.font.name = font_name
+    rPr = run._r.get_or_add_rPr()
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        from docx.oxml import OxmlElement
+        rFonts = OxmlElement("w:rFonts")
+        rPr.insert(0, rFonts)
+    for attr in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+        rFonts.set(qn(attr), font_name)
+    if rtl:
+        from docx.oxml import OxmlElement
+        mark = OxmlElement("w:rtl")
+        mark.set(qn("w:val"), "1")
+        rPr.append(mark)
+
+
+def _apply_brand_styles(doc, rtl: bool, brand_color: str, font_name: str):
+    """
+    تطبيق الهوية على أنماط المستند لا على كل فقرة.
+
+    الأنماط تسري على الفهرس والقوائم والجداول التي يولّدها Word لاحقاً، وهي
+    أشياء لا نمرّ عليها فقرةً فقرةً، فضبط الأنماط يغطيها كلها.
+    """
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    color = _rgb(brand_color)
+
+    def _style_font(style, size: Optional[int] = None, bold: Optional[bool] = None,
+                    colored: bool = False):
+        style.font.name = font_name
+        if size is not None:
+            style.font.size = Pt(size)
+        if bold is not None:
+            style.font.bold = bold
+        if colored:
+            style.font.color.rgb = color
+        rPr = style.element.get_or_add_rPr()
+        rFonts = rPr.find(qn("w:rFonts"))
+        if rFonts is None:
+            from docx.oxml import OxmlElement
+            rFonts = OxmlElement("w:rFonts")
+            rPr.insert(0, rFonts)
+        for attr in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+            rFonts.set(qn(attr), font_name)
+
+    try:
+        _style_font(doc.styles["Normal"], size=14 if rtl else 11)
+    except KeyError:
+        pass
+
+    for name, size in (("Heading 1", 20), ("Heading 2", 16), ("Heading 3", 14),
+                       ("Title", 28)):
+        try:
+            _style_font(doc.styles[name], size=size, bold=True, colored=True)
+        except KeyError:
+            continue
+
+
 def _set_rtl(paragraph):
     """ضبط اتجاه الفقرة من اليمين لليسار على مستوى XML."""
     from docx.oxml.ns import qn
@@ -303,6 +389,10 @@ def build_word_document(
     include_toc: bool = True,
     include_page_numbers: bool = True,
     rtl: bool = True,
+    proposal_title: str = "",
+    entity_name: str = "",
+    brand_color: str = BRAND_COLOR,
+    font_name: str = "",
 ) -> BytesIO:
     """
     يبني مستند Word من قائمة أقسام مرتّبة.
@@ -311,12 +401,18 @@ def build_word_document(
         sections: [{"key","title","kind","content"}] بالترتيب النهائي.
                   kind: cover · docinfo · ai · table_compliance · table_boq
         template_bytes: قالب Word للشركة يُحقن المحتوى بعده.
+        proposal_title: عنوان العرض على الغلاف؛ يعود لعنوان عام إن كان فارغاً.
+        entity_name: الجهة المصدِرة للمنافسة — تظهر كسطر "مقدَّم إلى".
+        brand_color: لون العناوين سداسي عشري.
+        font_name: خط المستند؛ يُختار حسب اللغة إن تُرك فارغاً.
     """
     from docx import Document
-    from docx.shared import Cm
+    from docx.shared import Cm, Pt
 
-    doc_title = "العرض الفني" if rtl else "Technical Proposal"
+    font_name = font_name or (BRAND_FONT_AR if rtl else BRAND_FONT_EN)
+    doc_title = proposal_title.strip() or ("العرض الفني" if rtl else "Technical Proposal")
     submitted_by = "مقدَّم من" if rtl else "Submitted by"
+    submitted_to = "مقدَّم إلى" if rtl else "Submitted to"
     date_label = "التاريخ" if rtl else "Date"
     toc_title = "فهرس المحتويات" if rtl else "Table of Contents"
     toc_note = (
@@ -337,14 +433,32 @@ def build_word_document(
             section.left_margin = Cm(3)
             section.right_margin = Cm(3)
 
-    # ── صفحة العنوان ──────────────────────────────────────────────────────────
-    _para_dir(doc.add_heading(doc_title, 0), rtl, center=True)
-    if company_name:
-        _para_dir(doc.add_paragraph(f"{submitted_by}: {company_name}"), rtl, center=True)
-    _para_dir(
-        doc.add_paragraph(f"{date_label}: {datetime.date.today().strftime('%Y/%m/%d')}"),
-        rtl, center=True,
+    # قالب الشركة يحمل هويتها البصرية، فلا نفرض هويتنا فوقه.
+    if not template_bytes:
+        _apply_brand_styles(doc, rtl, brand_color, font_name)
+
+    # ── صفحة الغلاف ───────────────────────────────────────────────────────────
+    cover = _para_dir(doc.add_paragraph(), rtl, center=True)
+    title_run = cover.add_run(doc_title)
+    title_run.bold = True
+    title_run.font.size = Pt(28)
+    title_run.font.color.rgb = _rgb(brand_color)
+    _set_run_font(title_run, font_name, rtl)
+
+    for label, value in ((submitted_to, entity_name), (submitted_by, company_name)):
+        if not str(value).strip():
+            continue
+        line = _para_dir(doc.add_paragraph(), rtl, center=True)
+        run = line.add_run(f"{label}: {value}")
+        run.font.size = Pt(16)
+        _set_run_font(run, font_name, rtl)
+
+    date_line = _para_dir(doc.add_paragraph(), rtl, center=True)
+    date_run = date_line.add_run(
+        f"{date_label}: {datetime.date.today().strftime('%Y/%m/%d')}"
     )
+    date_run.font.size = Pt(12)
+    _set_run_font(date_run, font_name, rtl)
     doc.add_page_break()
 
     # ── فهرس المحتويات ────────────────────────────────────────────────────────
@@ -512,9 +626,14 @@ def build_pdf_document(
     include_toc: bool = True,
     include_page_numbers: bool = True,
     rtl: bool = True,
+    proposal_title: str = "",
+    entity_name: str = "",
+    brand_color: str = BRAND_COLOR,
 ) -> BytesIO:
     """
     يبني نسخة PDF من نفس الأقسام. في العربية يُشكَّل النص ويُحاذى لليمين.
+
+    الغلاف والعناوين تتبع نفس هوية Word حتى لا تختلف الصيغتان أمام لجنة الفتح.
 
     Raises:
         ImportError: إذا لم تكن مكتبات الـ PDF أو خط عربي متوفراً.
@@ -549,18 +668,20 @@ def build_pdf_document(
     pdfmetrics.registerFont(TTFont(FONT_B, bold or regular))
 
     side = TA_RIGHT if rtl else TA_LEFT
+    accent = colors.HexColor(f"#{str(brand_color or BRAND_COLOR).lstrip('#')}")
 
     styles = getSampleStyleSheet()
     body = ParagraphStyle("ArBody", parent=styles["Normal"], fontName=FONT,
                           fontSize=11, leading=19, alignment=side, spaceAfter=6)
     h1 = ParagraphStyle("ArH1", parent=body, fontName=FONT_B, fontSize=17,
-                        leading=26, spaceBefore=10, spaceAfter=10)
+                        leading=26, spaceBefore=10, spaceAfter=10, textColor=accent)
     h2 = ParagraphStyle("ArH2", parent=body, fontName=FONT_B, fontSize=14,
-                        leading=22, spaceBefore=8, spaceAfter=6)
+                        leading=22, spaceBefore=8, spaceAfter=6, textColor=accent)
     h3 = ParagraphStyle("ArH3", parent=body, fontName=FONT_B, fontSize=12,
-                        leading=20, spaceBefore=6, spaceAfter=4)
+                        leading=20, spaceBefore=6, spaceAfter=4, textColor=accent)
     title_style = ParagraphStyle("ArTitle", parent=body, fontName=FONT_B,
-                                 fontSize=26, leading=36, alignment=TA_CENTER)
+                                 fontSize=26, leading=36, alignment=TA_CENTER,
+                                 textColor=accent)
     center = ParagraphStyle("ArCenter", parent=body, alignment=TA_CENTER)
 
     class _Doc(BaseDocTemplate):
@@ -577,7 +698,10 @@ def build_pdf_document(
     doc = _Doc(
         bio, pagesize=A4,
         leftMargin=margin, rightMargin=margin, topMargin=margin, bottomMargin=margin,
-        title=f"العرض الفني — {company_name}" if company_name else "العرض الفني",
+        title=" — ".join(filter(None, [
+            proposal_title.strip() or ("العرض الفني" if rtl else "Technical Proposal"),
+            company_name,
+        ])),
     )
     avail = doc.width
 
@@ -605,10 +729,16 @@ def build_pdf_document(
 
     story = []
 
-    # ── صفحة العنوان ──────────────────────────────────────────────────────────
+    # ── صفحة الغلاف ───────────────────────────────────────────────────────────
     story.append(Spacer(1, 6 * cm))
-    story.append(P("العرض الفني" if rtl else "Technical Proposal", title_style))
+    story.append(P(
+        proposal_title.strip() or ("العرض الفني" if rtl else "Technical Proposal"),
+        title_style,
+    ))
     story.append(Spacer(1, 1 * cm))
+    if entity_name:
+        story.append(P(
+            f"{'مقدَّم إلى' if rtl else 'Submitted to'}: {entity_name}", center))
     if company_name:
         story.append(P(
             f"{'مقدَّم من' if rtl else 'Submitted by'}: {company_name}", center))
@@ -644,7 +774,7 @@ def build_pdf_document(
                          for v in row[: len(header)]])
         t = Table(data, colWidths=[col_w] * len(header), repeatRows=1)
         t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1E293B")),
+            ("BACKGROUND", (0, 0), (-1, 0), accent),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#94A3B8")),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),

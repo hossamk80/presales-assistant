@@ -23,8 +23,8 @@ def _accepts_two_args(fn: Callable) -> bool:
 def section_card(title: str, icon: str = ""):
     """Context manager for a visually grouped card section."""
     st.markdown(
-        f"""<div class="imdad-card">
-            <div class="imdad-card-title">{icon} {title}</div>
+        f"""<div class="app-card">
+            <div class="app-card-title">{icon} {title}</div>
         </div>""",
         unsafe_allow_html=True,
     )

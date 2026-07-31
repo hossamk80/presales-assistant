@@ -294,6 +294,9 @@ STATE_SCHEMA = {
     "c_overview": "",
     "c_cover_template": "نفيدكم نحن [اسم الشركة] برغبتنا في تقديم هذا العرض الفني لتنفيذ مشروعكم الموقر...",
     "c_word_template_bytes": None,
+    # الهوية البصرية للمستندات المصدَّرة (لون العناوين وخط النص).
+    "c_brand_color": "",
+    "c_doc_font": "",
 
     # RFP Analysis
     # rfp_raw_text يظل النص المدموج لكل المرفقات (يستهلكه كل التحليل).
@@ -448,6 +451,7 @@ def load_state_snapshot(data: dict):
 COMPANY_KEYS = [
     "c_name", "c_cr", "c_vat", "c_phone", "c_email", "c_web",
     "c_address", "c_overview", "c_cover_template",
+    "c_brand_color", "c_doc_font",
 ]
 
 

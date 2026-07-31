@@ -7,6 +7,7 @@ views/company.py — ملف الشركة ومستودع المعرفة
 import streamlit as st
 
 from utils import db, knowledge
+from utils.file_handler import BRAND_COLOR, BRAND_FONT_AR
 from utils.i18n import t
 from utils.state import get_company_snapshot
 
@@ -21,7 +22,7 @@ def render():
             st.session_state["c_name"] = st.text_input(
                 t("co.name"),
                 value=st.session_state.get("c_name", ""),
-                placeholder="شركة الإمداد للحلول التقنية",
+                placeholder="شركة الحلول التقنية المتقدمة",
             )
             st.session_state["c_cr"] = st.text_input(
                 t("co.cr"),
@@ -66,6 +67,23 @@ def render():
             st.success(f"✅ الشركة: **{st.session_state['c_name']}**")
         else:
             st.warning(t("co.name_missing"))
+
+    # ── Brand identity ────────────────────────────────────────────────────────
+    with st.expander(t("co.brand"), expanded=False):
+        st.caption(t("co.brand_hint"))
+        b1, b2 = st.columns(2)
+        with b1:
+            st.session_state["c_brand_color"] = st.color_picker(
+                t("co.brand_color"),
+                value=st.session_state.get("c_brand_color") or f"#{BRAND_COLOR}",
+            )
+        with b2:
+            st.session_state["c_doc_font"] = st.text_input(
+                t("co.doc_font"),
+                value=st.session_state.get("c_doc_font", ""),
+                placeholder=BRAND_FONT_AR,
+                help=t("co.doc_font_help"),
+            )
 
     # ── Templates ─────────────────────────────────────────────────────────────
     with st.expander(t("co.templates"), expanded=False):

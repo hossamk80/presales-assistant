@@ -88,7 +88,10 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
 
     # ── الشريط الجانبي / Sidebar ──
-    "side.brand": {"ar": "منصة إمداد", "en": "IMDAD Platform"},
+    "side.brand": {
+        "ar": "محلل متطلبات الأعمال الذكي",
+        "en": "Smart Business Requirements Analyst",
+    },
     "side.tagline": {"ar": "إدارة العطاءات", "en": "Enterprise Bid Management"},
     "side.tender": {"ar": "المنافسة", "en": "Tender"},
     "side.tender_none": {
@@ -106,8 +109,8 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     # ── لوحة التحكم / Dashboard ──
     "dash.title": {"ar": "لوحة التحكم", "en": "Dashboard"},
     "dash.welcome": {
-        "ar": "مرحباً بك في **منصة إمداد** لإدارة العروض الفنية ومراحل ما قبل البيع.",
-        "en": "Welcome to **IMDAD** — technical proposal and pre-sales management.",
+        "ar": "مرحباً بك في **محلل متطلبات الأعمال الذكي** لتحليل كراسات الشروط وبناء العروض الفنية.",
+        "en": "Welcome to the **Smart Business Requirements Analyst** — tender analysis and technical proposal drafting.",
     },
     "dash.company_name": {"ar": "اسم الشركة", "en": "Company"},
     "dash.sections_done": {"ar": "الأقسام المكتملة", "en": "Sections drafted"},
@@ -362,6 +365,7 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "db.src.proposed": {"ar": "مقترح من الكراسة", "en": "Proposed from documents"},
     "db.src.custom": {"ar": "مخصص", "en": "Custom"},
     "db.proposal_title": {"ar": "عنوان العرض المقترح:", "en": "Proposed title:"},
+    "db.submitted_to": {"ar": "مقدَّم إلى:", "en": "Submitted to:"},
     "db.key_points": {"ar": "النقاط الجوهرية", "en": "Key points"},
     "db.missing_mandatory": {
         "ar": "⚠️ أقسام إلزامية وفق معايير اعتماد غير مُدرَجة: {names}",
@@ -520,6 +524,21 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "co.name_missing": {
         "ar": "⚠️ أدخل اسم الشركة — سيُستخدم في جميع وثائق العرض الفني.",
         "en": "⚠️ Enter the company name — it appears in every proposal document.",
+    },
+    "co.brand": {"ar": "🎨 الهوية البصرية للمستندات", "en": "🎨 Document brand identity"},
+    "co.brand_hint": {
+        "ar": "تُطبَّق على غلاف Word و PDF وعناوينهما وترويسات الجداول. "
+              "قالب Word المرفوع يحمل هويته الخاصة فلا تُفرض عليه.",
+        "en": "Applied to the Word and PDF cover, headings and table headers. "
+              "An uploaded Word template keeps its own identity and is left alone.",
+    },
+    "co.brand_color": {"ar": "لون العناوين", "en": "Heading colour"},
+    "co.doc_font": {"ar": "خط المستند", "en": "Document font"},
+    "co.doc_font_help": {
+        "ar": "اتركه فارغاً للخط الافتراضي. الخط يجب أن يكون مثبَّتاً على جهاز "
+              "من يفتح الملف وإلا استبدله Word بغيره.",
+        "en": "Leave empty for the default. The font must be installed on the "
+              "reader's machine or Word will substitute another.",
     },
     "co.templates": {"ar": "📝 قوالب الصياغة", "en": "📝 Writing templates"},
     "co.cover_template": {"ar": "قالب خطاب التقديم الثابت", "en": "Fixed cover letter template"},

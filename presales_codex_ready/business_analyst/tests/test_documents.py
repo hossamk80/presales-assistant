@@ -41,7 +41,7 @@ def df():
 def test_word_builds_valid_document(fh, df, rtl, sections, tmp_path):
     import docx
 
-    bio = fh.build_word_document("شركة الإمداد", sections, df_compliance=df, rtl=rtl)
+    bio = fh.build_word_document("شركة الحلول المتقدمة", sections, df_compliance=df, rtl=rtl)
     out = tmp_path / "p.docx"
     out.write_bytes(bio.getvalue())
 
@@ -97,7 +97,7 @@ def test_pdf_builds_valid_document(fh, df, rtl, sections):
 
     from pypdf import PdfReader
 
-    bio = fh.build_pdf_document("شركة الإمداد", sections, df_compliance=df, rtl=rtl)
+    bio = fh.build_pdf_document("شركة الحلول المتقدمة", sections, df_compliance=df, rtl=rtl)
     data = bio.getvalue()
     assert data.startswith(b"%PDF")
 

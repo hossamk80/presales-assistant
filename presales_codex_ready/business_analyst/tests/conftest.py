@@ -121,7 +121,7 @@ def fake_streamlit(monkeypatch):
 def temp_db(tmp_path, monkeypatch):
     """قاعدة بيانات معزولة لكل اختبار."""
     path = tmp_path / "test.db"
-    monkeypatch.setenv("IMDAD_DB_PATH", str(path))
+    monkeypatch.setenv("ANALYST_DB_PATH", str(path))
     for name in [m for m in list(sys.modules) if m.startswith("utils")]:
         monkeypatch.delitem(sys.modules, name, raising=False)
     from utils import db
