@@ -327,6 +327,30 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "tb.col_strategy": {"ar": "استراتيجية الاستجابة", "en": "Compliance strategy"},
     "tb.col_status": {"ar": "الالتزام", "en": "Compliance"},
     "tb.col_certificate": {"ar": "الشهادة المطلوبة", "en": "Required certificate"},
+    "tb.col_coverage": {"ar": "التغطية", "en": "Coverage"},
+    "tb.col_covered_in": {"ar": "عولج في", "en": "Addressed in"},
+    "tb.coverage": {"ar": "🎯 مصفوفة التتبّع", "en": "🎯 Traceability matrix"},
+    "tb.coverage_hint": {
+        "ar": "يقارن كل متطلب بنص الأقسام المُدرَجة ويحدّد أين عولج وما لم يُعالَج. "
+              "شغّله بعد كتابة الأقسام.",
+        "en": "Matches each requirement against the text of the included sections and "
+              "shows where it was addressed and what was not. Run it after drafting.",
+    },
+    "tb.cov_covered": {"ar": "مغطّى", "en": "Covered"},
+    "tb.cov_partial": {"ar": "جزئي", "en": "Partial"},
+    "tb.cov_missing": {"ar": "غير مغطّى", "en": "Not covered"},
+    "tb.cov_unchecked": {"ar": "غير مفحوص", "en": "Unchecked"},
+    "tb.cov_run": {"ar": "🎯 افحص التغطية", "en": "🎯 Check coverage"},
+    "tb.cov_running": {"ar": "جاري فحص التغطية...", "en": "Checking coverage..."},
+    "tb.cov_failed": {
+        "ar": "تعذّر الفحص — تأكد من وجود متطلبات في المصفوفة ونص مكتوب في الأقسام.",
+        "en": "Check failed — make sure the matrix has requirements and the sections "
+              "have text.",
+    },
+    "tb.cov_blocking": {
+        "ar": "🚨 متطلبات عالية الأهمية غير مغطّاة — تمنع التصدير:",
+        "en": "🚨 High-criticality requirements not covered — export is blocked:",
+    },
     "tb.export": {"ar": "#### 📥 تصدير الجداول", "en": "#### 📥 Export tables"},
     "tb.export_comp": {"ar": "📥 تصدير Compliance Matrix (CSV)", "en": "📥 Export Compliance Matrix (CSV)"},
     "tb.export_boq": {"ar": "📥 تصدير BOQ (CSV)", "en": "📥 Export BOQ (CSV)"},
@@ -436,6 +460,14 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "db.chk_rfp": {"ar": "تحليل الكراسة", "en": "Tender analysis"},
     "db.chk_written": {"ar": "أقسام مكتوبة", "en": "Sections drafted"},
     "db.chk_placeholders": {"ar": "لا يوجد نص ناقص", "en": "No missing text"},
+    "db.chk_coverage": {"ar": "تغطية المتطلبات", "en": "Requirement coverage"},
+    "db.coverage_blocking": {
+        "ar": "🚨 {count} متطلباً عالي الأهمية بلا تغطية مؤكَّدة — التصدير موقوف. "
+              "افحص التغطية من شاشة الجداول ثم عالج الناقص:",
+        "en": "🚨 {count} high-criticality requirements without confirmed coverage — "
+              "export is blocked. Run the coverage check on the Tables screen, then "
+              "address what is missing:",
+    },
     "db.empty_sections": {"ar": "📝 أقسام مُدرَجة وفارغة: ", "en": "📝 Included but empty: "},
     "db.placeholders_found": {
         "ar": "🚨 يوجد نص بين أقواس [ ] يحتاج تعبئة يدوية قبل التصدير:",

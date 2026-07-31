@@ -10,16 +10,22 @@ from utils.state import (
     COMPLIANCE_CATEGORY_OPTIONS,
     COMPLIANCE_COLUMNS,
     COMPLIANCE_STATUS_OPTIONS,
+    COVERAGE_OPTIONS,
+    COVERAGE_UNCHECKED,
     CRITICALITY_OPTIONS,
     DEFAULT_BOQ_DF,
     DEFAULT_COMPLIANCE_DF,
+    get_sections,
     migrate_boq_df,
     migrate_compliance_df,
     role_text,
+    section_content_key,
 )
+from utils import traceability
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
+    DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
     EXTRACT_PROMPTS,
     MODEL_NAMES,
@@ -66,6 +72,9 @@ def _compliance_to_df(items: list) -> pd.DataFrame:
             # الالتزام قرار بشري — يبدأ دائماً بانتظار التحقق ولا يفترضه النموذج
             "الالتزام": "بانتظار التحقق",
             "الشهادة المطلوبة": str(it.get("certificate", "")).strip(),
+            # الاستخراج يقرأ الكراسة لا نص العرض، فلا علم له بالتغطية بعد.
+            "التغطية": COVERAGE_UNCHECKED,
+            "القسم المغطّي": "",
         })
     return pd.DataFrame(rows)[COMPLIANCE_COLUMNS] if rows else DEFAULT_COMPLIANCE_DF.copy()
 
@@ -185,6 +194,53 @@ def _extraction_bar(kind: str):
     st.rerun()
 
 
+def _section_content(key: str) -> str:
+    return str(st.session_state.get(section_content_key(key), ""))
+
+
+def _render_coverage():
+    """
+    مصفوفة التتبّع: أي متطلب عولج في أي قسم، وما الذي لم يُعالَج.
+
+    الفحص يقارن نص العرض المكتوب فعلاً بالمصفوفة، فلا يُشغَّل قبل الكتابة.
+    """
+    with st.expander(t("tb.coverage"), expanded=True):
+        st.caption(t("tb.coverage_hint"))
+
+        df = st.session_state.get("df_compliance")
+        summary = traceability.coverage_summary(df)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(t("tb.cov_covered"), f"{summary['covered']} / {summary['total']}")
+        c2.metric(t("tb.cov_partial"), summary["partial"])
+        c3.metric(t("tb.cov_missing"), summary["missing"])
+        c4.metric(t("tb.cov_unchecked"), summary["unchecked"])
+
+        if summary["blocking"]:
+            st.error(t("tb.cov_blocking") + "\n\n"
+                     + "\n".join(f"- {item}" for item in summary["blocking"]))
+
+        model = _model_picker("m_coverage")
+
+        if st.button(t("tb.cov_run"), type="primary", key="run_coverage"):
+            status = st.empty()
+            with st.spinner(t("tb.cov_running")):
+                updated = traceability.run_coverage_check(
+                    df,
+                    get_sections(),
+                    content_of=_section_content,
+                    model_choice=model,
+                    language=st.session_state.get("output_language", DEFAULT_LANGUAGE),
+                    on_progress=lambda m: status.caption(f"⏳ {m}"),
+                )
+            status.empty()
+            if updated is None:
+                st.warning(t("tb.cov_failed"))
+            else:
+                st.session_state["df_compliance"] = updated
+                st.rerun()
+
+
 def render():
     st.markdown(t("tb.title"))
 
@@ -241,10 +297,19 @@ def render():
                     t("tb.col_status"), options=COMPLIANCE_STATUS_OPTIONS, required=True
                 ),
                 "الشهادة المطلوبة": st.column_config.TextColumn(t("tb.col_certificate")),
+                "التغطية": st.column_config.SelectboxColumn(
+                    t("tb.col_coverage"), options=COVERAGE_OPTIONS, width="small"
+                ),
+                "القسم المغطّي": st.column_config.TextColumn(
+                    t("tb.col_covered_in"), width="medium"
+                ),
             },
         )
         # Persist changes immediately
         st.session_state["df_compliance"] = edited_comp
+
+    st.divider()
+    _render_coverage()
 
     st.divider()
 

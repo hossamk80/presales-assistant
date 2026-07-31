@@ -32,6 +32,19 @@ COMPLIANCE_COLUMNS = [
     "استراتيجية الاستجابة",
     "الالتزام",
     "الشهادة المطلوبة",
+    # تتبّع التغطية: أين عولج هذا المتطلب فعلاً في نص العرض.
+    "التغطية",
+    "القسم المغطّي",
+]
+
+# حالات التغطية. القيمة الافتراضية "غير مفحوص" لا "غير مغطّى": الفرق بين
+# "فحصنا فلم نجد" و"لم نفحص بعد" فرق جوهري عند قرار التسليم.
+COVERAGE_UNCHECKED = "غير مفحوص"
+COVERAGE_COVERED = "مغطّى"
+COVERAGE_PARTIAL = "جزئي"
+COVERAGE_MISSING = "غير مغطّى"
+COVERAGE_OPTIONS = [
+    COVERAGE_UNCHECKED, COVERAGE_COVERED, COVERAGE_PARTIAL, COVERAGE_MISSING,
 ]
 
 LEGACY_COMPLIANCE_COLUMNS = [
@@ -51,6 +64,8 @@ DEFAULT_COMPLIANCE_DF = pd.DataFrame({
     "استراتيجية الاستجابة": [""],
     "الالتزام": ["بانتظار التحقق"],
     "الشهادة المطلوبة": [""],
+    "التغطية": [COVERAGE_UNCHECKED],
+    "القسم المغطّي": [""],
 })
 
 
@@ -82,6 +97,7 @@ def migrate_compliance_df(df: "pd.DataFrame") -> "pd.DataFrame":
         "الالتزام": "بانتظار التحقق",
         "التصنيف": "Technical",
         "الأهمية": "Medium",
+        "التغطية": COVERAGE_UNCHECKED,
     }
     for col in COMPLIANCE_COLUMNS:
         if col not in out.columns:
