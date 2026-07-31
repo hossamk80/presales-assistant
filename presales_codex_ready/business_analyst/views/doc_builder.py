@@ -36,6 +36,9 @@ from utils.state import (
 
 PLACEHOLDER_RE = re.compile(r"\[.+?\]")
 
+# عدد تبادلات السؤال والجواب المحفوظة لكل قسم قبل إسقاط الأقدم.
+QA_THREAD_LIMIT = 5
+
 
 def _has_placeholders(*texts) -> bool:
     return any(PLACEHOLDER_RE.search(str(x)) for x in texts)
@@ -510,7 +513,7 @@ def _render_side_assistant(sec: dict, model: str):
                     _apply_refinement(sec, label, model)
                     st.rerun()
 
-        c_req, c_btn = st.columns([4, 1])
+        c_req, c_apply, c_ask = st.columns([4, 1, 1])
         with c_req:
             request = st.text_input(
                 t("db.assistant"),
@@ -518,13 +521,24 @@ def _render_side_assistant(sec: dict, model: str):
                 key=f"refine_req_{key}",
                 label_visibility="collapsed",
             )
-        with c_btn:
+        with c_apply:
             go = st.button(t("db.refine"), key=f"refine_{key}",
                            type="primary", width="stretch")
+        with c_ask:
+            # السؤال والتعديل زرّان منفصلان عمداً: السؤال لا يمسّ نص القسم،
+            # وخلطهما كان يجعل "هل غطّينا شرط السعودة؟" يُعيد كتابة القسم.
+            ask = st.button(t("db.ask"), key=f"ask_{key}", width="stretch",
+                            help=t("db.ask_help"))
 
         if go and request.strip():
             _apply_refinement(sec, request.strip(), model)
             st.rerun()
+
+        if ask and request.strip():
+            _answer_question(sec, request.strip(), model)
+            st.rerun()
+
+        _render_qa_thread(key)
 
         undo_key = f"_undo_{ckey}"
         if st.session_state.get(undo_key):
@@ -532,6 +546,35 @@ def _render_side_assistant(sec: dict, model: str):
                 st.session_state[ckey] = st.session_state.pop(undo_key)
                 st.session_state.pop(f"ta_{key}", None)
                 st.rerun()
+
+
+def _render_qa_thread(key: str):
+    """
+    آخر تبادلات السؤال والجواب لهذا القسم.
+
+    نقاش عابر لا يُحفظ مع المنافسة: المُخرَج هو نص القسم، والحوار وسيلة إليه.
+    """
+    thread = st.session_state.get(f"_qa_{key}") or []
+    if not thread:
+        return
+
+    st.divider()
+    for question, answer in thread:
+        st.markdown(f"**❓ {question}**")
+        st.markdown(answer)
+    if st.button(f"🧹 {t('db.qa_clear')}", key=f"qa_clear_{key}"):
+        st.session_state.pop(f"_qa_{key}", None)
+        st.rerun()
+
+
+def _assistant_context(sec: dict) -> str:
+    """
+    سياق المنافسة الذي يعمل عليه المساعد الجانبي.
+
+    بدونه كان "أضف مؤشرات أداء" يُنتج مؤشرات عامة بدل مستويات الخدمة المطلوبة
+    في هذه الكراسة بالذات — وهو ما يُفقد درجات بدل أن يكسبها.
+    """
+    return _project_context_block() + _kb_context(sec)
 
 
 def _apply_refinement(sec: dict, request: str, model: str):
@@ -543,6 +586,8 @@ def _apply_refinement(sec: dict, request: str, model: str):
         revised = ai_generate(
             build_prompt("refine", _language(), content=current, edit_request=request),
             model_choice=model,
+            rfp_context=st.session_state.get("rfp_raw_text", ""),
+            extra_context=_assistant_context(sec),
             language=_language(),
         )
     if not revised:
@@ -551,6 +596,33 @@ def _apply_refinement(sec: dict, request: str, model: str):
     st.session_state[f"_undo_{ckey}"] = current
     st.session_state[ckey] = revised
     st.session_state.pop(f"ta_{sec['key']}", None)
+
+
+def _answer_question(sec: dict, question: str, model: str):
+    """
+    يجيب عن سؤال حول القسم **دون المساس بنصه**.
+
+    السؤال المكتوب في خانة التعديل كان يُعامَل أمراً بالتحرير، فيُعاد كتابة
+    القسم وقد يُحقن الجواب داخل نص العرض — والمستخدم يفقد عمله ولا ينقذه إلا
+    التراجع.
+    """
+    current = str(st.session_state.get(section_content_key(sec["key"]), "")).strip()
+
+    with st.spinner(t("db.asking")):
+        answer = ai_generate(
+            build_prompt("ask", _language(), content=current, question=question),
+            model_choice=model,
+            rfp_context=st.session_state.get("rfp_raw_text", ""),
+            extra_context=_assistant_context(sec),
+            language=_language(),
+        )
+    if not answer:
+        return
+
+    thread_key = f"_qa_{sec['key']}"
+    st.session_state[thread_key] = (
+        st.session_state.get(thread_key, []) + [(question, answer)]
+    )[-QA_THREAD_LIMIT:]
 
 
 # ─── التصدير ──────────────────────────────────────────────────────────────────

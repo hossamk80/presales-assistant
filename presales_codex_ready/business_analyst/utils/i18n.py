@@ -413,6 +413,13 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "db.refine": {"ar": "✨ نقّح", "en": "✨ Refine"},
     "db.refining": {"ar": "جاري التنقيح...", "en": "Refining..."},
+    "db.ask": {"ar": "💬 اسأل", "en": "💬 Ask"},
+    "db.ask_help": {
+        "ar": "يجيب عن سؤالك دون تعديل نص القسم.",
+        "en": "Answers your question without touching the section text.",
+    },
+    "db.asking": {"ar": "جاري الإجابة...", "en": "Thinking..."},
+    "db.qa_clear": {"ar": "امسح النقاش", "en": "Clear discussion"},
     "db.quick_concise": {"ar": "أكثر إيجازاً", "en": "More concise"},
     "db.quick_kpis": {"ar": "أضف مؤشرات أداء", "en": "Add KPIs"},
     "db.quick_risk": {"ar": "أبرز إدارة المخاطر", "en": "Emphasize risk"},
