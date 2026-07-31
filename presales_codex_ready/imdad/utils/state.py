@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.ai_engine import DEFAULT_LANGUAGE, DEFAULT_MODEL
+from utils.i18n import DEFAULT_UI_LANGUAGE
 
 
 def _env_api_key() -> str:
@@ -19,21 +20,134 @@ def _env_api_key() -> str:
     """
     return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
 
-# ─── Default DataFrames ────────────────────────────────────────────────────────
+# ─── جدول الامتثال ─────────────────────────────────────────────────────────────
+# الأعمدة تتبع مخطط مصفوفة الامتثال الموحّد. عمود "الالتزام" إضافة خاصة بنا:
+# قرار بشري لا يفترضه النموذج، ويبقى إلى جانب استراتيجية الاستجابة المقترحة.
+COMPLIANCE_COLUMNS = [
+    "المعرّف",
+    "التصنيف",
+    "مرجع البند",
+    "المتطلب",
+    "الأهمية",
+    "استراتيجية الاستجابة",
+    "الالتزام",
+    "الشهادة المطلوبة",
+]
+
+LEGACY_COMPLIANCE_COLUMNS = [
+    "المتطلب التقني", "الالتزام", "التبرير / الملاحظة", "الشهادة المطلوبة",
+]
+
+COMPLIANCE_STATUS_OPTIONS = ["نعم", "جزئي", "لا", "بانتظار التحقق"]
+CRITICALITY_OPTIONS = ["High", "Medium", "Low"]
+COMPLIANCE_CATEGORY_OPTIONS = ["Technical", "Operational", "Administrative", "Legal"]
+
 DEFAULT_COMPLIANCE_DF = pd.DataFrame({
-    "المتطلب التقني": [""],
-    "الالتزام": ["نعم"],
-    "التبرير / الملاحظة": [""],
-    "الشهادة المطلوبة": [""]
+    "المعرّف": [""],
+    "التصنيف": [""],
+    "مرجع البند": [""],
+    "المتطلب": [""],
+    "الأهمية": [""],
+    "استراتيجية الاستجابة": [""],
+    "الالتزام": ["بانتظار التحقق"],
+    "الشهادة المطلوبة": [""],
 })
 
+
+def migrate_compliance_df(df: "pd.DataFrame") -> "pd.DataFrame":
+    """
+    يرقّي جدول امتثال محفوظاً بالشكل القديم إلى مخطط المصفوفة الموسّع.
+
+    الشكل القديم أربعة أعمدة. بدون الترقية يفشل محرر البيانات على أعمدة لا
+    يجدها وتضيع صفوف المستخدم.
+    """
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_COMPLIANCE_DF.copy()
+    if list(df.columns) == COMPLIANCE_COLUMNS:
+        return df
+
+    out = df.copy()
+    # "المتطلب التقني" القديم صار "المتطلب"، و"التبرير" صار استراتيجية الاستجابة
+    renames = {
+        "المتطلب التقني": "المتطلب",
+        "التبرير / الملاحظة": "استراتيجية الاستجابة",
+    }
+    for old, new in renames.items():
+        if old in out.columns and new not in out.columns:
+            out = out.rename(columns={old: new})
+
+    # أعمدة القوائم المنسدلة تحتاج قيمة صالحة وإلا عرضها المحرر "None".
+    # هذه قيم محايدة لصفوف مُرقّاة، لا تقييم — الجدول يُراجَع يدوياً بأي حال.
+    defaults = {
+        "الالتزام": "بانتظار التحقق",
+        "التصنيف": "Technical",
+        "الأهمية": "Medium",
+    }
+    for col in COMPLIANCE_COLUMNS:
+        if col not in out.columns:
+            out[col] = defaults.get(col, "")
+        elif col in defaults:
+            out[col] = out[col].replace("", defaults[col]).fillna(defaults[col])
+
+    return out[COMPLIANCE_COLUMNS]
+
+# ─── جدول الكميات ──────────────────────────────────────────────────────────────
+# الأعمدة تتبع مخطط الاستخراج الموحّد (9 حقول) لا الشكل المختصر السابق.
+BOQ_COLUMNS = [
+    "رقم البند",
+    "التصنيف",
+    "البند",
+    "الوحدة",
+    "الوصف",
+    "المواصفات",
+    "كود البناء",
+    "الكمية",
+    "القائمة الإلزامية",
+]
+
+# أعمدة الشكل القديم — تُستخدم للكشف عن جداول محفوظة قبل توسيع المخطط
+LEGACY_BOQ_COLUMNS = ["البند", "الوصف", "الكمية", "الوحدة", "ملاحظات"]
+
 DEFAULT_BOQ_DF = pd.DataFrame({
+    "رقم البند": [""],
+    "التصنيف": [""],
     "البند": [""],
-    "الوصف": [""],
-    "الكمية": [1],
     "الوحدة": [""],
-    "ملاحظات": [""]
+    "الوصف": [""],
+    "المواصفات": [""],
+    "كود البناء": [""],
+    "الكمية": [1],
+    "القائمة الإلزامية": [False],
 })
+
+
+def migrate_boq_df(df: "pd.DataFrame") -> "pd.DataFrame":
+    """
+    يرقّي جدول كميات محفوظاً بالشكل القديم إلى المخطط الموسّع.
+
+    المنافسات المحفوظة قبل هذا التوسيع تحمل خمسة أعمدة فقط. بدون الترقية
+    يُعرَض الجدول بأعمدة مفقودة ويفشل محرر البيانات على أعمدة لا يجدها.
+    """
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_BOQ_DF.copy()
+    if list(df.columns) == BOQ_COLUMNS:
+        return df
+
+    out = df.copy()
+    # "ملاحظات" القديمة أقرب معنى إلى "المواصفات" في المخطط الجديد
+    if "ملاحظات" in out.columns and "المواصفات" not in out.columns:
+        out = out.rename(columns={"ملاحظات": "المواصفات"})
+
+    for col in BOQ_COLUMNS:
+        if col not in out.columns:
+            if col == "الكمية":
+                out[col] = 1
+            elif col == "القائمة الإلزامية":
+                out[col] = False
+            else:
+                out[col] = ""
+
+    return out[BOQ_COLUMNS]
 
 # ─── هيكل العرض الفني ──────────────────────────────────────────────────────────
 # كل قسم: key فريد · title العنوان · include هل يُدرج · kind نوع المحتوى
@@ -75,6 +189,87 @@ def section_content_key(key: str) -> str:
     """مفتاح تخزين محتوى القسم في session_state."""
     return f"sec_{key}"
 
+
+# ─── أدوار المرفقات ────────────────────────────────────────────────────────────
+# تُحلَّل كل مرفقات المنافسة معاً، لكن بعض التعليمات تحتاج تمييز الكراسة عن
+# ملاحقها عن ملفات الكميات، فنحفظ نص كل دور على حدة إلى جانب النص المدموج.
+ATTACHMENT_ROLES = {
+    "rfp": "كراسة الشروط",
+    "annex": "ملحق فني / مواصفات",
+    "boq": "جدول الكميات",
+    "other": "مرفق آخر",
+}
+DEFAULT_ROLE = "rfp"
+
+# دلائل اسم الملف لترجيح الدور تلقائياً (يبقى قابلاً للتعديل يدوياً)
+_ROLE_HINTS = {
+    "boq": ["boq", "كميات", "الكميات", "bill of quant", "جدول الكمي", "أسعار", "اسعار", "pricing"],
+    "annex": ["annex", "ملحق", "الملحق", "مواصفات", "specification", "spec", "sow", "نطاق"],
+    "rfp": ["rfp", "كراسة", "الكراسة", "شروط", "tender", "منافسة", "itt"],
+}
+
+
+def guess_attachment_role(file_name: str) -> str:
+    """يرجّح دور المرفق من اسمه وامتداده."""
+    name = (file_name or "").lower()
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+
+    for role, hints in _ROLE_HINTS.items():
+        if any(h in name for h in hints):
+            return role
+
+    # جداول البيانات في كراسات اعتماد شبه دائماً جداول كميات
+    if ext in ("xlsx", "xls", "csv"):
+        return "boq"
+    return DEFAULT_ROLE
+
+
+def role_text(role: str) -> str:
+    """النص المدموج لكل المرفقات المصنّفة بهذا الدور."""
+    texts = st.session_state.get("attachment_texts") or {}
+    roles = st.session_state.get("attachment_roles") or {}
+    parts = [texts[name] for name, r in roles.items() if r == role and name in texts]
+    return "\n\n".join(parts).strip()
+
+
+def project_context_block() -> str:
+    """
+    السياق الموحّد للمشروع (الجهة، الموعد، التسليمات، الغرامات، المحتوى المحلي).
+
+    مشترك بين كاتب الأقسام ولجنة المراجعة: كلاهما يحتاج قيود المنافسة الفعلية
+    بدل استنتاجها من نص الكراسة الخام في كل استدعاء.
+    """
+    ctx = st.session_state.get("project_context") or {}
+    if not ctx:
+        return ""
+
+    lines = []
+    for label, key in (
+        ("المشروع", "project_title"),
+        ("الجهة المصدِرة", "issuing_entity"),
+        ("الموعد النهائي", "submission_deadline"),
+        ("ملخص النطاق", "scope_summary"),
+        ("متطلبات المحتوى المحلي", "local_content_requirements"),
+    ):
+        value = str(ctx.get(key, "")).strip()
+        if value:
+            lines.append(f"{label}: {value}")
+
+    for label, key in (
+        ("التسليمات الرئيسية", "key_deliverables"),
+        ("القيود الفنية", "technical_constraints"),
+        ("الغرامات التعاقدية", "contractual_penalties"),
+        ("الشهادات المطلوبة", "required_certifications"),
+    ):
+        values = ctx.get(key) or []
+        if values:
+            lines.append(f"{label}: " + " · ".join(str(v) for v in values))
+
+    if not lines:
+        return ""
+    return "\n\n--- سياق المشروع الموحّد ---\n" + "\n".join(lines)
+
+
 # ─── Schema: (key, default_value) ─────────────────────────────────────────────
 STATE_SCHEMA = {
     # Navigation
@@ -86,6 +281,7 @@ STATE_SCHEMA = {
     "api_claude": "",
     "ai_model_preference": DEFAULT_MODEL,
     "output_language": DEFAULT_LANGUAGE,
+    "ui_language": DEFAULT_UI_LANGUAGE,
 
     # Company Profile
     "c_name": "",
@@ -100,8 +296,14 @@ STATE_SCHEMA = {
     "c_word_template_bytes": None,
 
     # RFP Analysis
+    # rfp_raw_text يظل النص المدموج لكل المرفقات (يستهلكه كل التحليل).
+    # النصوص المفصولة حسب الدور تُستخدم حين تحتاج التعليمات تمييز
+    # الكراسة عن ملاحقها عن ملفات الكميات.
     "rfp_raw_text": "",
+    "attachment_texts": {},
+    "attachment_roles": {},
     "rfp_file_names": [],
+    "project_context": {},
     "analysis_gonogo": "",
     "sum_gonogo": "",
     "evaluation_matrix": "",
@@ -123,10 +325,12 @@ STATE_SCHEMA = {
 
     # Proposal Outline
     "proposal_sections": DEFAULT_SECTIONS,
-    "outline_source": "افتراضي",
+    "outline_source": "default",
+    "proposal_title": "",
 
     # Pre-submission Review
     "review_findings": [],
+    "review_scores": {},
     "review_ran_at": "",
 
     # Tables
@@ -145,13 +349,13 @@ def get_sections() -> list:
     return [dict(s) for s in sections]
 
 
-def set_sections(sections: list, source: str = "مخصص"):
+def set_sections(sections: list, source: str = "custom"):
     st.session_state["proposal_sections"] = [dict(s) for s in sections]
     st.session_state["outline_source"] = source
 
 
 def reset_sections():
-    set_sections(DEFAULT_SECTIONS, source="افتراضي")
+    set_sections(DEFAULT_SECTIONS, source="default")
 
 
 def init_state():
@@ -164,7 +368,8 @@ def init_state():
 def reset_analysis():
     """Clear analysis results while keeping company profile and API keys."""
     analysis_keys = [
-        "rfp_raw_text", "rfp_file_names", "analysis_gonogo", "sum_gonogo",
+        "rfp_raw_text", "attachment_texts", "attachment_roles", "project_context",
+        "rfp_file_names", "analysis_gonogo", "sum_gonogo",
         "evaluation_matrix", "sum_eval", "compliance_check", "sum_comp",
         "risk_register", "sec_cover", "sec_exec", "sec_scope",
         "sec_methodology", "sec_gov", "sec_plan", "sec_team", "sec_external",
@@ -179,6 +384,7 @@ def reset_analysis():
     st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
     st.session_state["review_findings"] = []
+    st.session_state["review_scores"] = {}
     st.session_state["review_ran_at"] = ""
     reset_sections()
 
@@ -188,15 +394,16 @@ def get_state_snapshot() -> dict:
     snapshot = {}
     for key in STATE_SCHEMA:
         val = st.session_state.get(key)
-        if isinstance(val, (str, list, bool, int, float)):
+        if isinstance(val, (str, list, dict, bool, int, float)):
             snapshot[key] = val
         elif isinstance(val, pd.DataFrame):
             snapshot[key] = val.to_dict(orient="records")
 
-    # أقسام أضافها الذكاء الاصطناعي ديناميكياً ليست ضمن المخطط الثابت
+    # مفاتيح ديناميكية خارج المخطط الثابت: أقسام أضافها النموذج (sec_ai_*)
+    # وتوجيهات الكتابة لكل قسم (steer_*). بدونها يضيع التوجيه بتبديل المنافسة.
     snapshot["_dynamic_sections"] = {
         k: v for k, v in st.session_state.items()
-        if k.startswith("sec_ai_") and isinstance(v, str)
+        if k.startswith(("sec_ai_", "steer_")) and isinstance(v, str)
     }
     return snapshot
 
@@ -212,7 +419,14 @@ def load_state_snapshot(data: dict):
         if isinstance(default, pd.DataFrame):
             if isinstance(val, list):
                 try:
-                    st.session_state[key] = pd.DataFrame(val)
+                    loaded = pd.DataFrame(val)
+                    # منافسات محفوظة قبل توسيع مخطط الكميات تحمل الأعمدة القديمة
+                    if key == "df_boq":
+                        st.session_state[key] = migrate_boq_df(loaded)
+                    elif key == "df_compliance":
+                        st.session_state[key] = migrate_compliance_df(loaded)
+                    else:
+                        st.session_state[key] = loaded
                 except Exception:
                     pass
         elif type(default) is type(val) or (isinstance(default, str) and isinstance(val, str)):
@@ -222,6 +436,8 @@ def load_state_snapshot(data: dict):
         st.session_state[key] = val
 
     # مفاتيح المحرّرات تحمل نص الجلسة السابقة — نُبطلها ليعرض كلٌّ منها المحمَّل
+    # مفاتيح المحرّرات تحمل نص الجلسة السابقة. توجيهات الكتابة (steer_*)
+    # مستثناة لأنها حُمِّلت للتوّ من اللقطة أعلاه.
     for key in [k for k in list(st.session_state) if k.startswith(("ta_", "de_", "inc_"))]:
         del st.session_state[key]
 

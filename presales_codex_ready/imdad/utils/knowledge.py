@@ -117,11 +117,9 @@ def ingest_file(file, category: str) -> Optional[int]:
     يستخرج نص ملف ويقسّمه ويضمّنه ويخزّنه.
     يُرجع عدد المقاطع المخزّنة، أو None عند الفشل.
     """
-    from utils.file_handler import extract_text_from_files
+    from utils.file_handler import _extract_single
 
-    text, _ = extract_text_from_files([file])
-    # نزع ترويسة اسم الملف التي يضيفها المستخرج
-    text = text.split("===\n", 1)[-1].strip() if "===" in text else text.strip()
+    text = _extract_single(file).strip()
 
     if not text:
         st.warning(f"⚠️ لم يُستخرج نص من `{file.name}` — لم يُضَف للمستودع.")

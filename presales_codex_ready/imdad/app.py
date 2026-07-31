@@ -18,6 +18,7 @@ st.set_page_config(
 from utils.state import init_state, load_company_snapshot
 from utils.ai_engine import estimate_tokens
 from utils import db
+from utils.i18n import t, ui_is_rtl
 
 # ─── Initialize Session State ─────────────────────────────────────────────────
 init_state()
@@ -32,6 +33,10 @@ if not st.session_state.get("_company_loaded"):
     st.session_state["_company_loaded"] = True
 
 # ─── Global Styles ────────────────────────────────────────────────────────────
+# الاتجاه يتبع لغة الواجهة: عربي/كليهما من اليمين، إنجليزي من اليسار.
+_DIR = "rtl" if ui_is_rtl() else "ltr"
+_SIDE = "right" if ui_is_rtl() else "left"
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap');
@@ -85,8 +90,8 @@ span[class*="material-symbols"] {
 .stTextInput, .stTextArea, .stSelectbox,
 .stRadio, .stCheckbox, .stExpander,
 .stDataFrame, .stMarkdown {
-    direction: rtl !important;
-    text-align: right !important;
+    direction: rtl;
+    text-align: right;
 }
 
 /* ── Sidebar ── */
@@ -111,8 +116,8 @@ span[class*="material-symbols"] {
 /* ── Inputs ── */
 .stTextInput input,
 .stTextArea textarea {
-    direction: rtl !important;
-    text-align: right !important;
+    direction: rtl;
+    text-align: right;
     background: #FFFFFF !important;
     border: 1.5px solid #CBD5E1 !important;
     border-radius: 8px !important;
@@ -261,42 +266,66 @@ hr { border-color: #E2E8F0 !important; }
 
 /* ── Select boxes ── */
 .stSelectbox [data-baseweb="select"] {
-    direction: rtl !important;
+    direction: rtl;
     font-family: 'Tajawal', sans-serif !important;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
+# ─── اتجاه الواجهة ───────────────────────────────────────────────────────────
+# يُلحق بعد الأنماط الثابتة فيغلبها بترتيب الورود. عربي/كليهما من اليمين،
+# إنجليزي خالص من اليسار.
+st.markdown(
+    f"""<style>
+    .stApp, .main, .block-container, [data-testid="stSidebar"],
+    .stTextInput, .stTextArea, .stSelectbox, .stRadio, .stCheckbox,
+    .stExpander, .stDataFrame, .stMarkdown,
+    .stTextInput input, .stTextArea textarea,
+    .stSelectbox [data-baseweb="select"] {{
+        direction: {_DIR} !important;
+        text-align: {_SIDE} !important;
+    }}
+    </style>""",
+    unsafe_allow_html=True,
+)
+
+
+# ─── سجل الصفحات ──────────────────────────────────────────────────────────────
+# المفتاح ثابت لا يتغيّر مع اللغة؛ التسمية تأتي من i18n وقت الرسم.
+NAV_PAGES = {
+    "dashboard": "🏠",
+    "tenders": "📁",
+    "workspace": "🚀",
+    "company": "🏢",
+    "settings": "⚙️",
+    "data": "💾",
+}
+
 
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     # Logo & Brand
-    st.markdown("""
-    <div style="text-align:center; padding: 16px 0 8px 0;">
+    st.markdown(
+        f"""<div style="text-align:center; padding: 16px 0 8px 0;">
         <div style="font-size: 36px;">🏢</div>
-        <div style="font-size: 20px; font-weight: 800; color: #F1F5F9; 
+        <div style="font-size: 20px; font-weight: 800; color: #F1F5F9;
                     font-family: Tajawal, sans-serif; letter-spacing: -0.5px;">
-            منصة إمداد
+            {t("side.brand")}
         </div>
         <div style="font-size: 11px; color: #64748B; font-family: Tajawal, sans-serif;">
-            Enterprise Bid Management
+            {t("side.tagline")}
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+    </div>""",
+        unsafe_allow_html=True,
+    )
 
     st.divider()
 
     nav = st.radio(
         "nav",
-        options=[
-            "🏠 لوحة التحكم",
-            "📁 المنافسات",
-            "🚀 مساحة العمل",
-            "🏢 ملف الشركة",
-            "⚙️ إعدادات النظام",
-            "💾 إدارة البيانات",
-        ],
+        options=list(NAV_PAGES),
+        format_func=lambda k: f"{NAV_PAGES[k]} {t('nav.' + k)}",
         label_visibility="collapsed",
         key="nav_radio",
     )
@@ -308,8 +337,8 @@ with st.sidebar:
     project_name = st.session_state.get("_project_name")
     st.markdown(
         f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:4px;">
-            <div>{'📂' if project_name else '📁'} &nbsp; المنافسة:
-            {project_name or 'لم تُفتح — العمل غير محفوظ'}</div>
+            <div>{'📂' if project_name else '📁'} &nbsp; {t("side.tender")}:
+            {project_name or t("side.tender_none")}</div>
         </div>""",
         unsafe_allow_html=True,
     )
@@ -318,42 +347,51 @@ with st.sidebar:
     api_ok = bool(st.session_state.get("api_gemini"))
     rfp_ok = bool(st.session_state.get("rfp_raw_text"))
 
-    st.markdown(f"""
-    <div style="font-family:Tajawal,sans-serif;font-size:12px;padding:8px 4px;">
-        <div style="margin-bottom:4px;">{'🟢' if api_ok else '🔴'} &nbsp; Gemini API: {'متصل' if api_ok else 'غير مُهيأ'}</div>
-        <div style="margin-bottom:4px;">{'🟢' if company else '🟡'} &nbsp; الشركة: {company or 'غير محددة'}</div>
-        <div>{'🟢' if rfp_ok else '⚪'} &nbsp; كراسة الشروط: {'محمّلة' if rfp_ok else 'لم تُحمَّل بعد'}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:8px 4px;">
+        <div style="margin-bottom:4px;">{'🟢' if api_ok else '🔴'} &nbsp; Gemini API:
+            {t("side.api_connected") if api_ok else t("side.api_missing")}</div>
+        <div style="margin-bottom:4px;">{'🟢' if company else '🟡'} &nbsp; {t("side.company")}:
+            {company or t("common.not_set")}</div>
+        <div>{'🟢' if rfp_ok else '⚪'} &nbsp; {t("side.rfp")}:
+            {t("side.rfp_loaded") if rfp_ok else t("side.rfp_missing")}</div>
+    </div>""",
+        unsafe_allow_html=True,
+    )
 
     if rfp_ok:
         tokens = estimate_tokens(st.session_state["rfp_raw_text"])
         st.markdown(
-            f'<div class="token-badge">التوكنز: <span>{tokens:,}</span></div>',
+            f'<div class="token-badge">{t("side.tokens")} <span>{tokens:,}</span></div>',
             unsafe_allow_html=True,
         )
 
 
 # ─── Page Routing ─────────────────────────────────────────────────────────────
-nav = st.session_state.get("nav_selection", "🏠 لوحة التحكم")
+nav = st.session_state.get("nav_selection", "dashboard")
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
-if nav == "🏠 لوحة التحكم":
-    st.title("لوحة التحكم")
-    st.markdown("مرحباً بك في **منصة إمداد** لإدارة العروض الفنية ومراحل ما قبل البيع.")
+if nav == "dashboard":
+    st.title(t("dash.title"))
+    st.markdown(t("dash.welcome"))
 
     st.divider()
 
     # KPI Cards
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        status = "✅ متصل" if st.session_state.get("api_gemini") else "❌ غير مُهيأ"
-        st.metric("Gemini API", status)
+        connected = bool(st.session_state.get("api_gemini"))
+        st.metric("Gemini API",
+                  f"✅ {t('side.api_connected')}" if connected else f"❌ {t('side.api_missing')}")
     with c2:
-        st.metric("اسم الشركة", st.session_state.get("c_name") or "—")
+        st.metric(t("dash.company_name"), st.session_state.get("c_name") or t("common.none"))
     with c3:
         rfp_text = st.session_state.get("rfp_raw_text", "")
-        st.metric("كراسة الشروط", f"{estimate_tokens(rfp_text):,} توكن" if rfp_text else "لم تُحمَّل")
+        st.metric(
+            t("side.rfp"),
+            f"{estimate_tokens(rfp_text):,} {t('dash.tokens_unit')}" if rfp_text
+            else t("dash.not_loaded"),
+        )
     with c4:
         from utils.state import get_sections, section_content_key
         included = [s for s in get_sections() if s.get("include") and s["kind"] == "ai"]
@@ -361,18 +399,17 @@ if nav == "🏠 لوحة التحكم":
             1 for s in included
             if str(st.session_state.get(section_content_key(s["key"]), "")).strip()
         )
-        st.metric("الأقسام المكتملة", f"{done} / {len(included)}")
+        st.metric(t("dash.sections_done"), f"{done} / {len(included)}")
 
     st.divider()
 
     # Quick Workflow Guide
-    st.markdown("### 🗺️ خطوات سير العمل")
+    st.markdown(f"### {t('dash.workflow')}")
     steps = [
-        ("1", "⚙️ الإعدادات", "أدخل مفتاح Gemini API وبيانات الشركة.", "#3B82F6"),
-        ("2", "📥 رفع الكراسة", "ارفع ملفات RFP واستخرج النصوص (مع OCR).", "#8B5CF6"),
-        ("3", "🤖 التحليل الذكي", "Go/No-Go والأوزان والامتثال وجدول الكميات.", "#10B981"),
-        ("4", "📄 بناء العرض", "اقترح الهيكل وصُغ كل قسم من الكراسة.", "#F59E0B"),
-        ("5", "🔍 المراجعة والتسليم", "راجع من ثلاث زوايا وصدّر Word أو PDF.", "#EF4444"),
+        (str(i), t(f"dash.step{i}"), t(f"dash.step{i}d"), color)
+        for i, color in enumerate(
+            ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444"], start=1
+        )
     ]
     cols = st.columns(5)
     for col, (num, title, desc, color) in zip(cols, steps):
@@ -390,13 +427,9 @@ if nav == "🏠 لوحة التحكم":
     st.divider()
 
     # Feature Highlights
-    st.markdown("### ✨ قدرات المنصة")
+    st.markdown(f"### {t('dash.capabilities')}")
     f1, f2, f3 = st.columns(3)
-    features = [
-        ("🤖 تحليل ذكي شامل", "Go/No-Go · مصفوفة التقييم · فجوات الامتثال"),
-        ("📄 منشئ الوثائق", "هيكل مقترح · حقن القوالب · تصدير Word و PDF"),
-        ("🔍 مراجعة ثلاثية", "فنية · تجارية · قانونية · تطبيق بنقرة"),
-    ]
+    features = [(t(f"dash.cap{i}"), t(f"dash.cap{i}d")) for i in (1, 2, 3)]
     for col, (title, desc) in zip([f1, f2, f3], features):
         with col:
             st.markdown(f"""
@@ -409,22 +442,22 @@ if nav == "🏠 لوحة التحكم":
 
 
 # ── Projects ──────────────────────────────────────────────────────────────────
-elif nav == "📁 المنافسات":
+elif nav == "tenders":
     from views import projects
     projects.render()
 
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
-elif nav == "🚀 مساحة العمل":
-    st.title("🚀 مساحة العمل")
+elif nav == "workspace":
+    st.title(f"🚀 {t('nav.workspace')}")
 
     from views import analysis, tables, doc_builder, review
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "📥 1. التحليل والمخاطر",
-        "📊 2. الامتثال وجدول الكميات",
-        "📄 3. منشئ العرض الفني",
-        "🔍 4. المراجعة والتسليم",
+        f"📥 1. {t('an.tab')}",
+        f"📊 2. {t('tb.tab')}",
+        f"📄 3. {t('db.tab')}",
+        f"🔍 4. {t('rv.tab')}",
     ])
     with tab1:
         analysis.render()
@@ -437,22 +470,22 @@ elif nav == "🚀 مساحة العمل":
 
 
 # ── Company Profile ───────────────────────────────────────────────────────────
-elif nav == "🏢 ملف الشركة":
-    st.title("🏢 ملف الشركة")
+elif nav == "company":
+    st.title(f"🏢 {t('nav.company')}")
     from views import company
     company.render()
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
-elif nav == "⚙️ إعدادات النظام":
-    st.title("⚙️ إعدادات النظام")
+elif nav == "settings":
+    st.title(f"⚙️ {t('nav.settings')}")
     from views import settings
     settings.render_settings()
 
 
 # ── Data Management ───────────────────────────────────────────────────────────
-elif nav == "💾 إدارة البيانات":
-    st.title("💾 إدارة البيانات")
+elif nav == "data":
+    st.title(f"💾 {t('nav.data')}")
     from views import settings
     settings.render_data()
 

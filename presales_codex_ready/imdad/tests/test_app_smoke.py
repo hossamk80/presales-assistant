@@ -12,14 +12,8 @@ import pytest
 APP_DIR = Path(__file__).resolve().parent.parent
 APP_FILE = APP_DIR / "app.py"
 
-NAV_PAGES = [
-    "🏠 لوحة التحكم",
-    "📁 المنافسات",
-    "🚀 مساحة العمل",
-    "🏢 ملف الشركة",
-    "⚙️ إعدادات النظام",
-    "💾 إدارة البيانات",
-]
+# مفاتيح ثابتة لا نصوص — التسمية تتغيّر مع لغة الواجهة، المفتاح لا
+NAV_PAGES = ["dashboard", "tenders", "workspace", "company", "settings", "data"]
 
 
 @pytest.fixture(autouse=True)
@@ -56,9 +50,15 @@ def test_sidebar_has_exactly_the_intended_pages():
     مجلد views/ سُمّي كذلك تحديداً كي لا يلتقطه نظام الصفحات التلقائي في
     Streamlit ويضيف عناصر تنقّل شبحية. لو أُعيد لاسم pages/ لكسر هذا الاختبار.
     """
+    from utils.i18n import t
+
     at = _run()
     assert at.radio, "لا يوجد عنصر تنقّل في الشريط الجانبي"
-    assert list(at.radio[0].options) == NAV_PAGES
+    # AppTest يعيد التسميات المنسّقة لا القيم، فنقارن بالتسميات المترجمة
+    labels = list(at.radio[0].options)
+    assert len(labels) == len(NAV_PAGES)
+    for key, label in zip(NAV_PAGES, labels):
+        assert t(f"nav.{key}") in label, f"عنصر التنقل {key} لا يطابق {label}"
 
 
 @pytest.mark.parametrize("page", NAV_PAGES)

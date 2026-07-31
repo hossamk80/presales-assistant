@@ -13,6 +13,7 @@ from utils.ai_engine import (
     DEFAULT_MODEL,
     EXTRACT_PROMPTS,
     MODEL_NAMES,
+    MANDATORY_OUTLINE_SECTIONS,
     OUTLINE_SCHEMA,
     PROMPTS,
     ai_generate,
@@ -20,26 +21,42 @@ from utils.ai_engine import (
     build_prompt,
     is_rtl,
     language_instruction,
+    outline_prompt,
 )
 from utils.file_handler import build_pdf_document, build_word_document
-from utils.state import get_sections, reset_sections, section_content_key, set_sections
+from utils.i18n import t
+from utils.state import (
+    get_sections,
+    project_context_block as _project_context_block,
+    reset_sections,
+    section_content_key,
+    set_sections,
+)
 
 PLACEHOLDER_RE = re.compile(r"\[.+?\]")
 
 
 def _has_placeholders(*texts) -> bool:
-    return any(PLACEHOLDER_RE.search(str(t)) for t in texts)
+    return any(PLACEHOLDER_RE.search(str(x)) for x in texts)
 
 
 def _model_picker(key: str) -> str:
     current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
     return st.selectbox(
-        "المحرك:",
+        t("common.engine"),
         MODEL_NAMES,
         index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
         key=key,
         label_visibility="collapsed",
     )
+
+
+def _as_int(value, default: int = 9999) -> int:
+    """section_id قد يعود نصاً من النموذج."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _slugify_key(title: str, taken: set) -> str:
@@ -57,10 +74,13 @@ def _slugify_key(title: str, taken: set) -> str:
 def _render_outline_designer():
     sections = get_sections()
 
-    with st.expander("🗂️ هيكل العرض الفني", expanded=True):
+    with st.expander(t("db.outline"), expanded=True):
         st.caption(
-            f"المصدر الحالي: **{st.session_state.get('outline_source', 'افتراضي')}** · "
-            f"{len(sections)} قسم · {sum(1 for s in sections if s.get('include'))} مُدرَج"
+            t("db.outline_source",
+              source=t("db.src." + st.session_state.get("outline_source", "default")))
+            + " · "
+            + t("db.outline_stats", total=len(sections),
+                included=sum(1 for s in sections if s.get("include")))
         )
 
         rfp = st.session_state.get("rfp_raw_text", "")
@@ -69,36 +89,40 @@ def _render_outline_designer():
             model = _model_picker("model_outline")
         with col_gen:
             propose = st.button(
-                "🤖 اقترح هيكلاً من الكراسة",
+                t("db.propose"),
                 type="primary",
                 width="stretch",
                 disabled=not rfp,
-                help=None if rfp else "ارفع كراسة الشروط أولاً من التبويب الأول.",
+                help=None if rfp else t("db.propose_hint"),
             )
         with col_reset:
-            if st.button("↩️ الافتراضي", width="stretch"):
+            if st.button(f"↩️ {t('common.default')}", width="stretch"):
                 reset_sections()
                 st.rerun()
 
         if propose:
             status = st.empty()
-            with st.spinner("جاري اقتراح الهيكل..."):
+            with st.spinner(t("db.proposing")):
                 result = ai_generate_json(
-                    EXTRACT_PROMPTS["outline"] + f"\n{language_instruction(_language())}",
+                    outline_prompt(_language()),
                     schema=OUTLINE_SCHEMA,
                     model_choice=model,
                     rfp_context=rfp,
-                    merge_key="sections",
+                    extra_context=_project_context_block(),
+                    merge_key="outline",
                     on_progress=lambda m: status.caption(f"⏳ {m}"),
                 )
             status.empty()
-            proposed = (result or {}).get("sections") or []
+            proposed = (result or {}).get("outline") or []
+            if isinstance(result, dict) and result.get("proposal_title"):
+                st.session_state["proposal_title"] = str(result["proposal_title"]).strip()
             if proposed:
                 _apply_proposed_outline(proposed)
                 st.rerun()
             elif result is not None:
-                st.warning("⚠️ لم يقترح النموذج أي أقسام.")
+                st.warning(t("db.no_sections"))
 
+        _render_mandatory_check(get_sections())
         st.divider()
         _render_section_list(sections)
 
@@ -116,8 +140,10 @@ def _apply_proposed_outline(proposed: list):
 
     taken = {s["key"] for s in head + tail}
     body = []
-    for item in proposed:
-        title = str(item.get("title", "")).strip()
+    # section_id يحدّد ترتيب المستند النهائي
+    ordered = sorted(proposed, key=lambda x: _as_int(x.get("section_id")))
+    for item in ordered:
+        title = str(item.get("section_title", "")).strip()
         if not title:
             continue
         # أعِد استخدام مفتاح قسم قائم بنفس العنوان حتى لا يضيع نصّه المكتوب
@@ -127,24 +153,61 @@ def _apply_proposed_outline(proposed: list):
         )
         key = match["key"] if match and match["key"] not in taken else _slugify_key(title, taken)
         taken.add(key)
+        points = [str(p).strip() for p in (item.get("key_points_to_address") or []) if str(p).strip()]
         body.append({
             "key": key,
             "title": title,
             "kind": "ai",
             "include": str(item.get("priority", "")) != "منخفضة",
-            "guidance": str(item.get("guidance", "")).strip(),
-            "rationale": str(item.get("rationale", "")).strip(),
+            # النقاط الجوهرية هي ما يوجّه صياغة القسم لاحقاً
+            "guidance": " · ".join(points),
+            "key_points": points,
+            "rationale": str(item.get("purpose", "")).strip(),
             "priority": str(item.get("priority", "متوسطة")),
             "prompt_key": (by_key.get(key) or {}).get("prompt_key"),
         })
 
-    set_sections(head + body + tail, source="مقترح من الكراسة")
-    st.success(f"✅ اقتُرح هيكل من **{len(body)}** قسماً. راجعه وعدّله قبل الصياغة.")
+    set_sections(head + body + tail, source="proposed")
+    st.success(t("db.proposed", n=len(body)))
+
+
+def _render_mandatory_check(sections: list):
+    """
+    ينبّه على الأقسام الإلزامية الغائبة، وعلى إدراج التسعير في العرض الفني.
+
+    معايير اعتماد تفصل الفني عن المالي، فإدراج جدول كميات في العرض الفني
+    قرار يجب أن يكون واعياً لا سهواً.
+    """
+    titles = " ".join(s["title"] for s in sections if s.get("include"))
+    missing = [name for name in MANDATORY_OUTLINE_SECTIONS
+               if not _covers(titles, name)]
+    if missing:
+        st.warning(t("db.missing_mandatory", names=" · ".join(missing)))
+
+    if any(s.get("include") and s["kind"] == "table_boq" for s in sections):
+        st.error(t("db.financial_warning"))
+
+
+def _covers(haystack: str, section_name: str) -> bool:
+    """
+    مطابقة مرنة: النموذج قد يصوغ العنوان بألفاظ مختلفة، فنكتفي بتطابق
+    كلمة دالة بدل التطابق الحرفي الذي يعطي إنذارات كاذبة.
+    """
+    keywords = {
+        "الملخص التنفيذي": ["ملخص"],
+        "مؤهلات الشركة والخبرات السابقة": ["مؤهل", "خبرا", "خبرة"],
+        "المنهجية والنهج الفني": ["منهج"],
+        "خطة العمل والجدول الزمني": ["خطة", "الجدول الزمني"],
+        "هيكل الفريق والحوكمة": ["فريق", "حوكم"],
+        "إدارة الجودة ومستويات الخدمة": ["جودة", "مستويات الخدمة", "SLA"],
+        "الالتزام بالمحتوى المحلي": ["محتوى المحلي", "المحتوى المحلي"],
+    }.get(section_name, [section_name])
+    return any(k in haystack for k in keywords)
 
 
 def _render_section_list(sections: list):
     """قائمة الأقسام مع الإدراج والترتيب والحذف."""
-    st.markdown("**الأقسام** — رتّبها واختر ما يُدرَج في المستند النهائي:")
+    st.markdown(t("db.sections_hint"))
 
     changed = False
     for i, sec in enumerate(sections):
@@ -152,7 +215,7 @@ def _render_section_list(sections: list):
 
         with c_inc:
             new_inc = st.checkbox(
-                "إدراج",
+                t("db.include"),
                 value=bool(sec.get("include")),
                 key=f"inc_{sec['key']}",
                 label_visibility="collapsed",
@@ -168,7 +231,7 @@ def _render_section_list(sections: list):
             }.get(sec["kind"], "•")
             filled = bool(st.session_state.get(section_content_key(sec["key"]), "").strip())
             mark = "🟢" if filled or sec["kind"] != "ai" else "⚪"
-            prio = f" · أولوية {sec['priority']}" if sec.get("priority") else ""
+            prio = t("db.priority", value=sec["priority"]) if sec.get("priority") else ""
             st.markdown(
                 f"{mark} {badge} **{sec['title']}**"
                 f"<span style='color:#64748B;font-size:12px'>{prio}</span>",
@@ -199,10 +262,11 @@ def _render_section_list(sections: list):
         c1, c2 = st.columns([4, 1])
         with c1:
             new_title = st.text_input(
-                "عنوان قسم جديد", placeholder="مثال: خطة نقل المعرفة", label_visibility="collapsed"
+                t("db.new_section"), placeholder=t("db.new_section_ph"),
+                label_visibility="collapsed",
             )
         with c2:
-            if st.form_submit_button("➕ أضف قسماً", width="stretch") and new_title.strip():
+            if st.form_submit_button(t("db.add_section"), width="stretch") and new_title.strip():
                 secs = get_sections()
                 key = _slugify_key(new_title.strip(), {s["key"] for s in secs})
                 tail_at = next(
@@ -247,14 +311,28 @@ def _section_prompt(sec: dict) -> str:
     if prompt_key and prompt_key in PROMPTS:
         return build_prompt(prompt_key, lang)
 
+    points = sec.get("key_points") or []
+    guidance = "\n".join(f"- {p}" for p in points) if points else (
+        sec.get("guidance") or "- غطِّ ما تقتضيه طبيعة هذا القسم في عرض فني حكومي."
+    )
     return build_prompt(
         "section", lang,
         title=sec["title"],
-        guidance=sec.get("guidance") or "غطِّ ما تقتضيه طبيعة هذا القسم في عرض فني حكومي.",
+        purpose=sec.get("rationale") or sec.get("guidance") or "—",
+        guidance=guidance,
         company_overview=company,
         eval_weights=eval_weights,
         compliance_summary=compliance,
+        user_steering=_steering(sec["key"]) or "لا توجد توجيهات إضافية.",
     )
+
+
+def _steering_key(key: str) -> str:
+    return f"steer_{key}"
+
+
+def _steering(key: str) -> str:
+    return str(st.session_state.get(_steering_key(key), "")).strip()
 
 
 def _kb_context(sec: dict) -> str:
@@ -266,11 +344,11 @@ def _kb_context(sec: dict) -> str:
 
 
 def _render_editors(sections: list):
-    st.markdown("### ✍️ محررات الأقسام")
+    st.markdown(t("db.editors"))
 
     included = [s for s in sections if s.get("include")]
     if not included:
-        st.info("لم تختر أي قسم بعد. فعّل الأقسام من قائمة الهيكل أعلاه.")
+        st.info(t("db.no_included"))
         return
 
     for sec in included:
@@ -280,13 +358,13 @@ def _render_editors(sections: list):
         if sec["kind"] == "table_compliance":
             df = st.session_state.get("df_compliance")
             n = 0 if df is None else len(df)
-            st.caption(f"📋 **{sec['title']}** — يُحقن من التبويب الثاني ({n} صف).")
+            st.caption(f"📋 **{sec['title']}** — " + t("db.table_injected", n=n))
             continue
 
         if sec["kind"] == "table_boq":
             df = st.session_state.get("df_boq")
             n = 0 if df is None else len(df)
-            st.caption(f"📦 **{sec['title']}** — يُحقن من التبويب الثاني ({n} صف).")
+            st.caption(f"📦 **{sec['title']}** — " + t("db.table_injected", n=n))
             continue
 
         if sec["kind"] == "cover":
@@ -299,16 +377,17 @@ def _render_editors(sections: list):
 def _render_cover_editor(sec: dict):
     with st.expander(f"✉️ {sec['title']}", expanded=False):
         use_template = st.radio(
-            "طريقة الإعداد:",
-            ["قالب ثابت (من ملف الشركة)", "توليد ديناميكي (AI)"],
+            t("db.cover_mode"),
+            ["template", "ai"],
+            format_func=lambda k: t("db.cover_template") if k == "template" else t("db.cover_ai"),
             key="cover_type_radio",
         )
-        st.session_state["sec_cover_use_template"] = use_template.startswith("قالب ثابت")
+        st.session_state["sec_cover_use_template"] = use_template == "template"
 
         if st.session_state["sec_cover_use_template"]:
             st.info(
-                "سيُستخدم القالب المحفوظ في **ملف الشركة**:\n\n"
-                f"{st.session_state.get('c_cover_template', '')[:300]}"
+                t("db.cover_uses") + "\n\n"
+                + st.session_state.get("c_cover_template", "")[:300]
             )
             return
 
@@ -316,9 +395,9 @@ def _render_cover_editor(sec: dict):
         with col_m:
             model = _model_picker("model_cover")
         with col_b:
-            go = st.button("⚡ توليد الخطاب", key="btn_cover", type="primary", width="stretch")
+            go = st.button(t("db.cover_generate"), key="btn_cover", type="primary", width="stretch")
         if go:
-            with st.spinner("جاري التوليد..."):
+            with st.spinner(t("common.generating")):
                 out = ai_generate(
                     f"اكتب خطاب تقديم احترافي موجز لشركة "
                     f"{st.session_state.get('c_name', 'الشركة')} للتقدم لهذه المنافسة الحكومية. "
@@ -332,7 +411,7 @@ def _render_cover_editor(sec: dict):
                 st.rerun()
 
         st.session_state["sec_cover"] = st.text_area(
-            "نص الخطاب",
+            t("db.cover_text"),
             value=st.session_state.get("sec_cover", ""),
             height=220,
             key="ta_cover",
@@ -348,24 +427,27 @@ def _render_ai_editor(sec: dict):
     with st.expander(f"{icon} {sec['title']}", expanded=False):
         if sec.get("rationale"):
             st.caption(f"💡 {sec['rationale']}")
-        if sec.get("guidance"):
-            st.caption(f"يغطي: {sec['guidance']}")
+        points = sec.get("key_points") or []
+        if points:
+            st.caption(f"**{t('db.key_points')}:** " + " · ".join(points))
+        elif sec.get("guidance"):
+            st.caption(t("db.covers", value=sec["guidance"]))
 
         col_m, col_b = st.columns([3, 1])
         with col_m:
             model = _model_picker(f"model_{key}")
         with col_b:
-            go = st.button("⚡ توليد", key=f"btn_{key}", type="primary", width="stretch")
+            go = st.button(f"⚡ {t('common.generate')}", key=f"btn_{key}", type="primary", width="stretch")
 
         if go:
             status = st.empty()
-            with st.spinner("جاري التوليد..."):
+            with st.spinner(t("common.generating")):
                 out = ai_generate(
                     _section_prompt(sec),
                     model_choice=model,
                     rfp_context=st.session_state.get("rfp_raw_text", ""),
                     on_progress=lambda m: status.caption(f"⏳ {m}"),
-                    extra_context=_kb_context(sec),
+                    extra_context=_project_context_block() + _kb_context(sec),
                     language=_language(),
                 )
             status.empty()
@@ -375,15 +457,97 @@ def _render_ai_editor(sec: dict):
                 st.session_state.pop(f"ta_{key}", None)
                 st.rerun()
 
+        # توجيه الكتابة يُحفظ مع المنافسة ويُمرَّر للنموذج عند التوليد
+        st.text_area(
+            t("db.steering"),
+            height=80,
+            placeholder=t("db.steering_ph"),
+            key=_steering_key(key),
+        )
+
         st.session_state[ckey] = st.text_area(
-            "النص (قابل للتحرير)",
+            t("db.section_text"),
             value=content,
             height=300,
             key=f"ta_{key}",
         )
 
         if _has_placeholders(st.session_state[ckey]):
-            st.warning("⚠️ يحتوي هذا القسم على نص نائب بين [ ] يحتاج تعبئة.")
+            st.warning(t("db.placeholder_warn"))
+
+        _render_side_assistant(sec, model)
+
+
+def _render_side_assistant(sec: dict, model: str):
+    """
+    المساعد الجانبي: تنقيح نص القسم وفق طلب حر من المستخدم.
+
+    يعمل على النص الحالي مهما كان مصدره — مولَّداً أو مكتوباً يدوياً — ويحفظ
+    النسخة السابقة ليتمكن المستخدم من التراجع.
+    """
+    key = sec["key"]
+    ckey = section_content_key(key)
+    current = str(st.session_state.get(ckey, "")).strip()
+
+    with st.expander(t("db.assistant"), expanded=False):
+        if not current:
+            st.info(t("db.refine_needs_text"))
+            return
+
+        quick = {
+            "concise": t("db.quick_concise"),
+            "kpis": t("db.quick_kpis"),
+            "risk": t("db.quick_risk"),
+            "formal": t("db.quick_formal"),
+        }
+        cols = st.columns(len(quick))
+        for col, (qkey, label) in zip(cols, quick.items()):
+            with col:
+                if st.button(label, key=f"quick_{qkey}_{key}", width="stretch"):
+                    _apply_refinement(sec, label, model)
+                    st.rerun()
+
+        c_req, c_btn = st.columns([4, 1])
+        with c_req:
+            request = st.text_input(
+                t("db.assistant"),
+                placeholder=t("db.assistant_ph"),
+                key=f"refine_req_{key}",
+                label_visibility="collapsed",
+            )
+        with c_btn:
+            go = st.button(t("db.refine"), key=f"refine_{key}",
+                           type="primary", width="stretch")
+
+        if go and request.strip():
+            _apply_refinement(sec, request.strip(), model)
+            st.rerun()
+
+        undo_key = f"_undo_{ckey}"
+        if st.session_state.get(undo_key):
+            if st.button(f"↩️ {t('common.undo')}", key=f"undo_refine_{key}"):
+                st.session_state[ckey] = st.session_state.pop(undo_key)
+                st.session_state.pop(f"ta_{key}", None)
+                st.rerun()
+
+
+def _apply_refinement(sec: dict, request: str, model: str):
+    """ينفّذ طلب التنقيح على نص القسم مع حفظ نسخة للتراجع."""
+    ckey = section_content_key(sec["key"])
+    current = st.session_state.get(ckey, "")
+
+    with st.spinner(t("db.refining")):
+        revised = ai_generate(
+            build_prompt("refine", _language(), content=current, edit_request=request),
+            model_choice=model,
+            language=_language(),
+        )
+    if not revised:
+        return
+
+    st.session_state[f"_undo_{ckey}"] = current
+    st.session_state[ckey] = revised
+    st.session_state.pop(f"ta_{sec['key']}", None)
 
 
 # ─── التصدير ──────────────────────────────────────────────────────────────────
@@ -419,7 +583,7 @@ def _collect_export_payload(sections: list) -> list:
 
 def _render_export(sections: list):
     st.divider()
-    st.markdown("### 📥 مراجعة وتصدير العرض الفني")
+    st.markdown(t("db.export_title"))
 
     payload = _collect_export_payload(sections)
     text_items = [p for p in payload if p["kind"] in ("cover", "ai")]
@@ -434,43 +598,44 @@ def _render_export(sections: list):
     }
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("ملف الشركة", "✅" if st.session_state.get("c_name") else "❌")
-    c2.metric("تحليل الكراسة", "✅" if st.session_state.get("rfp_raw_text") else "❌")
-    c3.metric("أقسام مكتوبة", f"{len(text_items) - len(empty_sections)} / {len(text_items)}")
-    c4.metric("لا يوجد نص ناقص", "✅" if not has_placeholders else "❌")
+    c1.metric(t("db.chk_company"), "✅" if st.session_state.get("c_name") else "❌")
+    c2.metric(t("db.chk_rfp"), "✅" if st.session_state.get("rfp_raw_text") else "❌")
+    c3.metric(t("db.chk_written"), f"{len(text_items) - len(empty_sections)} / {len(text_items)}")
+    c4.metric(t("db.chk_placeholders"), "✅" if not has_placeholders else "❌")
 
     if empty_sections:
-        st.warning("📝 أقسام مُدرَجة وفارغة: " + " · ".join(empty_sections))
+        st.warning(t("db.empty_sections") + " · ".join(empty_sections))
     if placeholder_sections:
         details = "\n".join(
             f"- **{title}**: {' · '.join(marks)}"
             for title, marks in placeholder_sections.items()
         )
-        st.error(
-            "🚨 يوجد نص بين أقواس [ ] يحتاج تعبئة يدوية قبل التصدير:\n\n" + details
-        )
+        st.error(t("db.placeholders_found") + "\n\n" + details)
 
     if st.session_state.get("c_word_template_bytes"):
-        st.success("✅ سيتم الحقن داخل قالب الشركة الرسمي (Word).")
+        st.success(t("db.template_on"))
     else:
-        st.info("💡 لا يوجد قالب مخصص. سيُصدَّر كمستند قياسي. (أضف قالباً في **ملف الشركة**).")
+        st.info(t("db.template_off"))
 
     opt1, opt2 = st.columns(2)
     with opt1:
-        include_toc = st.checkbox("إدراج فهرس المحتويات", value=True, key="exp_toc")
+        include_toc = st.checkbox(t("db.opt_toc"), value=True, key="exp_toc")
     with opt2:
-        include_pageno = st.checkbox("ترقيم الصفحات", value=True, key="exp_pageno")
+        include_pageno = st.checkbox(t("db.opt_pageno"), value=True, key="exp_pageno")
 
     company_name = st.session_state.get("c_name", "")
+    proposal_title = st.session_state.get("proposal_title", "")
+    if proposal_title:
+        st.caption(f"{t('db.proposal_title')} **{proposal_title}**")
     slug = (company_name or "Proposal").replace(" ", "_")[:20]
     blocked = has_placeholders or not payload
 
     col_w, col_p = st.columns(2)
 
     with col_w:
-        if st.button("📄 بناء ملف Word", type="primary", width="stretch", disabled=blocked):
+        if st.button(t("db.build_word"), type="primary", width="stretch", disabled=blocked):
             try:
-                with st.spinner("جاري بناء المستند..."):
+                with st.spinner(t("db.building")):
                     bio = build_word_document(
                         company_name=company_name,
                         sections=payload,
@@ -482,16 +647,16 @@ def _render_export(sections: list):
                         rtl=is_rtl(_language()),
                     )
                 st.session_state["_built_docx"] = bio.getvalue()
-                st.success("✅ تم بناء ملف Word.")
+                st.success(t("db.built_word"))
             except Exception as e:
-                st.error(f"❌ فشل بناء المستند: {e}")
+                st.error(t("db.build_failed", error=e))
                 import traceback
                 st.code(traceback.format_exc())
 
     with col_p:
-        if st.button("📕 بناء ملف PDF", type="primary", width="stretch", disabled=blocked):
+        if st.button(t("db.build_pdf"), type="primary", width="stretch", disabled=blocked):
             try:
-                with st.spinner("جاري بناء الـ PDF..."):
+                with st.spinner(t("db.building")):
                     bio = build_pdf_document(
                         company_name=company_name,
                         sections=payload,
@@ -502,14 +667,14 @@ def _render_export(sections: list):
                         rtl=is_rtl(_language()),
                     )
                 st.session_state["_built_pdf"] = bio.getvalue()
-                st.success("✅ تم بناء ملف PDF.")
+                st.success(t("db.built_pdf"))
             except ImportError as e:
                 st.error(
-                    f"❌ مكتبات الـ PDF غير مثبّتة: {e}\n\n"
-                    "شغّل: `pip install reportlab arabic-reshaper python-bidi`"
+                    t("db.pdf_missing_libs", error=e)
+                    + "\n\n`pip install reportlab arabic-reshaper python-bidi`"
                 )
             except Exception as e:
-                st.error(f"❌ فشل بناء الـ PDF: {e}")
+                st.error(t("db.build_failed", error=e))
                 import traceback
                 st.code(traceback.format_exc())
 
@@ -517,7 +682,7 @@ def _render_export(sections: list):
     with dl1:
         if st.session_state.get("_built_docx"):
             st.download_button(
-                "⬇️ تحميل Word",
+                t("db.download_word"),
                 data=st.session_state["_built_docx"],
                 file_name=f"Technical_Proposal_{slug}.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -527,7 +692,7 @@ def _render_export(sections: list):
     with dl2:
         if st.session_state.get("_built_pdf"):
             st.download_button(
-                "⬇️ تحميل PDF",
+                t("db.download_pdf"),
                 data=st.session_state["_built_pdf"],
                 file_name=f"Technical_Proposal_{slug}.pdf",
                 mime="application/pdf",
@@ -540,7 +705,7 @@ def _render_export(sections: list):
 
 
 def render():
-    st.markdown("### 📄 منشئ العرض الفني")
+    st.markdown(t("db.title"))
     _render_outline_designer()
     st.divider()
     sections = get_sections()
