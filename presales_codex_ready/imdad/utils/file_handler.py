@@ -49,16 +49,33 @@ def _ocr_pdf(file_bytes: bytes, file_name: str) -> str:
     return "\n".join(out)
 
 
+def extract_texts_per_file(files: list) -> dict:
+    """
+    يستخرج نص كل ملف على حدة: {اسم الملف: النص}.
+
+    الفصل ضروري لتصنيف المرفقات حسب دورها (كراسة / ملحق / كميات) بدل
+    التعامل معها ككتلة واحدة.
+    """
+    return {f.name: _extract_single(f) for f in files}
+
+
 def extract_text_from_files(files: list) -> tuple[str, list]:
     """
     Extract text from uploaded files. Returns (combined_text, list_of_filenames).
     Handles: PDF (with OCR fallback), DOCX/DOC, XLSX/XLS/CSV, HTML, TXT
     """
-    text_parts = []
-    file_names = []
+    per_file = extract_texts_per_file(files)
+    combined = "\n".join(
+        f"\n\n=== {name} ===\n{text}" for name, text in per_file.items()
+    )
+    return combined.strip(), list(per_file)
 
-    for file in files:
-        file_names.append(file.name)
+
+def _extract_single(file) -> str:
+    """نص ملف واحد بلا ترويسة اسم الملف."""
+    text_parts = []
+
+    for file in [file]:
         ext = file.name.rsplit(".", 1)[-1].lower()
         try:
             if ext == "pdf":
@@ -94,11 +111,11 @@ def extract_text_from_files(files: list) -> tuple[str, list]:
                             "`tesseract-ocr tesseract-ocr-ara poppler-utils`."
                         )
 
-                text_parts.append(f"\n\n=== {file.name} ===\n" + extracted)
+                text_parts.append(extracted)
 
             elif ext in ("docx", "doc"):
                 import docx2txt
-                text_parts.append(f"\n\n=== {file.name} ===\n" + docx2txt.process(file))
+                text_parts.append(docx2txt.process(file))
 
             elif ext in ("xlsx", "xls"):
                 sheets = pd.read_excel(file, sheet_name=None)
@@ -106,33 +123,33 @@ def extract_text_from_files(files: list) -> tuple[str, list]:
                     f"--- ورقة: {name} ---\n{df.to_string(index=False)}"
                     for name, df in sheets.items()
                 ]
-                text_parts.append(f"\n\n=== {file.name} (Excel) ===\n" + "\n\n".join(parts))
+                text_parts.append("\n\n".join(parts))
 
             elif ext == "csv":
                 df = pd.read_csv(file)
-                text_parts.append(f"\n\n=== {file.name} (CSV) ===\n" + df.to_string(index=False))
+                text_parts.append(df.to_string(index=False))
 
             elif ext in ("html", "htm"):
                 from bs4 import BeautifulSoup
                 content = file.getvalue().decode("utf-8", errors="replace")
                 soup = BeautifulSoup(content, "html.parser")
-                text_parts.append(f"\n\n=== {file.name} (HTML) ===\n" + soup.get_text(separator="\n"))
+                text_parts.append(soup.get_text(separator="\n"))
 
             elif ext == "txt":
                 content = file.getvalue().decode("utf-8", errors="replace")
-                text_parts.append(f"\n\n=== {file.name} ===\n" + content)
+                text_parts.append(content)
 
             elif ext in ("png", "jpg", "jpeg", "gif", "webp"):
-                text_parts.append(f"\n\n=== {file.name} ===\n[صورة — لا يمكن استخراج النص منها تلقائياً]")
+                text_parts.append("[صورة — لا يمكن استخراج النص منها تلقائياً]")
 
             else:
-                text_parts.append(f"\n\n=== {file.name} ===\n[تنسيق غير مدعوم: .{ext}]")
+                text_parts.append(f"[تنسيق غير مدعوم: .{ext}]")
 
         except Exception as e:
             st.warning(f"⚠️ فشل قراءة `{file.name}`: {e}")
-            text_parts.append(f"\n\n=== {file.name} ===\n[فشل الاستخراج: {e}]")
+            text_parts.append(f"[فشل الاستخراج: {e}]")
 
-    return "\n".join(text_parts).strip(), file_names
+    return "\n".join(text_parts).strip()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

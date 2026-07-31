@@ -27,13 +27,63 @@ DEFAULT_COMPLIANCE_DF = pd.DataFrame({
     "الشهادة المطلوبة": [""]
 })
 
+# ─── جدول الكميات ──────────────────────────────────────────────────────────────
+# الأعمدة تتبع مخطط الاستخراج الموحّد (9 حقول) لا الشكل المختصر السابق.
+BOQ_COLUMNS = [
+    "رقم البند",
+    "التصنيف",
+    "البند",
+    "الوحدة",
+    "الوصف",
+    "المواصفات",
+    "كود البناء",
+    "الكمية",
+    "القائمة الإلزامية",
+]
+
+# أعمدة الشكل القديم — تُستخدم للكشف عن جداول محفوظة قبل توسيع المخطط
+LEGACY_BOQ_COLUMNS = ["البند", "الوصف", "الكمية", "الوحدة", "ملاحظات"]
+
 DEFAULT_BOQ_DF = pd.DataFrame({
+    "رقم البند": [""],
+    "التصنيف": [""],
     "البند": [""],
-    "الوصف": [""],
-    "الكمية": [1],
     "الوحدة": [""],
-    "ملاحظات": [""]
+    "الوصف": [""],
+    "المواصفات": [""],
+    "كود البناء": [""],
+    "الكمية": [1],
+    "القائمة الإلزامية": [False],
 })
+
+
+def migrate_boq_df(df: "pd.DataFrame") -> "pd.DataFrame":
+    """
+    يرقّي جدول كميات محفوظاً بالشكل القديم إلى المخطط الموسّع.
+
+    المنافسات المحفوظة قبل هذا التوسيع تحمل خمسة أعمدة فقط. بدون الترقية
+    يُعرَض الجدول بأعمدة مفقودة ويفشل محرر البيانات على أعمدة لا يجدها.
+    """
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_BOQ_DF.copy()
+    if list(df.columns) == BOQ_COLUMNS:
+        return df
+
+    out = df.copy()
+    # "ملاحظات" القديمة أقرب معنى إلى "المواصفات" في المخطط الجديد
+    if "ملاحظات" in out.columns and "المواصفات" not in out.columns:
+        out = out.rename(columns={"ملاحظات": "المواصفات"})
+
+    for col in BOQ_COLUMNS:
+        if col not in out.columns:
+            if col == "الكمية":
+                out[col] = 1
+            elif col == "القائمة الإلزامية":
+                out[col] = False
+            else:
+                out[col] = ""
+
+    return out[BOQ_COLUMNS]
 
 # ─── هيكل العرض الفني ──────────────────────────────────────────────────────────
 # كل قسم: key فريد · title العنوان · include هل يُدرج · kind نوع المحتوى
@@ -75,6 +125,48 @@ def section_content_key(key: str) -> str:
     """مفتاح تخزين محتوى القسم في session_state."""
     return f"sec_{key}"
 
+
+# ─── أدوار المرفقات ────────────────────────────────────────────────────────────
+# تُحلَّل كل مرفقات المنافسة معاً، لكن بعض التعليمات تحتاج تمييز الكراسة عن
+# ملاحقها عن ملفات الكميات، فنحفظ نص كل دور على حدة إلى جانب النص المدموج.
+ATTACHMENT_ROLES = {
+    "rfp": "كراسة الشروط",
+    "annex": "ملحق فني / مواصفات",
+    "boq": "جدول الكميات",
+    "other": "مرفق آخر",
+}
+DEFAULT_ROLE = "rfp"
+
+# دلائل اسم الملف لترجيح الدور تلقائياً (يبقى قابلاً للتعديل يدوياً)
+_ROLE_HINTS = {
+    "boq": ["boq", "كميات", "الكميات", "bill of quant", "جدول الكمي", "أسعار", "اسعار", "pricing"],
+    "annex": ["annex", "ملحق", "الملحق", "مواصفات", "specification", "spec", "sow", "نطاق"],
+    "rfp": ["rfp", "كراسة", "الكراسة", "شروط", "tender", "منافسة", "itt"],
+}
+
+
+def guess_attachment_role(file_name: str) -> str:
+    """يرجّح دور المرفق من اسمه وامتداده."""
+    name = (file_name or "").lower()
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+
+    for role, hints in _ROLE_HINTS.items():
+        if any(h in name for h in hints):
+            return role
+
+    # جداول البيانات في كراسات اعتماد شبه دائماً جداول كميات
+    if ext in ("xlsx", "xls", "csv"):
+        return "boq"
+    return DEFAULT_ROLE
+
+
+def role_text(role: str) -> str:
+    """النص المدموج لكل المرفقات المصنّفة بهذا الدور."""
+    texts = st.session_state.get("attachment_texts") or {}
+    roles = st.session_state.get("attachment_roles") or {}
+    parts = [texts[name] for name, r in roles.items() if r == role and name in texts]
+    return "\n\n".join(parts).strip()
+
 # ─── Schema: (key, default_value) ─────────────────────────────────────────────
 STATE_SCHEMA = {
     # Navigation
@@ -100,8 +192,14 @@ STATE_SCHEMA = {
     "c_word_template_bytes": None,
 
     # RFP Analysis
+    # rfp_raw_text يظل النص المدموج لكل المرفقات (يستهلكه كل التحليل).
+    # النصوص المفصولة حسب الدور تُستخدم حين تحتاج التعليمات تمييز
+    # الكراسة عن ملاحقها عن ملفات الكميات.
     "rfp_raw_text": "",
+    "attachment_texts": {},
+    "attachment_roles": {},
     "rfp_file_names": [],
+    "project_context": {},
     "analysis_gonogo": "",
     "sum_gonogo": "",
     "evaluation_matrix": "",
@@ -164,7 +262,8 @@ def init_state():
 def reset_analysis():
     """Clear analysis results while keeping company profile and API keys."""
     analysis_keys = [
-        "rfp_raw_text", "rfp_file_names", "analysis_gonogo", "sum_gonogo",
+        "rfp_raw_text", "attachment_texts", "attachment_roles", "project_context",
+        "rfp_file_names", "analysis_gonogo", "sum_gonogo",
         "evaluation_matrix", "sum_eval", "compliance_check", "sum_comp",
         "risk_register", "sec_cover", "sec_exec", "sec_scope",
         "sec_methodology", "sec_gov", "sec_plan", "sec_team", "sec_external",
@@ -188,7 +287,7 @@ def get_state_snapshot() -> dict:
     snapshot = {}
     for key in STATE_SCHEMA:
         val = st.session_state.get(key)
-        if isinstance(val, (str, list, bool, int, float)):
+        if isinstance(val, (str, list, dict, bool, int, float)):
             snapshot[key] = val
         elif isinstance(val, pd.DataFrame):
             snapshot[key] = val.to_dict(orient="records")
@@ -212,7 +311,11 @@ def load_state_snapshot(data: dict):
         if isinstance(default, pd.DataFrame):
             if isinstance(val, list):
                 try:
-                    st.session_state[key] = pd.DataFrame(val)
+                    loaded = pd.DataFrame(val)
+                    # منافسات محفوظة قبل توسيع مخطط الكميات تحمل الأعمدة القديمة
+                    st.session_state[key] = (
+                        migrate_boq_df(loaded) if key == "df_boq" else loaded
+                    )
                 except Exception:
                     pass
         elif type(default) is type(val) or (isinstance(default, str) and isinstance(val, str)):

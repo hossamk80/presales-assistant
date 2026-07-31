@@ -47,29 +47,5 @@ def test_compliance_empty_falls_back_to_default_shape(tables):
         "المتطلب التقني", "الالتزام", "التبرير / الملاحظة", "الشهادة المطلوبة"
     ]
 
-
-def test_boq_normalizes_quantity_and_unit(tables):
-    items = [
-        {"item": "ترخيص", "quantity": 50, "unit": "ترخيص"},
-        {"item": "دعم", "quantity": "12", "unit": "شهر"},
-        {"item": "غريب", "quantity": None, "unit": "كيلو"},
-        {"item": "سيئ", "quantity": "abc", "unit": "شهر"},
-    ]
-    df = tables._boq_to_df(items)
-    assert len(df) == 4
-    assert df.iloc[1]["الكمية"] == 12          # نص رقمي يُحوَّل
-    assert df.iloc[2]["الكمية"] == 1           # كمية مفقودة -> 1
-    assert df.iloc[2]["الوحدة"] == "أخرى"      # وحدة غير معروفة
-    assert df.iloc[3]["الكمية"] == 1           # قيمة غير رقمية لا تُسقط الصف
-
-
-def test_boq_skips_unnamed_items(tables):
-    assert len(tables._boq_to_df([{"item": "", "quantity": 3, "unit": "شهر"}])) == 1
-    # صف بلا اسم يُتجاهل فيعود الجدول للشكل الافتراضي (صف فارغ واحد)
-
-
-def test_boq_units_within_allowed_set(tables):
-    items = [{"item": f"بند {i}", "quantity": 1, "unit": u}
-             for i, u in enumerate(["شهر", "سنة", "قطعة", "مجهول"])]
-    df = tables._boq_to_df(items)
-    assert set(df["الوحدة"]) <= set(tables.BOQ_UNITS)
+# ملاحظة: اختبارات جدول الكميات انتقلت إلى tests/test_phase1.py بعد توسيع
+# المخطط إلى تسعة حقول — الشكل المختصر السابق (item/notes) لم يعد مستخدماً.

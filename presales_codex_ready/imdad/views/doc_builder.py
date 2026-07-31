@@ -265,6 +265,44 @@ def _kb_context(sec: dict) -> str:
     return knowledge.build_context(query)
 
 
+def _project_context_block() -> str:
+    """
+    سياق المشروع الموحّد (الجهة، الموعد، التسليمات، الغرامات، المحتوى المحلي).
+
+    يُحقن في تعليمات كل قسم ليكتب النموذج بمعرفة قيود المنافسة الفعلية بدل
+    استنتاجها من نص الكراسة الخام في كل مرة.
+    """
+    ctx = st.session_state.get("project_context") or {}
+    if not ctx:
+        return ""
+
+    lines = []
+    for label, key in (
+        ("المشروع", "project_title"),
+        ("الجهة المصدِرة", "issuing_entity"),
+        ("الموعد النهائي", "submission_deadline"),
+        ("ملخص النطاق", "scope_summary"),
+        ("متطلبات المحتوى المحلي", "local_content_requirements"),
+    ):
+        value = str(ctx.get(key, "")).strip()
+        if value:
+            lines.append(f"{label}: {value}")
+
+    for label, key in (
+        ("التسليمات الرئيسية", "key_deliverables"),
+        ("القيود الفنية", "technical_constraints"),
+        ("الغرامات التعاقدية", "contractual_penalties"),
+        ("الشهادات المطلوبة", "required_certifications"),
+    ):
+        values = ctx.get(key) or []
+        if values:
+            lines.append(f"{label}: " + " · ".join(str(v) for v in values))
+
+    if not lines:
+        return ""
+    return "\n\n--- سياق المشروع الموحّد ---\n" + "\n".join(lines)
+
+
 def _render_editors(sections: list):
     st.markdown("### ✍️ محررات الأقسام")
 
@@ -365,7 +403,7 @@ def _render_ai_editor(sec: dict):
                     model_choice=model,
                     rfp_context=st.session_state.get("rfp_raw_text", ""),
                     on_progress=lambda m: status.caption(f"⏳ {m}"),
-                    extra_context=_kb_context(sec),
+                    extra_context=_project_context_block() + _kb_context(sec),
                     language=_language(),
                 )
             status.empty()

@@ -5,7 +5,13 @@ views/tables.py — Tab 2: Compliance Matrix + BOQ Editor
 """
 import streamlit as st
 import pandas as pd
-from utils.state import DEFAULT_COMPLIANCE_DF, DEFAULT_BOQ_DF
+from utils.state import (
+    BOQ_COLUMNS,
+    DEFAULT_BOQ_DF,
+    DEFAULT_COMPLIANCE_DF,
+    migrate_boq_df,
+    role_text,
+)
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
@@ -15,8 +21,6 @@ from utils.ai_engine import (
     ai_generate_json,
 )
 from components.ui import status_badge
-
-BOQ_UNITS = ["شهر", "سنة", "قطعة", "ترخيص", "مستخدم", "نقطة", "مشروع", "أخرى"]
 
 
 def _model_picker(key: str) -> str:
@@ -57,25 +61,51 @@ def _compliance_to_df(items: list) -> pd.DataFrame:
 
 
 def _boq_to_df(items: list) -> pd.DataFrame:
-    """تحويل البنود المستخرجة إلى شكل جدول الكميات."""
+    """
+    تحويل البنود المستخرجة إلى شكل جدول الكميات الموسّع.
+
+    الوحدة تُترك كما وردت في المصدر ولا تُجبَر على قائمة مغلقة — جداول
+    الكميات الحكومية تستخدم وحدات متنوعة، وإجبارها على "أخرى" يُفقد معلومة
+    لازمة للتسعير.
+    """
     rows = []
-    for it in items:
-        name = str(it.get("item", "")).strip()
+    for i, it in enumerate(items, start=1):
+        name = str(it.get("item_name", "")).strip()
         if not name:
             continue
         try:
             qty = float(it.get("quantity", 1) or 1)
         except (TypeError, ValueError):
             qty = 1.0
-        unit = str(it.get("unit", "")).strip()
         rows.append({
+            "رقم البند": str(it.get("item_number", "") or i).strip(),
+            "التصنيف": str(it.get("category", "")).strip(),
             "البند": name,
+            "الوحدة": str(it.get("unit", "")).strip(),
             "الوصف": str(it.get("description", "")).strip(),
+            "المواصفات": str(it.get("specifications", "")).strip(),
+            "كود البناء": str(it.get("construction_code", "")).strip(),
             "الكمية": int(qty) if qty == int(qty) else qty,
-            "الوحدة": unit if unit in BOQ_UNITS else "أخرى",
-            "ملاحظات": str(it.get("notes", "")).strip(),
+            "القائمة الإلزامية": bool(it.get("mandatory_list_flag")),
         })
-    return pd.DataFrame(rows) if rows else DEFAULT_BOQ_DF.copy()
+    return pd.DataFrame(rows)[BOQ_COLUMNS] if rows else DEFAULT_BOQ_DF.copy()
+
+
+def _mandatory_list_reference() -> str:
+    """
+    يسترجع القائمة الإلزامية للمحتوى المحلي من مستودع المعرفة إن رُفعت.
+
+    بدونها يبقى ترشيح mandatory_list_flag اجتهاداً من النموذج، وهو ما يُحذّر
+    منه في الواجهة صراحةً.
+    """
+    from utils import knowledge
+
+    if not knowledge.is_populated() or not st.session_state.get("api_gemini"):
+        return ""
+    return knowledge.build_context(
+        "القائمة الإلزامية للمحتوى المحلي المنتجات الإلزامية هيئة المحتوى المحلي",
+        top_k=4,
+    )
 
 
 def _extraction_bar(kind: str):
@@ -89,7 +119,12 @@ def _extraction_bar(kind: str):
         return
 
     is_comp = kind == "compliance"
-    label = "استخراج المتطلبات من الكراسة" if is_comp else "استخراج بنود الكميات من الكراسة"
+    label = "استخراج المتطلبات من الكراسة" if is_comp else "استخراج بنود الكميات"
+
+    # جداول الكميات غالباً في ملف مستقل — نقدّمه على النص المدموج إن وُجد
+    source = rfp if is_comp else (role_text("boq") or rfp)
+    if not is_comp and role_text("boq"):
+        st.caption("📄 المصدر: الملفات المصنّفة **جدول الكميات**.")
 
     col_model, col_btn = st.columns([3, 2])
     with col_model:
@@ -100,13 +135,24 @@ def _extraction_bar(kind: str):
     if not clicked:
         return
 
+    prompt = EXTRACT_PROMPTS["compliance_items" if is_comp else "boq_items"]
+
+    # ترشيح القائمة الإلزامية يصير مبنياً على مرجع بدل التخمين متى توفّر
+    if not is_comp:
+        reference = _mandatory_list_reference()
+        if reference:
+            prompt += (
+                "\n\n--- القائمة المرجعية للمحتوى المحلي (استند إليها في "
+                f"mandatory_list_flag) ---\n{reference}"
+            )
+
     status = st.empty()
     with st.spinner("جاري الاستخراج..."):
         result = ai_generate_json(
-            EXTRACT_PROMPTS["compliance_items" if is_comp else "boq_items"],
+            prompt,
             schema=COMPLIANCE_SCHEMA if is_comp else BOQ_SCHEMA,
             model_choice=model,
-            rfp_context=rfp,
+            rfp_context=source,
             merge_key="requirements" if is_comp else "items",
             on_progress=lambda m: status.caption(f"⏳ {m}"),
         )
@@ -183,23 +229,47 @@ def render():
         _extraction_bar("boq")
         st.divider()
 
+        # منافسات محفوظة قبل توسيع المخطط تُرقَّى عند العرض
+        boq_df = migrate_boq_df(st.session_state.get("df_boq"))
+        st.session_state["df_boq"] = boq_df
+
         col_info2, col_actions = st.columns([3, 2])
+        with col_info2:
+            flagged = int(boq_df["القائمة الإلزامية"].fillna(False).astype(bool).sum())
+            m1, m2 = st.columns(2)
+            m1.metric("إجمالي البنود", len(boq_df))
+            m2.metric("🇸🇦 مرشّح للقائمة الإلزامية", flagged)
         with col_actions:
+            st.markdown("<br>", unsafe_allow_html=True)
             if st.button("↩️ إعادة ضبط الجدول", key="reset_boq", width="stretch"):
                 st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
+                st.session_state.pop("de_boq", None)
                 st.rerun()
 
+        st.caption(
+            "⚠️ عمود **القائمة الإلزامية** ترشيح من النموذج لا حكم نهائي — تحقّق منه "
+            "مقابل القائمة الرسمية للمحتوى المحلي قبل الاعتماد. رفع القائمة الرسمية "
+            "في **مستودع المعرفة** يحسّن دقة الترشيح."
+        )
+
         edited_boq = st.data_editor(
-            st.session_state.get("df_boq", DEFAULT_BOQ_DF.copy()),
+            boq_df,
             num_rows="dynamic",
             width="stretch",
             key="de_boq",
             column_config={
-                "البند": st.column_config.TextColumn("البند / الخدمة", width="large"),
+                "رقم البند": st.column_config.TextColumn("رقم البند", width="small"),
+                "التصنيف": st.column_config.TextColumn("التصنيف"),
+                "البند": st.column_config.TextColumn("البند / الخدمة", width="medium"),
+                "الوحدة": st.column_config.TextColumn("الوحدة", width="small"),
                 "الوصف": st.column_config.TextColumn("الوصف التفصيلي", width="large"),
-                "الكمية": st.column_config.NumberColumn("الكمية", min_value=0, step=1),
-                "الوحدة": st.column_config.SelectboxColumn("الوحدة", options=BOQ_UNITS),
-                "ملاحظات": st.column_config.TextColumn("ملاحظات"),
+                "المواصفات": st.column_config.TextColumn("المواصفات الفنية", width="large"),
+                "كود البناء": st.column_config.TextColumn("كود البناء"),
+                "الكمية": st.column_config.NumberColumn("الكمية", min_value=0),
+                "القائمة الإلزامية": st.column_config.CheckboxColumn(
+                    "القائمة الإلزامية",
+                    help="هل يقع البند ضمن القائمة الإلزامية للمحتوى المحلي؟",
+                ),
             },
         )
         st.session_state["df_boq"] = edited_boq

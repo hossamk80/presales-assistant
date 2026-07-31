@@ -401,20 +401,63 @@ BOQ_SCHEMA = {
             "items": {
                 "type": "OBJECT",
                 "properties": {
-                    "item": {"type": "STRING", "description": "اسم البند أو الخدمة"},
-                    "description": {"type": "STRING", "description": "الوصف التفصيلي"},
-                    "quantity": {"type": "NUMBER"},
+                    "item_number": {
+                        "type": "STRING",
+                        "description": "الرقم التسلسلي أو رمز البند كما ورد في المصدر",
+                    },
+                    "category": {
+                        "type": "STRING",
+                        "description": "التصنيف عالي المستوى للبند",
+                    },
+                    "item_name": {"type": "STRING", "description": "عنوان مختصر للبند"},
                     "unit": {
                         "type": "STRING",
-                        "description": "وحدة القياس: شهر/سنة/قطعة/ترخيص/مستخدم/نقطة/مشروع",
+                        "description": "وحدة القياس: وحدة/شهر/خدمة/مقطوعية/قطعة …",
                     },
-                    "notes": {"type": "STRING"},
+                    "description": {"type": "STRING", "description": "الوصف الفني الكامل"},
+                    "specifications": {
+                        "type": "STRING",
+                        "description": "المواصفات الفنية التفصيلية والمعايير",
+                    },
+                    "construction_code": {
+                        "type": "STRING",
+                        "description": "كود البناء القياسي أو المرجع الكتالوجي",
+                    },
+                    "quantity": {"type": "NUMBER"},
+                    "mandatory_list_flag": {
+                        "type": "BOOLEAN",
+                        "description": (
+                            "هل يقع هذا المنتج/الخدمة ضمن القائمة الإلزامية للمحتوى "
+                            "المحلي السعودي؟ ضع true فقط عند ورود ما يدل على ذلك "
+                            "في مستندات المنافسة أو في القائمة المرجعية المرفقة."
+                        ),
+                    },
                 },
-                "required": ["item", "quantity", "unit"],
+                "required": ["item_name", "unit", "quantity", "mandatory_list_flag"],
             },
         }
     },
     "required": ["items"],
+}
+
+PROJECT_CONTEXT_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "project_title": {"type": "STRING"},
+        "issuing_entity": {"type": "STRING", "description": "الجهة الحكومية أو الخاصة المصدِرة"},
+        "submission_deadline": {"type": "STRING"},
+        "scope_summary": {"type": "STRING"},
+        "key_deliverables": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "technical_constraints": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "contractual_penalties": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "required_certifications": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "local_content_requirements": {"type": "STRING"},
+    },
+    "required": [
+        "project_title", "issuing_entity", "submission_deadline", "scope_summary",
+        "key_deliverables", "technical_constraints", "contractual_penalties",
+        "required_certifications", "local_content_requirements",
+    ],
 }
 
 OUTLINE_SCHEMA = {
@@ -636,15 +679,36 @@ EXTRACT_PROMPTS = {
 - إن ذُكرت شهادة أو وثيقة لإثبات المتطلب فاذكرها في certificate، وإلا اتركه فارغاً.
 - لا تخترع متطلبات غير واردة في النص.""",
 
-    "boq_items": """أنت محلل تكاليف عطاءات.
-استخرج من المستند المرفق بنود جدول الكميات (BOQ) — الأصناف والخدمات المطلوب تسعيرها.
+    "boq_items": """أنت أخصائي بيانات مشتريات خبير في منافسات القطاع العام السعودي
+(اعتماد وفرصة). مهمتك استخراج بيانات جدول الكميات (BOQ) الخام وهيكلتها
+وتنقيتها في مخطط موحّد.
 
 قواعد:
-- استخرج البنود كما وردت في جدول الكميات أو جدول الأسعار إن وُجد.
-- إن لم يرد جدول كميات صريح، استنتج البنود القابلة للتسعير من نطاق العمل.
-- quantity رقم. إن لم تُذكر كمية فاستخدم 1.
-- unit من: شهر، سنة، قطعة، ترخيص، مستخدم، نقطة، مشروع.
-- لا تضع أسعاراً — التسعير مسؤولية الفريق المالي.""",
+1. حلّل كل بند سطراً سطراً بدقة.
+2. الدقة المطلقة مطلوبة — لا تُسقط أي بند ولا تُقرّب أي قيمة رقمية.
+3. item_number: الرقم التسلسلي أو رمز البند كما ورد في المصدر حرفياً.
+4. quantity رقم. إن لم تُذكر كمية صراحةً فاستخدم 1.
+5. specifications و construction_code: انقلهما كما وردا؛ اترك الحقل فارغاً
+   إن لم يردا بدل اختراعهما.
+6. mandatory_list_flag: ضع true فقط إذا دلّت مستندات المنافسة أو القائمة
+   المرجعية المرفقة على أن البند ضمن القائمة الإلزامية للمحتوى المحلي.
+   عند الشك ضع false — سيراجعها فريق المشتريات يدوياً.
+7. لا تضع أسعاراً — التسعير مسؤولية الفريق المالي.
+8. إن لم يرد جدول كميات صريح، استنتج البنود القابلة للتسعير من نطاق العمل.""",
+
+    "project_context": """أنت محلل سياق كراسات أول. حلّل ودمج جميع مرفقات
+المنافسة المرفوعة (كراسة الشروط، الملاحق الفنية، المواصفات) في سياق معرفي
+واحد مُهيكل للمشروع.
+
+قواعد:
+1. استخرج عنوان المشروع، الجهة المصدِرة (حكومية أو خاصة)، الموعد النهائي
+   للتقديم، والشروط القانونية والتعاقدية.
+2. حدّد ركائز النطاق الأساسية، والتسليمات الفنية، ومتطلبات مستوى الخدمة،
+   وبنود الغرامات.
+3. تحقّق صراحةً من قيود الامتثال: قواعد المحتوى المحلي، الضمانات البنكية
+   المطلوبة، والشهادات الإلزامية.
+4. لا تخترع معلومة غير واردة في المرفقات. إن لم يرد الموعد النهائي أو أي
+   حقل آخر، اكتب "غير محدد في المرفقات".""",
 
     "outline": """أنت خبير في إعداد العروض الفنية للمنافسات الحكومية السعودية.
 اقترح هيكل العرض الفني المناسب **لهذه المنافسة تحديداً** بناءً على كراسة الشروط المرفقة.
