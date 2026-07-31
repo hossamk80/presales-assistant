@@ -132,6 +132,100 @@ def test_failed_refinement_leaves_text_untouched(builder, fake_streamlit, monkey
     assert "_undo_sec_methodology" not in fake_streamlit.session_state
 
 
+def test_refinement_receives_the_tender_context(builder, fake_streamlit, monkeypatch):
+    """
+    بلا سياق المنافسة كان "أضف مؤشرات أداء" يُنتج مؤشرات عامة بدل مستويات
+    الخدمة المطلوبة في هذه الكراسة.
+    """
+    seen = {}
+
+    def fake_generate(prompt, **kwargs):
+        seen.update(kwargs)
+        return "نص منقّح"
+
+    monkeypatch.setattr(builder, "ai_generate", fake_generate)
+    monkeypatch.setattr(builder, "_kb_context", lambda sec: "")
+    fake_streamlit.session_state.update({
+        "output_language": "ar",
+        "sec_methodology": "نص",
+        "rfp_raw_text": "الكراسة تشترط زمن استجابة 4 ساعات",
+        "project_context": {"issuing_entity": "وزارة الصحة"},
+    })
+
+    builder._apply_refinement({"key": "methodology"}, "أضف مؤشرات أداء", "Gemini 3.6 Flash")
+
+    assert "زمن استجابة 4 ساعات" in seen["rfp_context"]
+    assert "وزارة الصحة" in seen["extra_context"]
+
+
+# ─── 3.2ب سؤال المساعد ─────────────────────────────────────────────────────────
+
+
+def test_ask_prompt_forbids_rewriting_the_section(ae):
+    template = ae.PROMPTS["ask"]
+    assert "{question}" in template and "{content}" in template
+    assert "لا تُعِد كتابة القسم" in template
+    assert "لا تُخمّن" in template
+
+
+def test_question_never_touches_the_section_text(builder, fake_streamlit, monkeypatch):
+    """
+    السؤال المكتوب في خانة التعديل كان يُعامَل أمراً بالتحرير فيُتلف القسم.
+    """
+    monkeypatch.setattr(builder, "ai_generate", lambda *a, **k: "نعم، غُطّي في الفقرة الثانية.")
+    monkeypatch.setattr(builder, "_kb_context", lambda sec: "")
+    fake_streamlit.session_state.update({
+        "output_language": "ar",
+        "sec_methodology": "النص الأصلي",
+    })
+
+    builder._answer_question({"key": "methodology"}, "هل غطّينا شرط السعودة؟",
+                             "Gemini 3.6 Flash")
+
+    assert fake_streamlit.session_state["sec_methodology"] == "النص الأصلي"
+    assert "_undo_sec_methodology" not in fake_streamlit.session_state
+    thread = fake_streamlit.session_state["_qa_methodology"]
+    assert thread == [("هل غطّينا شرط السعودة؟", "نعم، غُطّي في الفقرة الثانية.")]
+
+
+def test_failed_question_records_nothing(builder, fake_streamlit, monkeypatch):
+    monkeypatch.setattr(builder, "ai_generate", lambda *a, **k: None)
+    monkeypatch.setattr(builder, "_kb_context", lambda sec: "")
+    fake_streamlit.session_state.update({"output_language": "ar", "sec_x": "نص"})
+
+    builder._answer_question({"key": "x"}, "سؤال", "Gemini 3.6 Flash")
+
+    assert "_qa_x" not in fake_streamlit.session_state
+
+
+def test_qa_thread_drops_the_oldest_exchange(builder, fake_streamlit, monkeypatch):
+    monkeypatch.setattr(builder, "ai_generate", lambda *a, **k: "جواب")
+    monkeypatch.setattr(builder, "_kb_context", lambda sec: "")
+    fake_streamlit.session_state.update({"output_language": "ar", "sec_x": "نص"})
+
+    for i in range(builder.QA_THREAD_LIMIT + 3):
+        builder._answer_question({"key": "x"}, f"سؤال {i}", "Gemini 3.6 Flash")
+
+    thread = fake_streamlit.session_state["_qa_x"]
+    assert len(thread) == builder.QA_THREAD_LIMIT
+    assert thread[0][0] == "سؤال 3"
+
+
+def test_discussion_is_not_saved_with_the_tender(fake_streamlit):
+    """النقاش وسيلة لا مُخرَج — المحفوظ نص القسم وتوجيهه فقط."""
+    from utils.state import get_state_snapshot
+
+    fake_streamlit.session_state.update({
+        "_qa_methodology": [("سؤال", "جواب")],
+        "sec_ai_methodology": "نص",
+        "steer_methodology": "توجيه",
+    })
+    dynamic = get_state_snapshot().get("_dynamic_sections", {})
+    assert "sec_ai_methodology" in dynamic
+    assert "steer_methodology" in dynamic
+    assert "_qa_methodology" not in dynamic
+
+
 # ─── 4 تقييم الوكلاء ───────────────────────────────────────────────────────────
 
 
