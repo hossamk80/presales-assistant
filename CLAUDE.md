@@ -1,5 +1,8 @@
 # تعليمات المشروع الدائمة / Standing Project Instructions
 
+المشروع: **محلل متطلبات الأعمال الذكي / Smart Business Requirements Analyst**.
+مجلد التطبيق `presales_codex_ready/business_analyst`.
+
 ## 1. ثنائية اللغة إلزامية / Bilingual is mandatory
 
 كل ما يُبنى في هذا النظام يجب أن يكون **عربي + إنجليزي**:
@@ -28,7 +31,7 @@ Finish with short bullets: what was done, what was fixed. No long prose.
 
 ## 4. تحديث ملف README / Keep README current
 
-حدّث `README.md` بآخر التغييرات مع كل دفعة إلى GitHub.
+حدّث `README.md` بآخر التغييرات مع كل دفعة إلى GitHub — بما فيه عدد الاختبارات.
 
 ## 5. لغة المحادثة / Chat language
 
@@ -40,4 +43,17 @@ Finish with short bullets: what was done, what was fixed. No long prose.
 
 - التشغيل والتحقق يتمّان عبر GitHub Actions — لا يُشترط تشغيل محلي.
 - ملفات Replit موجودة لكنها خاملة حتى نقل المشروع لاحقاً.
-- قاعدة البيانات `presales_codex_ready/business_analyst/data/analyst.db` مُستثناة من git.
+- قاعدة البيانات `presales_codex_ready/business_analyst/data/analyst.db` مُستثناة من git،
+  ومسارها قابل للتغيير بمتغيّر البيئة `ANALYST_DB_PATH`.
+
+### قواعد ثابتة في المنتج / Fixed product rules
+
+هذه ليست تفضيلات تصميم بل قيود تُفقد المنافسة إن كُسرت:
+
+- **الفني والمالي مظروفان منفصلان** — لا رقم سعري في العرض الفني. الهيكل
+  يحذّر، والوكيل التجاري يسجّلها ملاحظة حرجة.
+- **حالة الامتثال وترشيح القائمة الإلزامية قراران بشريان** — النموذج يقترح
+  الاستراتيجية ولا يفترض الالتزام.
+- **الجاهزية الإجمالية = أضعف زاوية لا المتوسط** — زاوية ساقطة واحدة تكفي
+  لرفض العرض.
+- **فشل استدعاء النموذج لا يمسح نص المستخدم** — لا كتابة إلا عند نجاح الاستدعاء.
