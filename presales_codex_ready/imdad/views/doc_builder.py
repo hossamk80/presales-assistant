@@ -13,6 +13,7 @@ from utils.ai_engine import (
     DEFAULT_MODEL,
     EXTRACT_PROMPTS,
     MODEL_NAMES,
+    MANDATORY_OUTLINE_SECTIONS,
     OUTLINE_SCHEMA,
     PROMPTS,
     ai_generate,
@@ -20,6 +21,7 @@ from utils.ai_engine import (
     build_prompt,
     is_rtl,
     language_instruction,
+    outline_prompt,
 )
 from utils.file_handler import build_pdf_document, build_word_document
 from utils.i18n import t
@@ -41,6 +43,14 @@ def _model_picker(key: str) -> str:
         key=key,
         label_visibility="collapsed",
     )
+
+
+def _as_int(value, default: int = 9999) -> int:
+    """section_id قد يعود نصاً من النموذج."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _slugify_key(title: str, taken: set) -> str:
@@ -88,21 +98,25 @@ def _render_outline_designer():
             status = st.empty()
             with st.spinner(t("db.proposing")):
                 result = ai_generate_json(
-                    EXTRACT_PROMPTS["outline"] + f"\n{language_instruction(_language())}",
+                    outline_prompt(_language()),
                     schema=OUTLINE_SCHEMA,
                     model_choice=model,
                     rfp_context=rfp,
-                    merge_key="sections",
+                    extra_context=_project_context_block(),
+                    merge_key="outline",
                     on_progress=lambda m: status.caption(f"⏳ {m}"),
                 )
             status.empty()
-            proposed = (result or {}).get("sections") or []
+            proposed = (result or {}).get("outline") or []
+            if isinstance(result, dict) and result.get("proposal_title"):
+                st.session_state["proposal_title"] = str(result["proposal_title"]).strip()
             if proposed:
                 _apply_proposed_outline(proposed)
                 st.rerun()
             elif result is not None:
                 st.warning(t("db.no_sections"))
 
+        _render_mandatory_check(get_sections())
         st.divider()
         _render_section_list(sections)
 
@@ -120,8 +134,10 @@ def _apply_proposed_outline(proposed: list):
 
     taken = {s["key"] for s in head + tail}
     body = []
-    for item in proposed:
-        title = str(item.get("title", "")).strip()
+    # section_id يحدّد ترتيب المستند النهائي
+    ordered = sorted(proposed, key=lambda x: _as_int(x.get("section_id")))
+    for item in ordered:
+        title = str(item.get("section_title", "")).strip()
         if not title:
             continue
         # أعِد استخدام مفتاح قسم قائم بنفس العنوان حتى لا يضيع نصّه المكتوب
@@ -131,19 +147,56 @@ def _apply_proposed_outline(proposed: list):
         )
         key = match["key"] if match and match["key"] not in taken else _slugify_key(title, taken)
         taken.add(key)
+        points = [str(p).strip() for p in (item.get("key_points_to_address") or []) if str(p).strip()]
         body.append({
             "key": key,
             "title": title,
             "kind": "ai",
             "include": str(item.get("priority", "")) != "منخفضة",
-            "guidance": str(item.get("guidance", "")).strip(),
-            "rationale": str(item.get("rationale", "")).strip(),
+            # النقاط الجوهرية هي ما يوجّه صياغة القسم لاحقاً
+            "guidance": " · ".join(points),
+            "key_points": points,
+            "rationale": str(item.get("purpose", "")).strip(),
             "priority": str(item.get("priority", "متوسطة")),
             "prompt_key": (by_key.get(key) or {}).get("prompt_key"),
         })
 
     set_sections(head + body + tail, source="proposed")
     st.success(t("db.proposed", n=len(body)))
+
+
+def _render_mandatory_check(sections: list):
+    """
+    ينبّه على الأقسام الإلزامية الغائبة، وعلى إدراج التسعير في العرض الفني.
+
+    معايير اعتماد تفصل الفني عن المالي، فإدراج جدول كميات في العرض الفني
+    قرار يجب أن يكون واعياً لا سهواً.
+    """
+    titles = " ".join(s["title"] for s in sections if s.get("include"))
+    missing = [name for name in MANDATORY_OUTLINE_SECTIONS
+               if not _covers(titles, name)]
+    if missing:
+        st.warning(t("db.missing_mandatory", names=" · ".join(missing)))
+
+    if any(s.get("include") and s["kind"] == "table_boq" for s in sections):
+        st.error(t("db.financial_warning"))
+
+
+def _covers(haystack: str, section_name: str) -> bool:
+    """
+    مطابقة مرنة: النموذج قد يصوغ العنوان بألفاظ مختلفة، فنكتفي بتطابق
+    كلمة دالة بدل التطابق الحرفي الذي يعطي إنذارات كاذبة.
+    """
+    keywords = {
+        "الملخص التنفيذي": ["ملخص"],
+        "مؤهلات الشركة والخبرات السابقة": ["مؤهل", "خبرا", "خبرة"],
+        "المنهجية والنهج الفني": ["منهج"],
+        "خطة العمل والجدول الزمني": ["خطة", "الجدول الزمني"],
+        "هيكل الفريق والحوكمة": ["فريق", "حوكم"],
+        "إدارة الجودة ومستويات الخدمة": ["جودة", "مستويات الخدمة", "SLA"],
+        "الالتزام بالمحتوى المحلي": ["محتوى المحلي", "المحتوى المحلي"],
+    }.get(section_name, [section_name])
+    return any(k in haystack for k in keywords)
 
 
 def _render_section_list(sections: list):
@@ -392,7 +445,10 @@ def _render_ai_editor(sec: dict):
     with st.expander(f"{icon} {sec['title']}", expanded=False):
         if sec.get("rationale"):
             st.caption(f"💡 {sec['rationale']}")
-        if sec.get("guidance"):
+        points = sec.get("key_points") or []
+        if points:
+            st.caption(f"**{t('db.key_points')}:** " + " · ".join(points))
+        elif sec.get("guidance"):
             st.caption(t("db.covers", value=sec["guidance"]))
 
         col_m, col_b = st.columns([3, 1])
@@ -504,6 +560,9 @@ def _render_export(sections: list):
         include_pageno = st.checkbox(t("db.opt_pageno"), value=True, key="exp_pageno")
 
     company_name = st.session_state.get("c_name", "")
+    proposal_title = st.session_state.get("proposal_title", "")
+    if proposal_title:
+        st.caption(f"{t('db.proposal_title')} **{proposal_title}**")
     slug = (company_name or "Proposal").replace(" ", "_")[:20]
     blocked = has_placeholders or not payload
 

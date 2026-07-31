@@ -78,6 +78,18 @@ def build_prompt(prompt_key: str, language: str = DEFAULT_LANGUAGE, **fields) ->
     )
 
 
+def outline_prompt(language: str = DEFAULT_LANGUAGE) -> str:
+    """تعليمات اقتراح الهيكل مع الأقسام الإلزامية وتعليمة اللغة."""
+    return (
+        EXTRACT_PROMPTS["outline"].format(
+            mandatory_sections="\n".join(
+                f"   - {name}" for name in MANDATORY_OUTLINE_SECTIONS
+            )
+        )
+        + f"\n{language_instruction(language)}"
+    )
+
+
 def estimate_tokens(text: str) -> int:
     """تقدير سريع محلي لعدد التوكنز (بدون استدعاء الشبكة)."""
     return int(len(str(text)) / CHARS_PER_TOKEN)
@@ -357,6 +369,9 @@ def ai_generate_json(
 
 # ─── مخططات الاستخراج ─────────────────────────────────────────────────────────
 
+COMPLIANCE_CATEGORIES = ["Technical", "Operational", "Administrative", "Legal"]
+CRITICALITY_LEVELS = ["High", "Medium", "Low"]
+
 COMPLIANCE_SCHEMA = {
     "type": "OBJECT",
     "properties": {
@@ -365,28 +380,37 @@ COMPLIANCE_SCHEMA = {
             "items": {
                 "type": "OBJECT",
                 "properties": {
-                    "requirement": {
+                    "req_id": {
                         "type": "STRING",
-                        "description": "نص المتطلب التقني أو الإداري كما ورد في الكراسة",
+                        "description": "معرّف متسلسل بصيغة REQ-001",
                     },
-                    "category": {
+                    "category": {"type": "STRING", "enum": COMPLIANCE_CATEGORIES},
+                    "clause_reference": {
                         "type": "STRING",
-                        "enum": ["تأهيل", "فني", "إداري", "مالي"],
+                        "description": "رقم البند أو الصفحة في الكراسة، أو نص فارغ",
+                    },
+                    "requirement_summary": {
+                        "type": "STRING",
+                        "description": "ملخّص المتطلب كما ورد في الكراسة",
+                    },
+                    "criticality": {"type": "STRING", "enum": CRITICALITY_LEVELS},
+                    "proposed_compliance_strategy": {
+                        "type": "STRING",
+                        "description": "كيف يستوفي عرضنا هذا المتطلب",
                     },
                     "mandatory": {
                         "type": "BOOLEAN",
-                        "description": "هل عدم استيفائه يؤدي للاستبعاد؟",
+                        "description": "هل عدم استيفائه يؤدي للاستبعاد الفوري؟",
                     },
                     "certificate": {
                         "type": "STRING",
                         "description": "الشهادة أو الوثيقة المطلوبة لإثباته، أو نص فارغ",
                     },
-                    "source_ref": {
-                        "type": "STRING",
-                        "description": "رقم البند أو الصفحة في الكراسة إن توفّر",
-                    },
                 },
-                "required": ["requirement", "category", "mandatory"],
+                "required": [
+                    "req_id", "category", "requirement_summary",
+                    "criticality", "proposed_compliance_strategy",
+                ],
             },
         }
     },
@@ -460,30 +484,52 @@ PROJECT_CONTEXT_SCHEMA = {
     ],
 }
 
+# الأقسام الإلزامية وفق معايير الشراء الحكومي السعودي (اعتماد)
+MANDATORY_OUTLINE_SECTIONS = [
+    "الملخص التنفيذي",
+    "مؤهلات الشركة والخبرات السابقة",
+    "المنهجية والنهج الفني",
+    "خطة العمل والجدول الزمني",
+    "هيكل الفريق والحوكمة",
+    "إدارة الجودة ومستويات الخدمة",
+    "الالتزام بالمحتوى المحلي",
+]
+
 OUTLINE_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        "sections": {
+        "proposal_title": {
+            "type": "STRING",
+            "description": "عنوان العرض الفني المقترح لهذه المنافسة",
+        },
+        "outline": {
             "type": "ARRAY",
             "items": {
                 "type": "OBJECT",
                 "properties": {
-                    "title": {"type": "STRING", "description": "عنوان القسم في العرض الفني"},
-                    "rationale": {
+                    "section_id": {
+                        "type": "INTEGER",
+                        "description": "ترتيب القسم في المستند، بدءاً من 1",
+                    },
+                    "section_title": {"type": "STRING", "description": "عنوان القسم"},
+                    "purpose": {
                         "type": "STRING",
-                        "description": "لماذا يلزم هذا القسم لهذه المنافسة تحديداً",
+                        "description": "وصف موجز لما يجب أن يغطيه هذا القسم",
+                    },
+                    "key_points_to_address": {
+                        "type": "ARRAY",
+                        "items": {"type": "STRING"},
+                        "description": "النقاط الجوهرية الواجب تناولها في هذا القسم",
                     },
                     "priority": {"type": "STRING", "enum": ["عالية", "متوسطة", "منخفضة"]},
-                    "guidance": {
-                        "type": "STRING",
-                        "description": "ما الذي ينبغي أن يغطيه هذا القسم في هذه المنافسة",
-                    },
                 },
-                "required": ["title", "rationale", "priority", "guidance"],
+                "required": [
+                    "section_id", "section_title", "purpose", "key_points_to_address",
+                ],
             },
-        }
+        },
     },
-    "required": ["sections"],
+    "required": ["proposal_title", "outline"],
 }
 
 REVIEW_SCHEMA = {
@@ -669,15 +715,22 @@ PROMPTS = {
 # ─── تعليمات الاستخراج المُهيكل ───────────────────────────────────────────────
 
 EXTRACT_PROMPTS = {
-    "compliance_items": """أنت مستشار امتثال في العطاءات الحكومية السعودية.
-استخرج من كراسة الشروط المرفقة **كل** متطلب يجب على مقدّم العرض إثبات التزامه به.
+    "compliance_items": """أنت مسؤول امتثال ما قبل البيع. ابنِ مصفوفة امتثال صارمة
+تربط **كل** متطلب في كراسة الشروط باستراتيجية استجابة مقترحة.
 
 قواعد:
-- بنداً واحداً لكل متطلب، بصياغة الكراسة نفسها قدر الإمكان لا بإعادة صياغة عامة.
-- صنّف كل متطلب: "تأهيل" (شرط استبعاد)، "فني"، "إداري"، "مالي".
-- ضع mandatory = true فقط لما يؤدي عدم استيفائه للاستبعاد.
-- إن ذُكرت شهادة أو وثيقة لإثبات المتطلب فاذكرها في certificate، وإلا اتركه فارغاً.
-- لا تخترع متطلبات غير واردة في النص.""",
+1. أدرج كل المتطلبات الصريحة والضمنية الواردة في سياق المنافسة.
+2. req_id: معرّف متسلسل بصيغة REQ-001، REQ-002 … بلا فجوات.
+3. category: صنّف كل متطلب إلى Technical أو Operational أو Administrative
+   أو Legal (بالإنجليزية حرفياً كما هي).
+4. criticality: High أو Medium أو Low (بالإنجليزية حرفياً).
+   High لما يؤدي عدم استيفائه للاستبعاد أو لخسارة درجات جوهرية.
+5. clause_reference: رقم البند أو الصفحة في الكراسة إن توفّر، وإلا نص فارغ.
+6. requirement_summary: بصياغة الكراسة نفسها قدر الإمكان لا بإعادة صياغة عامة.
+7. proposed_compliance_strategy: كيف يستوفي عرضنا هذا المتطلب عملياً.
+   إن لزمت معلومة لا تملكها فضعها بين أقواس مربعة [ ] ليعبّئها الفريق.
+8. mandatory = true فقط لما يؤدي عدم استيفائه للاستبعاد الفوري.
+9. لا تخترع متطلبات غير واردة في النص.""",
 
     "boq_items": """أنت أخصائي بيانات مشتريات خبير في منافسات القطاع العام السعودي
 (اعتماد وفرصة). مهمتك استخراج بيانات جدول الكميات (BOQ) الخام وهيكلتها
@@ -710,16 +763,25 @@ EXTRACT_PROMPTS = {
 4. لا تخترع معلومة غير واردة في المرفقات. إن لم يرد الموعد النهائي أو أي
    حقل آخر، اكتب "غير محدد في المرفقات".""",
 
-    "outline": """أنت خبير في إعداد العروض الفنية للمنافسات الحكومية السعودية.
-اقترح هيكل العرض الفني المناسب **لهذه المنافسة تحديداً** بناءً على كراسة الشروط المرفقة.
+    "outline": """أنت مهندس حلول أول لما قبل البيع في المشتريات الحكومية السعودية.
+بناءً على سياق المنافسة ونطاق جدول الكميات، اقترح هيكل عرض فني مُهيكلاً ورابحاً
+مُفصَّلاً **لهذه المنافسة تحديداً**.
 
 قواعد:
-- رتّب الأقسام بالترتيب الذي ستظهر به في المستند النهائي.
-- اشتقّ الأقسام من معايير التقييم ومتطلبات الكراسة، لا من قائمة عامة محفوظة.
-- إن نصّت الكراسة على أقسام أو ترتيب معيّن للعرض الفني فالتزم به حرفياً.
-- priority = "عالية" للأقسام ذات الوزن الأكبر في التقييم.
-- guidance: ما الذي يجب أن يغطيه القسم في هذه المنافسة بالذات.
-- بين 6 و 12 قسماً.""",
+1. صمّم هيكلاً منطقياً قسماً بقسم يلتزم بمعايير الشراء الحكومي السعودي
+   (إرشادات اعتماد).
+2. **افصل الجانب الفني عن التسعير فصلاً تاماً** — لا تُدرج أي قيمة مالية أو
+   سعر أو تكلفة في العرض الفني، ولا قسماً غرضه التسعير.
+3. الأقسام الإلزامية التي يجب أن يتضمنها الهيكل:
+{mandatory_sections}
+4. section_id: ترتيب القسم في المستند بدءاً من 1 بلا فجوات.
+5. purpose: وصف موجز لما يجب أن يغطيه القسم في هذه المنافسة بالذات.
+6. key_points_to_address: النقاط الجوهرية الواجب تناولها — اشتقّها من معايير
+   التقييم ومتطلبات الكراسة لا من قائمة عامة محفوظة.
+7. إن نصّت الكراسة على أقسام أو ترتيب معيّن للعرض الفني فالتزم به حرفياً
+   وأضف الأقسام الإلزامية أعلاه إن لم تتعارض معه.
+8. priority = "عالية" للأقسام ذات الوزن الأكبر في التقييم.
+9. proposal_title: عنوان مناسب للعرض الفني لهذه المنافسة.""",
 }
 
 

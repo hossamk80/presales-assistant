@@ -20,13 +20,76 @@ def _env_api_key() -> str:
     """
     return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
 
-# ─── Default DataFrames ────────────────────────────────────────────────────────
+# ─── جدول الامتثال ─────────────────────────────────────────────────────────────
+# الأعمدة تتبع مخطط مصفوفة الامتثال الموحّد. عمود "الالتزام" إضافة خاصة بنا:
+# قرار بشري لا يفترضه النموذج، ويبقى إلى جانب استراتيجية الاستجابة المقترحة.
+COMPLIANCE_COLUMNS = [
+    "المعرّف",
+    "التصنيف",
+    "مرجع البند",
+    "المتطلب",
+    "الأهمية",
+    "استراتيجية الاستجابة",
+    "الالتزام",
+    "الشهادة المطلوبة",
+]
+
+LEGACY_COMPLIANCE_COLUMNS = [
+    "المتطلب التقني", "الالتزام", "التبرير / الملاحظة", "الشهادة المطلوبة",
+]
+
+COMPLIANCE_STATUS_OPTIONS = ["نعم", "جزئي", "لا", "بانتظار التحقق"]
+CRITICALITY_OPTIONS = ["High", "Medium", "Low"]
+COMPLIANCE_CATEGORY_OPTIONS = ["Technical", "Operational", "Administrative", "Legal"]
+
 DEFAULT_COMPLIANCE_DF = pd.DataFrame({
-    "المتطلب التقني": [""],
-    "الالتزام": ["نعم"],
-    "التبرير / الملاحظة": [""],
-    "الشهادة المطلوبة": [""]
+    "المعرّف": [""],
+    "التصنيف": [""],
+    "مرجع البند": [""],
+    "المتطلب": [""],
+    "الأهمية": [""],
+    "استراتيجية الاستجابة": [""],
+    "الالتزام": ["بانتظار التحقق"],
+    "الشهادة المطلوبة": [""],
 })
+
+
+def migrate_compliance_df(df: "pd.DataFrame") -> "pd.DataFrame":
+    """
+    يرقّي جدول امتثال محفوظاً بالشكل القديم إلى مخطط المصفوفة الموسّع.
+
+    الشكل القديم أربعة أعمدة. بدون الترقية يفشل محرر البيانات على أعمدة لا
+    يجدها وتضيع صفوف المستخدم.
+    """
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_COMPLIANCE_DF.copy()
+    if list(df.columns) == COMPLIANCE_COLUMNS:
+        return df
+
+    out = df.copy()
+    # "المتطلب التقني" القديم صار "المتطلب"، و"التبرير" صار استراتيجية الاستجابة
+    renames = {
+        "المتطلب التقني": "المتطلب",
+        "التبرير / الملاحظة": "استراتيجية الاستجابة",
+    }
+    for old, new in renames.items():
+        if old in out.columns and new not in out.columns:
+            out = out.rename(columns={old: new})
+
+    # أعمدة القوائم المنسدلة تحتاج قيمة صالحة وإلا عرضها المحرر "None".
+    # هذه قيم محايدة لصفوف مُرقّاة، لا تقييم — الجدول يُراجَع يدوياً بأي حال.
+    defaults = {
+        "الالتزام": "بانتظار التحقق",
+        "التصنيف": "Technical",
+        "الأهمية": "Medium",
+    }
+    for col in COMPLIANCE_COLUMNS:
+        if col not in out.columns:
+            out[col] = defaults.get(col, "")
+        elif col in defaults:
+            out[col] = out[col].replace("", defaults[col]).fillna(defaults[col])
+
+    return out[COMPLIANCE_COLUMNS]
 
 # ─── جدول الكميات ──────────────────────────────────────────────────────────────
 # الأعمدة تتبع مخطط الاستخراج الموحّد (9 حقول) لا الشكل المختصر السابق.
@@ -224,6 +287,7 @@ STATE_SCHEMA = {
     # Proposal Outline
     "proposal_sections": DEFAULT_SECTIONS,
     "outline_source": "default",
+    "proposal_title": "",
 
     # Pre-submission Review
     "review_findings": [],
@@ -315,9 +379,12 @@ def load_state_snapshot(data: dict):
                 try:
                     loaded = pd.DataFrame(val)
                     # منافسات محفوظة قبل توسيع مخطط الكميات تحمل الأعمدة القديمة
-                    st.session_state[key] = (
-                        migrate_boq_df(loaded) if key == "df_boq" else loaded
-                    )
+                    if key == "df_boq":
+                        st.session_state[key] = migrate_boq_df(loaded)
+                    elif key == "df_compliance":
+                        st.session_state[key] = migrate_compliance_df(loaded)
+                    else:
+                        st.session_state[key] = loaded
                 except Exception:
                     pass
         elif type(default) is type(val) or (isinstance(default, str) and isinstance(val, str)):

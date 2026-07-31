@@ -311,6 +311,19 @@ UI_STRINGS: dict[str, dict[str, str]] = {
             "Adding the official list to the **Knowledge base** improves accuracy."
         ),
     },
+    "tb.high_criticality": {"ar": "🔴 أهمية عالية", "en": "🔴 High criticality"},
+    "tb.compliance_note": {
+        "ar": "⚠️ عمود **الالتزام** قرار بشري — النموذج يقترح الاستراتيجية ولا يحكم بالالتزام.",
+        "en": "⚠️ The **Compliance** column is a human decision — the model proposes a "
+              "strategy, it does not declare compliance.",
+    },
+    "tb.col_category": {"ar": "التصنيف", "en": "Category"},
+    "tb.col_clause": {"ar": "مرجع البند", "en": "Clause"},
+    "tb.col_requirement": {"ar": "المتطلب", "en": "Requirement"},
+    "tb.col_criticality": {"ar": "الأهمية", "en": "Criticality"},
+    "tb.col_strategy": {"ar": "استراتيجية الاستجابة", "en": "Compliance strategy"},
+    "tb.col_status": {"ar": "الالتزام", "en": "Compliance"},
+    "tb.col_certificate": {"ar": "الشهادة المطلوبة", "en": "Required certificate"},
     "tb.export": {"ar": "#### 📥 تصدير الجداول", "en": "#### 📥 Export tables"},
     "tb.export_comp": {"ar": "📥 تصدير Compliance Matrix (CSV)", "en": "📥 Export Compliance Matrix (CSV)"},
     "tb.export_boq": {"ar": "📥 تصدير BOQ (CSV)", "en": "📥 Export BOQ (CSV)"},
@@ -348,6 +361,18 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "db.src.default": {"ar": "افتراضي", "en": "Default"},
     "db.src.proposed": {"ar": "مقترح من الكراسة", "en": "Proposed from documents"},
     "db.src.custom": {"ar": "مخصص", "en": "Custom"},
+    "db.proposal_title": {"ar": "عنوان العرض المقترح:", "en": "Proposed title:"},
+    "db.key_points": {"ar": "النقاط الجوهرية", "en": "Key points"},
+    "db.missing_mandatory": {
+        "ar": "⚠️ أقسام إلزامية وفق معايير اعتماد غير مُدرَجة: {names}",
+        "en": "⚠️ Mandatory Etimad sections not included: {names}",
+    },
+    "db.financial_warning": {
+        "ar": "🚨 **العرض الفني يجب أن يخلو من التسعير.** جدول الكميات مُدرَج — "
+              "أدرجه فقط إن نصّت الكراسة على ذلك، وتأكد أنه بلا أسعار.",
+        "en": "🚨 **The technical proposal must contain no pricing.** A BOQ section is "
+              "included — only do so if the tender requires it, and ensure it has no prices.",
+    },
     "db.editors": {"ar": "### ✍️ محررات الأقسام", "en": "### ✍️ Section editors"},
     "db.no_included": {
         "ar": "لم تختر أي قسم بعد. فعّل الأقسام من قائمة الهيكل أعلاه.",
