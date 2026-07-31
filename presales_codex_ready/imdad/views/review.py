@@ -18,7 +18,7 @@ from utils.ai_engine import (
     build_prompt,
 )
 from utils.i18n import t
-from utils.state import get_sections, section_content_key
+from utils.state import get_sections, project_context_block, section_content_key
 
 def _language() -> str:
     return st.session_state.get("output_language", DEFAULT_LANGUAGE)
@@ -64,7 +64,7 @@ def _clamp_score(value) -> int:
 
 
 def _run_lens(lens_key: str, sections: list, model: str, report) -> list:
-    """تشغيل زاوية مراجعة واحدة وإرجاع ملاحظاتها."""
+    """تشغيل وكيل مراجعة واحد وإرجاع ملاحظاته."""
     lens = REVIEW_LENSES[lens_key]
     titles = "\n".join(f"- {s['title']}" for s in sections)
 
@@ -72,8 +72,9 @@ def _run_lens(lens_key: str, sections: list, model: str, report) -> list:
         f"{lens['prompt']}\n\n"
         f"استخدم في الحقل section أحد هذه العناوين حرفياً ولا تخترع غيرها:\n{titles}\n\n"
         f"لا تُرجع ملاحظات عامة أو إنشائية — كل ملاحظة يجب أن تشير إلى نقص أو خطأ محدد.\n"
-        f"إن كان القسم سليماً من زاويتك فلا تضف له ملاحظة.\n\n"
-        f"--- نص العرض الفني المراد مراجعته ---\n{_proposal_text(sections)}"
+        f"إن كان القسم سليماً من زاويتك فلا تضف له ملاحظة.\n"
+        f"{project_context_block()}\n\n"
+        f"--- نص العرض المراد مراجعته ---\n{_proposal_text(sections)}"
     )
 
     result = ai_generate_json(
@@ -91,6 +92,9 @@ def _run_lens(lens_key: str, sections: list, model: str, report) -> list:
             "icon": lens["icon"],
             "score": _clamp_score(result.get("readiness_score")),
             "assessment": str(result.get("assessment", "")).strip(),
+            "strengths": [
+                str(s).strip() for s in (result.get("strengths") or []) if str(s).strip()
+            ],
             "recommendations": [
                 str(r).strip() for r in (result.get("recommendations") or []) if str(r).strip()
             ],
@@ -210,17 +214,23 @@ def _render_finding(finding: dict, sections: list, model: str):
     st.divider()
 
 
-def _render_agent_scores():
-    """لوحة الوكلاء الثلاثة: درجة جاهزية وتقييم وتوصيات لكل زاوية."""
+def _overall_readiness(scores: dict) -> int:
+    """
+    الجاهزية الإجمالية أضعف زاوية لا متوسطها — زاوية واحدة ساقطة تكفي لرفض
+    العرض (تحفظ جوهري، ضمان ابتدائي ناقص)، والمتوسط يخفي ذلك خلف زاويتين قويتين.
+    """
+    values = [s["score"] for s in scores.values()]
+    return min(values) if values else 0
+
+
+def _render_agent_scores(findings: list):
+    """لوحة الوكلاء الثلاثة: درجة وتقييم ونقاط قوة وثغرات وتوصيات لكل زاوية."""
     scores = st.session_state.get("review_scores") or {}
     if not scores:
         return
 
     st.markdown(f"### {t('rv.agents')}")
-    values = [s["score"] for s in scores.values()]
-    # الجاهزية الإجمالية أضعف زاوية لا متوسطها — زاوية واحدة ساقطة تكفي
-    # لرفض العرض، فالمتوسط يخفي ذلك.
-    overall = min(values) if values else 0
+    overall = _overall_readiness(scores)
 
     cols = st.columns(len(scores) + 1)
     for col, data in zip(cols, scores.values()):
@@ -230,12 +240,23 @@ def _render_agent_scores():
     if overall < 60:
         st.error(t("rv.not_ready"))
 
-    for data in scores.values():
-        if not data["assessment"] and not data["recommendations"]:
+    for lens_key, data in scores.items():
+        gaps = [f for f in findings if f["lens"] == lens_key]
+        strengths = data.get("strengths") or []
+        if not (data["assessment"] or strengths or data["recommendations"] or gaps):
             continue
         with st.expander(f"{data['icon']} {data['label']} — {data['score']}/100"):
             if data["assessment"]:
                 st.write(data["assessment"])
+            if strengths:
+                st.markdown(f"**{t('rv.strengths')}**")
+                for item in strengths:
+                    st.markdown(f"- {item}")
+            if gaps:
+                st.markdown(f"**{t('rv.gaps')}**")
+                for gap in gaps:
+                    mark = " ✅" if gap["applied"] else ""
+                    st.markdown(f"- {gap['issue']}{mark}")
             if data["recommendations"]:
                 st.markdown(f"**{t('rv.recommendations')}**")
                 for rec in data["recommendations"]:
@@ -304,10 +325,14 @@ def render():
     if not findings:
         if st.session_state.get("review_ran_at"):
             st.success(t("rv.clean"))
+            # مراجعة بلا ملاحظات ما زالت تحمل درجات ونقاط قوة وتوصيات —
+            # الخروج المبكر هنا كان يُخفي لوحة الوكلاء كاملةً.
+            st.divider()
+            _render_agent_scores(findings)
         return
 
     st.divider()
-    _render_agent_scores()
+    _render_agent_scores(findings)
     counts = {s: sum(1 for f in findings if f["severity"] == s) for s in SEVERITY_ORDER}
     applied = sum(1 for f in findings if f["applied"])
 

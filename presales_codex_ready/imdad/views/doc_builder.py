@@ -25,7 +25,13 @@ from utils.ai_engine import (
 )
 from utils.file_handler import build_pdf_document, build_word_document
 from utils.i18n import t
-from utils.state import get_sections, reset_sections, section_content_key, set_sections
+from utils.state import (
+    get_sections,
+    project_context_block as _project_context_block,
+    reset_sections,
+    section_content_key,
+    set_sections,
+)
 
 PLACEHOLDER_RE = re.compile(r"\[.+?\]")
 
@@ -335,44 +341,6 @@ def _kb_context(sec: dict) -> str:
         return ""
     query = " ".join(filter(None, [sec.get("title"), sec.get("guidance")]))
     return knowledge.build_context(query)
-
-
-def _project_context_block() -> str:
-    """
-    سياق المشروع الموحّد (الجهة، الموعد، التسليمات، الغرامات، المحتوى المحلي).
-
-    يُحقن في تعليمات كل قسم ليكتب النموذج بمعرفة قيود المنافسة الفعلية بدل
-    استنتاجها من نص الكراسة الخام في كل مرة.
-    """
-    ctx = st.session_state.get("project_context") or {}
-    if not ctx:
-        return ""
-
-    lines = []
-    for label, key in (
-        ("المشروع", "project_title"),
-        ("الجهة المصدِرة", "issuing_entity"),
-        ("الموعد النهائي", "submission_deadline"),
-        ("ملخص النطاق", "scope_summary"),
-        ("متطلبات المحتوى المحلي", "local_content_requirements"),
-    ):
-        value = str(ctx.get(key, "")).strip()
-        if value:
-            lines.append(f"{label}: {value}")
-
-    for label, key in (
-        ("التسليمات الرئيسية", "key_deliverables"),
-        ("القيود الفنية", "technical_constraints"),
-        ("الغرامات التعاقدية", "contractual_penalties"),
-        ("الشهادات المطلوبة", "required_certifications"),
-    ):
-        values = ctx.get(key) or []
-        if values:
-            lines.append(f"{label}: " + " · ".join(str(v) for v in values))
-
-    if not lines:
-        return ""
-    return "\n\n--- سياق المشروع الموحّد ---\n" + "\n".join(lines)
 
 
 def _render_editors(sections: list):

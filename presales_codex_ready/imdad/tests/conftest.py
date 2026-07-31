@@ -35,6 +35,21 @@ class _Progress:
         pass
 
 
+class _Column:
+    """عمود تخطيط: يبتلع كل استدعاء عرض ويصلح كمدير سياق."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def __getattr__(self, name):
+        def noop(*a, **k):
+            return None
+        return noop
+
+
 class FakeStreamlit(types.ModuleType):
     """بديل مبسّط لواجهة streamlit يلتقط الرسائل بدل عرضها."""
 
@@ -68,6 +83,10 @@ class FakeStreamlit(types.ModuleType):
 
     def progress(self, *a, **k):
         return _Progress()
+
+    def columns(self, spec, *a, **k):
+        n = spec if isinstance(spec, int) else len(spec)
+        return [_Column() for _ in range(n)]
 
     def code(self, *a, **k):
         pass

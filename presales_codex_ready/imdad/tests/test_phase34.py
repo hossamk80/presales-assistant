@@ -129,9 +129,10 @@ def test_review_schema_carries_score_and_recommendations(ae):
     props = ae.REVIEW_SCHEMA["properties"]
     assert props["readiness_score"]["type"] == "INTEGER"
     assert props["recommendations"]["type"] == "ARRAY"
+    assert props["strengths"]["type"] == "ARRAY"
     assert "assessment" in props
     assert set(ae.REVIEW_SCHEMA["required"]) == {
-        "readiness_score", "assessment", "recommendations", "findings",
+        "readiness_score", "assessment", "strengths", "recommendations", "findings",
     }
 
 
@@ -169,3 +170,98 @@ def test_scalar_fields_survive_chunked_merge(ae, monkeypatch):
 def test_review_lens_prompts_are_distinct(ae):
     prompts = [lens["prompt"] for lens in ae.REVIEW_LENSES.values()]
     assert len(set(prompts)) == 3
+
+
+# ─── 4.1 لجنة المراجعة ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("lens_key,tokens", [
+    ("technical", ("الجدوى الفنية", "المنهجية", "الجدول", "الفريق", "SLA")),
+    ("commercial", ("جدول الكميات", "التسعير", "مخاطر الكلفة", "الدفعات")),
+    ("legal", ("نظام المنافسات والمشتريات", "المحتوى المحلي",
+               "القائمة الإلزامية", "الضمان الابتدائي", "الغرامات")),
+])
+def test_each_agent_covers_its_domain(ae, lens_key, tokens):
+    prompt = ae.REVIEW_LENSES[lens_key]["prompt"]
+    for token in tokens:
+        assert token in prompt, f"{lens_key} لا يغطي: {token}"
+
+
+def test_commercial_agent_enforces_financial_isolation(ae):
+    """
+    وجود تسعير داخل العرض الفني سبب استبعاد لا ملاحظة تحسين — يجب أن يطلب
+    البرومبت تسجيله ملاحظة حرجة لا مجرد التنبيه إليه.
+    """
+    prompt = ae.REVIEW_LENSES["commercial"]["prompt"]
+    assert "حرجة" in prompt
+    assert "الفصل المالي" in prompt
+
+
+def test_every_agent_asks_for_the_full_panel_output(ae):
+    for key, lens in ae.REVIEW_LENSES.items():
+        for field in ("readiness_score", "strengths", "recommendations", "findings"):
+            assert field in lens["prompt"], f"{key} لا يطلب {field}"
+
+
+def test_overall_readiness_is_the_weakest_agent(review):
+    scores = {"technical": {"score": 92}, "commercial": {"score": 85},
+              "legal": {"score": 95}}
+    # المتوسط 90.7 — يخفي أن الزاوية التجارية هي الحاكمة
+    assert review._overall_readiness(scores) == 85
+
+
+def test_overall_readiness_with_no_scores(review):
+    assert review._overall_readiness({}) == 0
+
+
+def test_panel_uses_fused_project_context(fake_streamlit):
+    """
+    سياق المشروع الموحّد يُبنى مرة واحدة ويُشارك بين كاتب الأقسام واللجنة —
+    نسخة ثانية منه في review.py كانت ستتباعد عن الأصل.
+    """
+    from utils.state import project_context_block
+    from views import doc_builder, review as review_mod
+
+    assert doc_builder._project_context_block is project_context_block
+    assert review_mod.project_context_block is project_context_block
+
+    fake_streamlit.session_state["project_context"] = {
+        "issuing_entity": "وزارة الصحة",
+        "contractual_penalties": ["1% لكل أسبوع تأخير"],
+    }
+    block = project_context_block()
+    assert "وزارة الصحة" in block
+    assert "1% لكل أسبوع تأخير" in block
+
+
+def test_project_context_block_empty_when_unfused(fake_streamlit):
+    fake_streamlit.session_state["project_context"] = {}
+    from utils.state import project_context_block
+    assert project_context_block() == ""
+
+
+def test_strengths_are_collected_per_agent(review, fake_streamlit, monkeypatch):
+    monkeypatch.setattr(review, "ai_generate_json", lambda *a, **k: {
+        "readiness_score": 88,
+        "assessment": "قوي",
+        "strengths": ["منهجية مفصّلة", "  "],      # الفارغ يُسقَط
+        "recommendations": ["أضف مؤشرات"],
+        "findings": [],
+    })
+    fake_streamlit.session_state.update({"output_language": "ar", "review_scores": {}})
+    sections = [{"key": "methodology", "title": "المنهجية", "content": "نص"}]
+
+    review._run_lens("technical", sections, "Gemini 3.6 Flash", lambda m: None)
+
+    agent = fake_streamlit.session_state["review_scores"]["technical"]
+    assert agent["score"] == 88
+    assert agent["strengths"] == ["منهجية مفصّلة"]
+
+
+def test_agent_panel_survives_scores_saved_before_strengths_existed(review, fake_streamlit):
+    """منافسة محفوظة قبل إضافة نقاط القوة يجب ألا تُسقط الصفحة بـ KeyError."""
+    fake_streamlit.session_state["review_scores"] = {
+        "technical": {"label": "فنية", "icon": "🛠️", "score": 80,
+                      "assessment": "جيد", "recommendations": []},
+    }
+    review._render_agent_scores([])          # لا استثناء
