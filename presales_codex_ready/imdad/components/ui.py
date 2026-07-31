@@ -5,6 +5,8 @@ import inspect
 import streamlit as st
 from typing import Optional, Callable
 
+from utils.i18n import t
+
 
 def _accepts_two_args(fn: Callable) -> bool:
     """هل تقبل دالة التوليد معامل تقدّم إضافي إلى جانب اسم النموذج؟"""
@@ -35,7 +37,7 @@ def ai_generate_button(
     on_generate: Callable,
     result_state_key: str,
     summary_state_key: Optional[str] = None,
-    summary_label: str = "✍️ ملاحظاتك / التعديلات المعتمدة:",
+    summary_label: Optional[str] = None,
     height: int = 200,
     result_style: str = "info",  # info / success / warning
 ):
@@ -51,7 +53,7 @@ def ai_generate_button(
     col_mod, col_btn = st.columns([3, 1])
     with col_mod:
         model = st.selectbox(
-            "المحرك:",
+            t("common.engine"),
             MODEL_NAMES,
             index=default_index,
             key=f"model_{key}",
@@ -62,7 +64,7 @@ def ai_generate_button(
 
     if generate:
         status = st.empty()
-        with st.spinner("جاري التوليد..."):
+        with st.spinner(t("common.generating")):
             # يُمرَّر للمحرك ليعرض تقدّم التحليل المجزّأ للكراسات الكبيرة
             def report(message: str):
                 status.caption(f"⏳ {message}")
@@ -88,7 +90,7 @@ def ai_generate_button(
 
         if summary_state_key is not None:
             st.session_state[summary_state_key] = st.text_area(
-                summary_label,
+                summary_label or t("common.your_notes"),
                 value=st.session_state.get(summary_state_key, current_result),
                 height=height,
                 key=f"summary_{key}",

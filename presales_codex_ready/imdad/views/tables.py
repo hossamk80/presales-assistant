@@ -21,13 +21,14 @@ from utils.ai_engine import (
     ai_generate_json,
 )
 from components.ui import status_badge
+from utils.i18n import t
 
 
 def _model_picker(key: str) -> str:
     """منتقي نموذج مضغوط يتبع التفضيل الافتراضي."""
     current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
     return st.selectbox(
-        "المحرك:",
+        t("common.engine"),
         MODEL_NAMES,
         index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
         key=key,
@@ -115,16 +116,16 @@ def _extraction_bar(kind: str):
     """
     rfp = st.session_state.get("rfp_raw_text", "")
     if not rfp:
-        st.info("💡 ارفع كراسة الشروط في التبويب الأول لتفعيل التعبئة الآلية لهذا الجدول.")
+        st.info(t("tb.upload_first"))
         return
 
     is_comp = kind == "compliance"
-    label = "استخراج المتطلبات من الكراسة" if is_comp else "استخراج بنود الكميات"
+    label = t("tb.extract_reqs") if is_comp else t("tb.extract_boq")
 
     # جداول الكميات غالباً في ملف مستقل — نقدّمه على النص المدموج إن وُجد
     source = rfp if is_comp else (role_text("boq") or rfp)
     if not is_comp and role_text("boq"):
-        st.caption("📄 المصدر: الملفات المصنّفة **جدول الكميات**.")
+        st.caption(t("tb.boq_source"))
 
     col_model, col_btn = st.columns([3, 2])
     with col_model:
@@ -147,7 +148,7 @@ def _extraction_bar(kind: str):
             )
 
     status = st.empty()
-    with st.spinner("جاري الاستخراج..."):
+    with st.spinner(t("common.extracting")):
         result = ai_generate_json(
             prompt,
             schema=COMPLIANCE_SCHEMA if is_comp else BOQ_SCHEMA,
@@ -163,7 +164,7 @@ def _extraction_bar(kind: str):
 
     items = result.get("requirements" if is_comp else "items", []) if isinstance(result, dict) else result
     if not items:
-        st.warning("⚠️ لم يعثر النموذج على بنود قابلة للاستخراج في الكراسة.")
+        st.warning(t("tb.nothing_found"))
         return
 
     df = _compliance_to_df(items) if is_comp else _boq_to_df(items)
@@ -171,15 +172,15 @@ def _extraction_bar(kind: str):
     # data_editor يحتفظ بتعديلات المستخدم السابقة تحت مفتاحه، فنُبطلها
     # حتى يعرض الجدول البيانات المستخرجة الجديدة بدل القديمة
     st.session_state.pop("de_compliance" if is_comp else "de_boq", None)
-    st.success(f"✅ تم استخراج **{len(df)}** بند. راجعها وعدّلها قبل الاعتماد.")
+    st.success(t("tb.extracted", n=len(df)))
     st.rerun()
 
 
 def render():
-    st.markdown("### 📊 جداول المراجعة والكميات")
+    st.markdown(t("tb.title"))
 
     # ── Compliance Matrix ──────────────────────────────────────────────────────
-    with st.expander("📋 جدول الامتثال بالمواصفات (Compliance Matrix)", expanded=True):
+    with st.expander(t("tb.compliance"), expanded=True):
         _extraction_bar("compliance")
         st.divider()
 
@@ -192,14 +193,14 @@ def render():
             non = total - compliant - partial if total > 0 else 0
 
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("إجمالي المتطلبات", total)
-            c2.metric("✅ ملتزم", compliant)
-            c3.metric("⚠️ جزئي", partial)
-            c4.metric("❌ غير ملتزم", non)
+            c1.metric(t("tb.total_reqs"), total)
+            c2.metric(t("tb.compliant"), compliant)
+            c3.metric(t("tb.partial"), partial)
+            c4.metric(t("tb.non_compliant"), non)
 
         with col_reset:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("↩️ إعادة ضبط", key="reset_comp", width="stretch"):
+            if st.button(f"↩️ {t('common.reset')}", key="reset_comp", width="stretch"):
                 st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
                 st.rerun()
 
@@ -225,7 +226,7 @@ def render():
     st.divider()
 
     # ── BOQ ───────────────────────────────────────────────────────────────────
-    with st.expander("📦 جدول الكميات (Bill of Quantities — BOQ)", expanded=True):
+    with st.expander(t("tb.boq"), expanded=True):
         _extraction_bar("boq")
         st.divider()
 
@@ -237,20 +238,16 @@ def render():
         with col_info2:
             flagged = int(boq_df["القائمة الإلزامية"].fillna(False).astype(bool).sum())
             m1, m2 = st.columns(2)
-            m1.metric("إجمالي البنود", len(boq_df))
-            m2.metric("🇸🇦 مرشّح للقائمة الإلزامية", flagged)
+            m1.metric(t("tb.total_items"), len(boq_df))
+            m2.metric(t("tb.flagged"), flagged)
         with col_actions:
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("↩️ إعادة ضبط الجدول", key="reset_boq", width="stretch"):
+            if st.button(t("tb.reset_table"), key="reset_boq", width="stretch"):
                 st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
                 st.session_state.pop("de_boq", None)
                 st.rerun()
 
-        st.caption(
-            "⚠️ عمود **القائمة الإلزامية** ترشيح من النموذج لا حكم نهائي — تحقّق منه "
-            "مقابل القائمة الرسمية للمحتوى المحلي قبل الاعتماد. رفع القائمة الرسمية "
-            "في **مستودع المعرفة** يحسّن دقة الترشيح."
-        )
+        st.caption(t("tb.mandatory_warning"))
 
         edited_boq = st.data_editor(
             boq_df,
@@ -276,14 +273,14 @@ def render():
 
     # ── Export Tables ──────────────────────────────────────────────────────────
     st.divider()
-    st.markdown("#### 📥 تصدير الجداول")
+    st.markdown(t("tb.export"))
     col_e1, col_e2 = st.columns(2)
 
     with col_e1:
-        if st.button("📥 تصدير Compliance Matrix (CSV)", width="stretch"):
+        if st.button(t("tb.export_comp"), width="stretch"):
             csv = st.session_state["df_compliance"].to_csv(index=False, encoding="utf-8-sig")
             st.download_button(
-                "⬇️ تحميل compliance_matrix.csv",
+                t("tb.download_comp"),
                 data=csv.encode("utf-8-sig"),
                 file_name="compliance_matrix.csv",
                 mime="text/csv",
@@ -291,10 +288,10 @@ def render():
             )
 
     with col_e2:
-        if st.button("📥 تصدير BOQ (CSV)", width="stretch"):
+        if st.button(t("tb.export_boq"), width="stretch"):
             csv = st.session_state["df_boq"].to_csv(index=False, encoding="utf-8-sig")
             st.download_button(
-                "⬇️ تحميل boq.csv",
+                t("tb.download_boq"),
                 data=csv.encode("utf-8-sig"),
                 file_name="boq.csv",
                 mime="text/csv",

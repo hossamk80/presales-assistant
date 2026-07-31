@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.ai_engine import DEFAULT_LANGUAGE, DEFAULT_MODEL
+from utils.i18n import DEFAULT_UI_LANGUAGE
 
 
 def _env_api_key() -> str:
@@ -178,6 +179,7 @@ STATE_SCHEMA = {
     "api_claude": "",
     "ai_model_preference": DEFAULT_MODEL,
     "output_language": DEFAULT_LANGUAGE,
+    "ui_language": DEFAULT_UI_LANGUAGE,
 
     # Company Profile
     "c_name": "",
@@ -221,7 +223,7 @@ STATE_SCHEMA = {
 
     # Proposal Outline
     "proposal_sections": DEFAULT_SECTIONS,
-    "outline_source": "افتراضي",
+    "outline_source": "default",
 
     # Pre-submission Review
     "review_findings": [],
@@ -243,13 +245,13 @@ def get_sections() -> list:
     return [dict(s) for s in sections]
 
 
-def set_sections(sections: list, source: str = "مخصص"):
+def set_sections(sections: list, source: str = "custom"):
     st.session_state["proposal_sections"] = [dict(s) for s in sections]
     st.session_state["outline_source"] = source
 
 
 def reset_sections():
-    set_sections(DEFAULT_SECTIONS, source="افتراضي")
+    set_sections(DEFAULT_SECTIONS, source="default")
 
 
 def init_state():

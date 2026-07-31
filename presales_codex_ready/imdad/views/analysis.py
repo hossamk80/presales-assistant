@@ -19,6 +19,7 @@ from utils.ai_engine import (
     language_instruction,
 )
 from utils.file_handler import extract_texts_per_file
+from utils.i18n import t
 from utils.state import ATTACHMENT_ROLES, guess_attachment_role, role_text
 from components.ui import ai_generate_button
 
@@ -40,27 +41,27 @@ def _rebuild_combined_text():
 
 
 def _render_upload():
-    st.markdown("### 📥 رفع مرفقات المنافسة")
+    st.markdown(t("an.upload_title"))
 
     col_upload, col_clear = st.columns([4, 1])
     with col_upload:
         files = st.file_uploader(
-            "يدعم: PDF · Word · Excel · CSV · TXT · HTML",
+            t("an.formats"),
             accept_multiple_files=True,
             label_visibility="collapsed",
         )
     with col_clear:
-        if st.session_state.get("rfp_raw_text") and st.button("🗑️ مسح", width="stretch"):
+        if st.session_state.get("rfp_raw_text") and st.button(f"🗑️ {t('common.clear')}", width="stretch"):
             from utils.state import reset_analysis
             reset_analysis()
             st.rerun()
 
-    if st.button("📂 استخراج النصوص", type="primary", disabled=not files):
-        with st.spinner("جاري الاستخراج..."):
+    if st.button(t("an.extract"), type="primary", disabled=not files):
+        with st.spinner(t("common.extracting")):
             per_file = extract_texts_per_file(files)
-        per_file = {n: t for n, t in per_file.items() if t.strip()}
+        per_file = {name: text for name, text in per_file.items() if text.strip()}
         if not per_file:
-            st.error("❌ لم يتم استخراج أي نص. تأكد من الملفات المرفوعة.")
+            st.error(t("an.extract_failed"))
             return
 
         texts = dict(st.session_state.get("attachment_texts") or {})
@@ -84,12 +85,10 @@ def _render_attachment_roles():
     total_tokens = estimate_tokens(st.session_state.get("rfp_raw_text", ""))
 
     with st.expander(
-        f"📎 المرفقات ({len(texts)}) · تقدير التوكنز: {total_tokens:,}", expanded=True
+        f"{t('an.attachments', n=len(texts))} · {t('an.tokens_est', n=f'{total_tokens:,}')}",
+        expanded=True,
     ):
-        st.caption(
-            "الدور مُرجَّح من اسم الملف — عدّله إن أخطأ. يؤثر على التعليمات التي "
-            "تميّز الكراسة عن ملاحقها عن جداول الكميات."
-        )
+        st.caption(t("an.role_hint"))
         role_keys = list(ATTACHMENT_ROLES)
         changed = False
 
@@ -98,16 +97,16 @@ def _render_attachment_roles():
             with c_name:
                 st.markdown(
                     f"**{name}**<br><span style='color:#64748B;font-size:12px'>"
-                    f"{len(texts[name]):,} حرف</span>",
+                    f"{t('an.chars', n=f'{len(texts[name]):,}')}</span>",
                     unsafe_allow_html=True,
                 )
             with c_role:
                 current = roles.get(name, "rfp")
                 picked = st.selectbox(
-                    "الدور",
+                    t("an.role"),
                     role_keys,
                     index=role_keys.index(current) if current in role_keys else 0,
-                    format_func=lambda k: ATTACHMENT_ROLES[k],
+                    format_func=lambda k: t(f"role.{k}"),
                     key=f"role_{name}",
                     label_visibility="collapsed",
                 )
@@ -133,19 +132,19 @@ def _render_project_context():
     """دمج المرفقات في سياق معرفي واحد مُهيكل للمشروع."""
     ctx = st.session_state.get("project_context") or {}
 
-    with st.expander("0️⃣ سياق المشروع الموحّد (من كل المرفقات)", expanded=not ctx):
+    with st.expander(t("an.context_title"), expanded=not ctx):
         c_model, c_btn = st.columns([3, 2])
         with c_model:
             current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
             model = st.selectbox(
-                "المحرك:",
+                t("common.engine"),
                 MODEL_NAMES,
                 index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
                 key="model_context",
                 label_visibility="collapsed",
             )
         with c_btn:
-            run = st.button("🧩 دمج المرفقات", type="primary", width="stretch")
+            run = st.button(t("an.context_run"), type="primary", width="stretch")
 
         if run:
             status = st.empty()
@@ -155,7 +154,7 @@ def _render_project_context():
                 + f"\n{language_instruction(_language())}"
                 + (f"\n\n--- الملاحق الفنية ---\n{annexes}" if annexes else "")
             )
-            with st.spinner("جاري الدمج..."):
+            with st.spinner(t("an.context_merging")):
                 result = ai_generate_json(
                     prompt,
                     schema=PROJECT_CONTEXT_SCHEMA,
@@ -169,23 +168,23 @@ def _render_project_context():
                 st.rerun()
 
         if not ctx:
-            st.info("اضغط **دمج المرفقات** لاستخراج بيانات المشروع الأساسية وقيوده.")
+            st.info(t("an.context_hint"))
             return
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("الجهة", ctx.get("issuing_entity") or "—")
-        c2.metric("الموعد النهائي", ctx.get("submission_deadline") or "—")
-        c3.metric("الشهادات المطلوبة", len(ctx.get("required_certifications") or []))
+        c1.metric(t("an.entity"), ctx.get("issuing_entity") or t("common.none"))
+        c2.metric(t("an.deadline"), ctx.get("submission_deadline") or t("common.none"))
+        c3.metric(t("an.certs_count"), len(ctx.get("required_certifications") or []))
 
         st.markdown(f"**{ctx.get('project_title', '')}**")
         if ctx.get("scope_summary"):
             st.write(ctx["scope_summary"])
 
         lists = [
-            ("🎯 التسليمات الرئيسية", "key_deliverables"),
-            ("⚙️ القيود الفنية", "technical_constraints"),
-            ("⚠️ الغرامات التعاقدية", "contractual_penalties"),
-            ("📜 الشهادات المطلوبة", "required_certifications"),
+            (t("an.deliverables"), "key_deliverables"),
+            (t("an.constraints"), "technical_constraints"),
+            (t("an.penalties"), "contractual_penalties"),
+            (t("an.certs"), "required_certifications"),
         ]
         for label, key in lists:
             values = ctx.get(key) or []
@@ -195,14 +194,14 @@ def _render_project_context():
                     st.markdown(f"- {v}")
 
         if ctx.get("local_content_requirements"):
-            st.info(f"🇸🇦 **المحتوى المحلي:** {ctx['local_content_requirements']}")
+            st.info(f"{t('an.local_content')} {ctx['local_content_requirements']}")
 
 
 def render():
     _render_upload()
 
     if not st.session_state.get("rfp_raw_text"):
-        st.info("ارفع مرفقات المنافسة واضغط **استخراج النصوص** للبدء.")
+        st.info(t("an.start_hint"))
         return
 
     _render_attachment_roles()
@@ -210,9 +209,9 @@ def render():
     _render_project_context()
 
     # ── Section 1: Go/No-Go ────────────────────────────────────────────────────
-    with st.expander("1️⃣ قرار الملاءمة والجدوى (Go / No-Go)", expanded=True):
+    with st.expander(t("an.gonogo"), expanded=True):
         ai_generate_button(
-            label="توليد تقرير Go/No-Go",
+            label=t("an.gonogo_btn"),
             key="gonogo",
             model_key="m1",
             on_generate=lambda model, report: ai_generate(
@@ -224,14 +223,14 @@ def render():
             ),
             result_state_key="analysis_gonogo",
             summary_state_key="sum_gonogo",
-            summary_label="✍️ قرار المهندس المعتمد (يُمرَّر للـ AI لاحقاً):",
+            summary_label=t("an.gonogo_note"),
             result_style="info",
         )
 
     # ── Section 2: Evaluation Matrix ──────────────────────────────────────────
-    with st.expander("2️⃣ مصفوفة معايير التقييم والأوزان"):
+    with st.expander(t("an.eval")):
         ai_generate_button(
-            label="استخراج الأوزان",
+            label=t("an.eval_btn"),
             key="eval",
             model_key="m2",
             on_generate=lambda model, report: ai_generate(
@@ -243,14 +242,14 @@ def render():
             ),
             result_state_key="evaluation_matrix",
             summary_state_key="sum_eval",
-            summary_label="✍️ الأوزان المعتمدة (توجيه لكتابة المنهجية):",
+            summary_label=t("an.eval_note"),
             result_style="success",
         )
 
     # ── Section 3: Compliance Check ───────────────────────────────────────────
-    with st.expander("3️⃣ الشروط الحاكمة وفجوات الامتثال"):
+    with st.expander(t("an.comp")):
         ai_generate_button(
-            label="فحص الشروط الإلزامية",
+            label=t("an.comp_btn"),
             key="compliance",
             model_key="m3",
             on_generate=lambda model, report: ai_generate(
@@ -262,11 +261,12 @@ def render():
             ),
             result_state_key="compliance_check",
             summary_state_key="sum_comp",
-            summary_label="✍️ الشهادات والفجوات المعتمدة للمعالجة:",
+            summary_label=t("an.comp_note"),
             result_style="warning",
         )
 
     # ── Raw Text Preview ───────────────────────────────────────────────────────
-    with st.expander("👁️ معاينة النص المستخرج من الكراسة"):
+    with st.expander(t("an.preview")):
         raw = st.session_state["rfp_raw_text"]
-        st.code(raw[:5000] + ("\n\n... [تم الاختصار]" if len(raw) > 5000 else ""), language=None)
+        truncated = "\n\n" + t("an.truncated") if len(raw) > 5000 else ""
+        st.code(raw[:5000] + truncated, language=None)
