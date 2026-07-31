@@ -64,6 +64,116 @@ def test_seven_mandatory_sections_defined(ae):
     assert len(ae.MANDATORY_OUTLINE_SECTIONS) == 7
 
 
+@pytest.mark.parametrize("keyword", [
+    "الملخص التنفيذي",
+    "ملف الشركة",
+    "المنهجية",
+    "الجدول الزمني",
+    "الهيكل التنظيمي",
+    "ضمان الجودة",
+])
+def test_mandatory_list_matches_the_etimad_six(ae, keyword):
+    """الأقسام الستة القياسية في معايير اعتماد، كل منها قسم قائم بذاته."""
+    assert any(keyword in name for name in ae.MANDATORY_OUTLINE_SECTIONS), keyword
+
+
+def test_local_content_stays_mandatory_beyond_the_six(ae):
+    """
+    المحتوى المحلي ليس ضمن الستة القياسية لكنه إلزامي وله وزن تقييمي في
+    المنافسات السعودية — إسقاطه يُفقد درجات لا يعوّضها حسن الصياغة.
+    """
+    assert any("المحتوى المحلي" in n for n in ae.MANDATORY_OUTLINE_SECTIONS)
+
+
+def test_methodology_and_timeline_are_separate_sections(ae):
+    """تُقيّمهما لجان اعتماد بمعيارين مستقلين، فدمجهما يُضعف الاثنين."""
+    methodology = [n for n in ae.MANDATORY_OUTLINE_SECTIONS if "المنهجية" in n]
+    timeline = [n for n in ae.MANDATORY_OUTLINE_SECTIONS if "الجدول الزمني" in n]
+    assert len(methodology) == 1 and len(timeline) == 1
+    assert methodology[0] != timeline[0]
+    assert "معالم" in timeline[0]
+
+
+def test_outline_prompt_demands_persuasive_order_and_scoring_link(ae):
+    prompt = ae.outline_prompt("ar")
+    assert "الإقناع" in prompt
+    assert "معيار تقييم" in prompt
+
+
+def test_outline_prompt_frames_boq_as_scope_not_pricing(ae):
+    prompt = ae.outline_prompt("ar")
+    assert "نطاق العمل" in prompt and "لا لتسعّره" in prompt
+
+
+def test_timeline_keyword_is_not_satisfied_by_the_methodology_title(builder):
+    """
+    "خطة" وحدها تُطابق "خطة التنفيذ" داخل قسم المنهجية، فيبدو الجدول الزمني
+    موجوداً وهو غائب.
+    """
+    titles = "المنهجية الفنية المقترحة وخطة التنفيذ"
+    assert builder._covers(titles, "المنهجية الفنية المقترحة وخطة التنفيذ")
+    assert not builder._covers(titles, "الجدول الزمني ومعالم التسليم")
+
+
+@pytest.mark.parametrize("title", [
+    "الجدول الزمني ومعالم التسليم",
+    "خطة المشروع والجدول الزمني",
+    "مراحل التنفيذ والمعالم",
+])
+def test_timeline_is_recognised_however_it_is_worded(builder, title):
+    assert builder._covers(title, "الجدول الزمني ومعالم التسليم")
+
+
+def test_every_mandatory_name_matches_itself(builder, ae):
+    for name in ae.MANDATORY_OUTLINE_SECTIONS:
+        assert builder._covers(name, name), name
+
+
+# ─── نطاق جدول الكميات في تعليمات الهيكل ───────────────────────────────────────
+
+
+def test_boq_scope_excludes_quantities_and_prices(fake_streamlit):
+    """
+    مهندس الهيكل يحتاج ما سيُنفَّذ لا كم؛ تمرير الكميات يفتح باب تسرّب أرقام
+    إلى العرض الفني بلا مقابل.
+    """
+    import pandas as pd
+    from utils.state import boq_scope_block
+
+    fake_streamlit.session_state["df_boq"] = pd.DataFrame({
+        "رقم البند": ["1"],
+        "التصنيف": ["توريد"],
+        "البند": ["مبدّل شبكي"],
+        "الوصف": ["مبدّل 48 منفذاً"],
+        "المواصفات": ["Layer 3"],
+        "الكمية": ["120"],
+    })
+    block = boq_scope_block()
+    assert "مبدّل شبكي" in block
+    assert "Layer 3" in block
+    assert "120" not in block
+
+
+def test_boq_scope_empty_when_no_table(fake_streamlit):
+    from utils.state import boq_scope_block
+
+    fake_streamlit.session_state["df_boq"] = None
+    assert boq_scope_block() == ""
+
+
+def test_boq_scope_truncates_long_tables(fake_streamlit):
+    import pandas as pd
+    from utils.state import boq_scope_block
+
+    fake_streamlit.session_state["df_boq"] = pd.DataFrame({
+        "البند": [f"بند {i}" for i in range(100)],
+    })
+    block = boq_scope_block(limit=10)
+    assert "بند 9" in block
+    assert "بند 10" not in block
+    assert "90 بنداً آخر" in block
+
+
 def test_outline_applied_in_section_id_order(builder, fake_streamlit):
     from utils.state import DEFAULT_SECTIONS
 

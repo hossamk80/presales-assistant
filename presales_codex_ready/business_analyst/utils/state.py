@@ -232,6 +232,36 @@ def role_text(role: str) -> str:
     return "\n\n".join(parts).strip()
 
 
+def boq_scope_block(limit: int = 60) -> str:
+    """
+    نطاق العمل من جدول الكميات — بلا كميات ولا أي عمود قد يحمل قيمة مالية.
+
+    مُهندس الهيكل يحتاج أن يعرف **ما الذي سيُنفَّذ** ليبني عليه الأقسام، وتمرير
+    الكميات معه يفتح باب تسرّب أرقام إلى العرض الفني بلا فائدة تُذكر.
+    """
+    df = st.session_state.get("df_boq")
+    if df is None or getattr(df, "empty", True):
+        return ""
+
+    wanted = [c for c in ("التصنيف", "البند", "الوصف", "المواصفات")
+              if c in df.columns]
+    if not wanted:
+        return ""
+
+    lines = []
+    for row in df[wanted].head(limit).itertuples(index=False):
+        parts = [str(v).strip() for v in row if str(v).strip() and str(v) != "nan"]
+        if parts:
+            lines.append("- " + " · ".join(parts))
+
+    if not lines:
+        return ""
+
+    more = len(df) - limit
+    tail = f"\n(و {more} بنداً آخر)" if more > 0 else ""
+    return "\n\n--- نطاق العمل من جدول الكميات ---\n" + "\n".join(lines) + tail
+
+
 def project_context_block() -> str:
     """
     السياق الموحّد للمشروع (الجهة، الموعد، التسليمات، الغرامات، المحتوى المحلي).

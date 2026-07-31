@@ -26,6 +26,7 @@ from utils.ai_engine import (
 from utils.file_handler import BRAND_COLOR, build_pdf_document, build_word_document
 from utils.i18n import t
 from utils.state import (
+    boq_scope_block,
     get_sections,
     project_context_block as _project_context_block,
     reset_sections,
@@ -108,7 +109,7 @@ def _render_outline_designer():
                     schema=OUTLINE_SCHEMA,
                     model_choice=model,
                     rfp_context=rfp,
-                    extra_context=_project_context_block(),
+                    extra_context=_project_context_block() + boq_scope_block(),
                     merge_key="outline",
                     on_progress=lambda m: status.caption(f"⏳ {m}"),
                 )
@@ -195,11 +196,13 @@ def _covers(haystack: str, section_name: str) -> bool:
     """
     keywords = {
         "الملخص التنفيذي": ["ملخص"],
-        "مؤهلات الشركة والخبرات السابقة": ["مؤهل", "خبرا", "خبرة"],
-        "المنهجية والنهج الفني": ["منهج"],
-        "خطة العمل والجدول الزمني": ["خطة", "الجدول الزمني"],
-        "هيكل الفريق والحوكمة": ["فريق", "حوكم"],
-        "إدارة الجودة ومستويات الخدمة": ["جودة", "مستويات الخدمة", "SLA"],
+        "ملف الشركة والخبرات ذات الصلة": ["مؤهل", "خبرا", "خبرة", "ملف الشركة"],
+        "المنهجية الفنية المقترحة وخطة التنفيذ": ["منهج"],
+        # "خطة" وحدها تُطابق "خطة التنفيذ" في قسم المنهجية فتُخفي غياب الجدول
+        # الزمني — نطابق على ما يخصّ الزمن وحده.
+        "الجدول الزمني ومعالم التسليم": ["الجدول الزمني", "زمني", "معالم", "مراحل"],
+        "الهيكل التنظيمي والكوادر الرئيسية": ["فريق", "حوكم", "الهيكل التنظيمي", "كوادر"],
+        "ضمان الجودة وإدارة مستويات الخدمة": ["جودة", "مستويات الخدمة", "SLA"],
         "الالتزام بالمحتوى المحلي": ["محتوى المحلي", "المحتوى المحلي"],
     }.get(section_name, [section_name])
     return any(k in haystack for k in keywords)
