@@ -55,6 +55,14 @@ def _proposal_text(sections: list) -> str:
     return "\n\n".join(f"### القسم: {s['title']}\n{s['content']}" for s in sections)
 
 
+def _clamp_score(value) -> int:
+    """درجة الجاهزية قد تعود خارج المدى أو نصاً."""
+    try:
+        return max(0, min(100, int(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _run_lens(lens_key: str, sections: list, model: str, report) -> list:
     """تشغيل زاوية مراجعة واحدة وإرجاع ملاحظاتها."""
     lens = REVIEW_LENSES[lens_key]
@@ -76,6 +84,19 @@ def _run_lens(lens_key: str, sections: list, model: str, report) -> list:
         merge_key="findings",
         on_progress=report,
     )
+    if isinstance(result, dict):
+        scores = dict(st.session_state.get("review_scores") or {})
+        scores[lens_key] = {
+            "label": lens["label"],
+            "icon": lens["icon"],
+            "score": _clamp_score(result.get("readiness_score")),
+            "assessment": str(result.get("assessment", "")).strip(),
+            "recommendations": [
+                str(r).strip() for r in (result.get("recommendations") or []) if str(r).strip()
+            ],
+        }
+        st.session_state["review_scores"] = scores
+
     findings = (result or {}).get("findings", []) if isinstance(result, dict) else []
 
     valid_titles = {s["title"] for s in sections}
@@ -189,6 +210,39 @@ def _render_finding(finding: dict, sections: list, model: str):
     st.divider()
 
 
+def _render_agent_scores():
+    """لوحة الوكلاء الثلاثة: درجة جاهزية وتقييم وتوصيات لكل زاوية."""
+    scores = st.session_state.get("review_scores") or {}
+    if not scores:
+        return
+
+    st.markdown(f"### {t('rv.agents')}")
+    values = [s["score"] for s in scores.values()]
+    # الجاهزية الإجمالية أضعف زاوية لا متوسطها — زاوية واحدة ساقطة تكفي
+    # لرفض العرض، فالمتوسط يخفي ذلك.
+    overall = min(values) if values else 0
+
+    cols = st.columns(len(scores) + 1)
+    for col, data in zip(cols, scores.values()):
+        col.metric(f"{data['icon']} {data['label']}", f"{data['score']} / 100")
+    cols[-1].metric(t("rv.overall_readiness"), f"{overall} / 100")
+
+    if overall < 60:
+        st.error(t("rv.not_ready"))
+
+    for data in scores.values():
+        if not data["assessment"] and not data["recommendations"]:
+            continue
+        with st.expander(f"{data['icon']} {data['label']} — {data['score']}/100"):
+            if data["assessment"]:
+                st.write(data["assessment"])
+            if data["recommendations"]:
+                st.markdown(f"**{t('rv.recommendations')}**")
+                for rec in data["recommendations"]:
+                    st.markdown(f"- {rec}")
+    st.divider()
+
+
 def render():
     st.markdown(t("rv.title"))
     st.caption(t("rv.caption"))
@@ -228,6 +282,7 @@ def render():
 
     if run:
         status = st.empty()
+        st.session_state["review_scores"] = {}
         all_findings = []
         progress = st.progress(0.0)
         for i, lens_key in enumerate(chosen):
@@ -252,6 +307,7 @@ def render():
         return
 
     st.divider()
+    _render_agent_scores()
     counts = {s: sum(1 for f in findings if f["severity"] == s) for s in SEVERITY_ORDER}
     applied = sum(1 for f in findings if f["applied"])
 

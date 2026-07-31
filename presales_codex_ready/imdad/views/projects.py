@@ -70,7 +70,7 @@ def _clear_project_state():
         if key in COMPANY_KEYS or key.startswith("api_"):
             continue
         st.session_state[key] = default
-    for key in [k for k in list(st.session_state) if k.startswith(("sec_ai_", "ta_", "de_", "inc_"))]:
+    for key in [k for k in list(st.session_state) if k.startswith(("sec_ai_", "steer_", "ta_", "de_", "inc_"))]:
         del st.session_state[key]
     st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()

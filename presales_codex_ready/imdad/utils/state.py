@@ -291,6 +291,7 @@ STATE_SCHEMA = {
 
     # Pre-submission Review
     "review_findings": [],
+    "review_scores": {},
     "review_ran_at": "",
 
     # Tables
@@ -344,6 +345,7 @@ def reset_analysis():
     st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
     st.session_state["review_findings"] = []
+    st.session_state["review_scores"] = {}
     st.session_state["review_ran_at"] = ""
     reset_sections()
 
@@ -358,10 +360,11 @@ def get_state_snapshot() -> dict:
         elif isinstance(val, pd.DataFrame):
             snapshot[key] = val.to_dict(orient="records")
 
-    # أقسام أضافها الذكاء الاصطناعي ديناميكياً ليست ضمن المخطط الثابت
+    # مفاتيح ديناميكية خارج المخطط الثابت: أقسام أضافها النموذج (sec_ai_*)
+    # وتوجيهات الكتابة لكل قسم (steer_*). بدونها يضيع التوجيه بتبديل المنافسة.
     snapshot["_dynamic_sections"] = {
         k: v for k, v in st.session_state.items()
-        if k.startswith("sec_ai_") and isinstance(v, str)
+        if k.startswith(("sec_ai_", "steer_")) and isinstance(v, str)
     }
     return snapshot
 
@@ -394,6 +397,8 @@ def load_state_snapshot(data: dict):
         st.session_state[key] = val
 
     # مفاتيح المحرّرات تحمل نص الجلسة السابقة — نُبطلها ليعرض كلٌّ منها المحمَّل
+    # مفاتيح المحرّرات تحمل نص الجلسة السابقة. توجيهات الكتابة (steer_*)
+    # مستثناة لأنها حُمِّلت للتوّ من اللقطة أعلاه.
     for key in [k for k in list(st.session_state) if k.startswith(("ta_", "de_", "inc_"))]:
         del st.session_state[key]
 

@@ -305,14 +305,28 @@ def _section_prompt(sec: dict) -> str:
     if prompt_key and prompt_key in PROMPTS:
         return build_prompt(prompt_key, lang)
 
+    points = sec.get("key_points") or []
+    guidance = "\n".join(f"- {p}" for p in points) if points else (
+        sec.get("guidance") or "- غطِّ ما تقتضيه طبيعة هذا القسم في عرض فني حكومي."
+    )
     return build_prompt(
         "section", lang,
         title=sec["title"],
-        guidance=sec.get("guidance") or "غطِّ ما تقتضيه طبيعة هذا القسم في عرض فني حكومي.",
+        purpose=sec.get("rationale") or sec.get("guidance") or "—",
+        guidance=guidance,
         company_overview=company,
         eval_weights=eval_weights,
         compliance_summary=compliance,
+        user_steering=_steering(sec["key"]) or "لا توجد توجيهات إضافية.",
     )
+
+
+def _steering_key(key: str) -> str:
+    return f"steer_{key}"
+
+
+def _steering(key: str) -> str:
+    return str(st.session_state.get(_steering_key(key), "")).strip()
 
 
 def _kb_context(sec: dict) -> str:
@@ -475,6 +489,14 @@ def _render_ai_editor(sec: dict):
                 st.session_state.pop(f"ta_{key}", None)
                 st.rerun()
 
+        # توجيه الكتابة يُحفظ مع المنافسة ويُمرَّر للنموذج عند التوليد
+        st.text_area(
+            t("db.steering"),
+            height=80,
+            placeholder=t("db.steering_ph"),
+            key=_steering_key(key),
+        )
+
         st.session_state[ckey] = st.text_area(
             t("db.section_text"),
             value=content,
@@ -484,6 +506,80 @@ def _render_ai_editor(sec: dict):
 
         if _has_placeholders(st.session_state[ckey]):
             st.warning(t("db.placeholder_warn"))
+
+        _render_side_assistant(sec, model)
+
+
+def _render_side_assistant(sec: dict, model: str):
+    """
+    المساعد الجانبي: تنقيح نص القسم وفق طلب حر من المستخدم.
+
+    يعمل على النص الحالي مهما كان مصدره — مولَّداً أو مكتوباً يدوياً — ويحفظ
+    النسخة السابقة ليتمكن المستخدم من التراجع.
+    """
+    key = sec["key"]
+    ckey = section_content_key(key)
+    current = str(st.session_state.get(ckey, "")).strip()
+
+    with st.expander(t("db.assistant"), expanded=False):
+        if not current:
+            st.info(t("db.refine_needs_text"))
+            return
+
+        quick = {
+            "concise": t("db.quick_concise"),
+            "kpis": t("db.quick_kpis"),
+            "risk": t("db.quick_risk"),
+            "formal": t("db.quick_formal"),
+        }
+        cols = st.columns(len(quick))
+        for col, (qkey, label) in zip(cols, quick.items()):
+            with col:
+                if st.button(label, key=f"quick_{qkey}_{key}", width="stretch"):
+                    _apply_refinement(sec, label, model)
+                    st.rerun()
+
+        c_req, c_btn = st.columns([4, 1])
+        with c_req:
+            request = st.text_input(
+                t("db.assistant"),
+                placeholder=t("db.assistant_ph"),
+                key=f"refine_req_{key}",
+                label_visibility="collapsed",
+            )
+        with c_btn:
+            go = st.button(t("db.refine"), key=f"refine_{key}",
+                           type="primary", width="stretch")
+
+        if go and request.strip():
+            _apply_refinement(sec, request.strip(), model)
+            st.rerun()
+
+        undo_key = f"_undo_{ckey}"
+        if st.session_state.get(undo_key):
+            if st.button(f"↩️ {t('common.undo')}", key=f"undo_refine_{key}"):
+                st.session_state[ckey] = st.session_state.pop(undo_key)
+                st.session_state.pop(f"ta_{key}", None)
+                st.rerun()
+
+
+def _apply_refinement(sec: dict, request: str, model: str):
+    """ينفّذ طلب التنقيح على نص القسم مع حفظ نسخة للتراجع."""
+    ckey = section_content_key(sec["key"])
+    current = st.session_state.get(ckey, "")
+
+    with st.spinner(t("db.refining")):
+        revised = ai_generate(
+            build_prompt("refine", _language(), content=current, edit_request=request),
+            model_choice=model,
+            language=_language(),
+        )
+    if not revised:
+        return
+
+    st.session_state[f"_undo_{ckey}"] = current
+    st.session_state[ckey] = revised
+    st.session_state.pop(f"ta_{sec['key']}", None)
 
 
 # ─── التصدير ──────────────────────────────────────────────────────────────────
