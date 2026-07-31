@@ -100,6 +100,23 @@ def test_outline_prompt_demands_persuasive_order_and_scoring_link(ae):
     assert "معيار تقييم" in prompt
 
 
+def test_methodology_must_cover_risk_mitigation(ae):
+    """عرض بلا معالجة للمخاطر يبدو غير واقعي أمام لجنة الفحص."""
+    assert "إدارة المخاطر" in ae.outline_prompt("ar")
+
+
+def test_quality_is_not_folded_into_the_methodology(ae):
+    """
+    ضمان الجودة قسم إلزامي مستقل (السادس)؛ حشره داخل المنهجية يكرّره ويُشتّت
+    ما تُقيّمه اللجنة بمعيار واحد.
+    """
+    from utils.state import DEFAULT_SECTIONS
+
+    methodology = next(s for s in DEFAULT_SECTIONS if s["key"] == "methodology")
+    assert "إدارة المخاطر" in methodology["guidance"]
+    assert "ضمان الجودة" not in methodology["guidance"]
+
+
 def test_outline_prompt_frames_boq_as_scope_not_pricing(ae):
     prompt = ae.outline_prompt("ar")
     assert "نطاق العمل" in prompt and "لا لتسعّره" in prompt
