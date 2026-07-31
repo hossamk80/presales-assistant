@@ -1,5 +1,5 @@
 """
-app.py — IMDAD Enterprise Bid Management Platform
+app.py — محلل متطلبات الأعمال الذكي / Smart Business Requirements Analyst
 Refactored: modular architecture, bug fixes, professional UI.
 
 Run with: streamlit run app.py
@@ -8,7 +8,7 @@ import streamlit as st
 
 # ─── Must be FIRST Streamlit call ─────────────────────────────────────────────
 st.set_page_config(
-    page_title="إمداد | منصة إدارة العطاءات",
+    page_title="محلل متطلبات الأعمال الذكي",
     page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded",

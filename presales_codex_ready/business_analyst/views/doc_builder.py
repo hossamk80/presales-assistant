@@ -23,7 +23,7 @@ from utils.ai_engine import (
     language_instruction,
     outline_prompt,
 )
-from utils.file_handler import build_pdf_document, build_word_document
+from utils.file_handler import BRAND_COLOR, build_pdf_document, build_word_document
 from utils.i18n import t
 from utils.state import (
     get_sections,
@@ -625,8 +625,19 @@ def _render_export(sections: list):
 
     company_name = st.session_state.get("c_name", "")
     proposal_title = st.session_state.get("proposal_title", "")
+    # الجهة المصدِرة تأتي من دمج المرفقات؛ تظهر على الغلاف كسطر "مقدَّم إلى".
+    entity_name = str(
+        (st.session_state.get("project_context") or {}).get("issuing_entity", "")
+    ).strip()
+    brand = {
+        "brand_color": st.session_state.get("c_brand_color") or BRAND_COLOR,
+        "proposal_title": proposal_title,
+        "entity_name": entity_name,
+    }
     if proposal_title:
         st.caption(f"{t('db.proposal_title')} **{proposal_title}**")
+    if entity_name:
+        st.caption(f"{t('db.submitted_to')} **{entity_name}**")
     slug = (company_name or "Proposal").replace(" ", "_")[:20]
     blocked = has_placeholders or not payload
 
@@ -645,6 +656,8 @@ def _render_export(sections: list):
                         include_toc=include_toc,
                         include_page_numbers=include_pageno,
                         rtl=is_rtl(_language()),
+                        font_name=st.session_state.get("c_doc_font", ""),
+                        **brand,
                     )
                 st.session_state["_built_docx"] = bio.getvalue()
                 st.success(t("db.built_word"))
@@ -665,6 +678,7 @@ def _render_export(sections: list):
                         include_toc=include_toc,
                         include_page_numbers=include_pageno,
                         rtl=is_rtl(_language()),
+                        **brand,
                     )
                 st.session_state["_built_pdf"] = bio.getvalue()
                 st.success(t("db.built_pdf"))

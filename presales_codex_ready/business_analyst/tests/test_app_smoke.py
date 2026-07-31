@@ -24,7 +24,7 @@ def real_streamlit(monkeypatch, tmp_path):
     for name in [m for m in list(sys.modules)
                  if m == "streamlit" or m.startswith(("streamlit.", "utils", "views", "components"))]:
         monkeypatch.delitem(sys.modules, name, raising=False)
-    monkeypatch.setenv("IMDAD_DB_PATH", str(tmp_path / "smoke.db"))
+    monkeypatch.setenv("ANALYST_DB_PATH", str(tmp_path / "smoke.db"))
     monkeypatch.syspath_prepend(str(APP_DIR))
     yield
 

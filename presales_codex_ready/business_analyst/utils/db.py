@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(APP_DIR, "data")
-DB_PATH = os.environ.get("IMDAD_DB_PATH") or os.path.join(DATA_DIR, "imdad.db")
+DB_PATH = os.environ.get("ANALYST_DB_PATH") or os.path.join(DATA_DIR, "analyst.db")
 
 _local = threading.local()
 

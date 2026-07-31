@@ -115,7 +115,7 @@ def render_data():
         st.download_button(
             t("dm.download"),
             data=json_str.encode("utf-8"),
-            file_name="imdad_workspace.json",
+            file_name="analyst_workspace.json",
             mime="application/json",
         )
         st.caption(t("dm.size", kb=len(json_str) // 1024))

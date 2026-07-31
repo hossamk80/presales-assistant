@@ -44,7 +44,7 @@ GEMINI_API_KEY = AIza...
 ## 3. تثبيت المكتبات
 
 ```bash
-pip install -r presales_codex_ready/imdad/requirements.txt
+pip install -r presales_codex_ready/business_analyst/requirements.txt
 ```
 
 ملف `replit.nix` يتكفّل بحزم النظام:
@@ -68,7 +68,7 @@ pip install pytesseract pdf2image
 اضغط **Run**. الأمر المضبوط في `.replit`:
 
 ```bash
-streamlit run presales_codex_ready/imdad/app.py \
+streamlit run presales_codex_ready/business_analyst/app.py \
   --server.address 0.0.0.0 --server.port 8501 --server.headless true
 ```
 
@@ -82,18 +82,18 @@ streamlit run presales_codex_ready/imdad/app.py \
 يُضبط في `.replit` عبر متغيّر البيئة:
 
 ```
-IMDAD_DB_PATH = "/home/runner/${REPL_SLUG}/data/imdad.db"
+ANALYST_DB_PATH = "/home/runner/${REPL_SLUG}/data/analyst.db"
 ```
 
 وُضع خارج شجرة الكود ليسهل ربطه بقرص دائم ولئلا يُمسح مع كل مزامنة من
-GitHub. المسار الافتراضي محلياً يبقى `presales_codex_ready/imdad/data/imdad.db`.
+GitHub. المسار الافتراضي محلياً يبقى `presales_codex_ready/business_analyst/data/analyst.db`.
 
 ### النسخ الاحتياطي
 
 الملف مُستثنى من git عمداً (بيانات عطاءات، لا كود). انسخه دورياً:
 
 ```bash
-cp "$IMDAD_DB_PATH" "backup-$(date +%F).db"
+cp "$ANALYST_DB_PATH" "backup-$(date +%F).db"
 ```
 
 أو استخدم **تصدير مساحة العمل (JSON)** من صفحة **إدارة البيانات** داخل

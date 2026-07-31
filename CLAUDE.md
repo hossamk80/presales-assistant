@@ -40,4 +40,4 @@ Finish with short bullets: what was done, what was fixed. No long prose.
 
 - التشغيل والتحقق يتمّان عبر GitHub Actions — لا يُشترط تشغيل محلي.
 - ملفات Replit موجودة لكنها خاملة حتى نقل المشروع لاحقاً.
-- قاعدة البيانات `presales_codex_ready/imdad/data/imdad.db` مُستثناة من git.
+- قاعدة البيانات `presales_codex_ready/business_analyst/data/analyst.db` مُستثناة من git.

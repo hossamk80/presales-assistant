@@ -5,13 +5,13 @@
 ## مجلد التطبيق الرئيسي
 
 ```text
-presales_codex_ready/imdad
+presales_codex_ready/business_analyst
 ```
 
 ## ملف التشغيل الرئيسي
 
 ```text
-presales_codex_ready/imdad/app.py
+presales_codex_ready/business_analyst/app.py
 ```
 
 ## أوامر التشغيل
@@ -19,7 +19,7 @@ presales_codex_ready/imdad/app.py
 من جذر المستودع:
 
 ```bash
-cd presales_codex_ready/imdad
+cd presales_codex_ready/business_analyst
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip

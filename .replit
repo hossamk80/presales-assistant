@@ -1,8 +1,8 @@
-entrypoint = "presales_codex_ready/imdad/app.py"
+entrypoint = "presales_codex_ready/business_analyst/app.py"
 modules = ["python-3.11"]
 
 run = [
-  "streamlit", "run", "presales_codex_ready/imdad/app.py",
+  "streamlit", "run", "presales_codex_ready/business_analyst/app.py",
   "--server.address", "0.0.0.0",
   "--server.port", "8501",
   "--server.headless", "true",
@@ -13,7 +13,7 @@ channel = "stable-24_05"
 
 [env]
 # قاعدة البيانات خارج شجرة الكود ليسهل ربطها بقرص دائم عند النشر
-IMDAD_DB_PATH = "/home/runner/${REPL_SLUG}/data/imdad.db"
+ANALYST_DB_PATH = "/home/runner/${REPL_SLUG}/data/analyst.db"
 
 # Replit يوجّه المنفذ الخارجي 80 إلى 8501 داخلياً
 [[ports]]
@@ -27,7 +27,7 @@ externalPort = 80
 # الملفات عند كل إعادة تشغيل فتضيع بيانات العطاءات.
 deploymentTarget = "vm"
 run = [
-  "streamlit", "run", "presales_codex_ready/imdad/app.py",
+  "streamlit", "run", "presales_codex_ready/business_analyst/app.py",
   "--server.address", "0.0.0.0",
   "--server.port", "8501",
   "--server.headless", "true",
