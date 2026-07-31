@@ -187,14 +187,27 @@ def test_review_lens_prompts_are_distinct(ae):
 
 @pytest.mark.parametrize("lens_key,tokens", [
     ("technical", ("الجدوى الفنية", "المنهجية", "الجدول", "الفريق", "SLA")),
-    ("commercial", ("جدول الكميات", "التسعير", "مخاطر الكلفة", "الدفعات")),
+    ("commercial", ("جدول الكميات", "التسعير", "مخاطر الكلفة", "الدفعات",
+                    "التوريد والتركيب")),
     ("legal", ("نظام المنافسات والمشتريات", "المحتوى المحلي",
-               "القائمة الإلزامية", "الضمان الابتدائي", "الغرامات")),
+               "القائمة الإلزامية", "الضمان الابتدائي", "الضمان النهائي",
+               "الكفالة", "الغرامات")),
 ])
 def test_each_agent_covers_its_domain(ae, lens_key, tokens):
     prompt = ae.REVIEW_LENSES[lens_key]["prompt"]
     for token in tokens:
         assert token in prompt, f"{lens_key} لا يغطي: {token}"
+
+
+def test_legal_agent_separates_the_three_guarantees(ae):
+    """
+    ثلاثة أشياء مختلفة يخلطها الاختصار: الضمان الابتدائي (مع العرض)، والنهائي
+    (عند الترسية)، وفترة الكفالة على المُورَّد. كل واحد غيابه له كلفة مختلفة.
+    """
+    prompt = ae.REVIEW_LENSES["legal"]["prompt"]
+    assert "الضمان الابتدائي" in prompt
+    assert "الضمان النهائي" in prompt
+    assert "فترة الضمان والكفالة" in prompt
 
 
 def test_commercial_agent_enforces_financial_isolation(ae):
