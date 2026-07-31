@@ -1,8 +1,21 @@
 """
 components/ui.py — Reusable UI Components
 """
+import inspect
 import streamlit as st
 from typing import Optional, Callable
+
+
+def _accepts_two_args(fn: Callable) -> bool:
+    """هل تقبل دالة التوليد معامل تقدّم إضافي إلى جانب اسم النموذج؟"""
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return len([
+        p for p in params.values()
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]) >= 2
 
 
 def section_card(title: str, icon: str = ""):
@@ -30,11 +43,17 @@ def ai_generate_button(
     Reusable AI generation widget: model selector + generate button + result + editable summary.
     Eliminates the repeated col_mod/col_btn pattern.
     """
+    from utils.ai_engine import DEFAULT_MODEL, MODEL_NAMES
+
+    default_model = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
+    default_index = MODEL_NAMES.index(default_model) if default_model in MODEL_NAMES else 0
+
     col_mod, col_btn = st.columns([3, 1])
     with col_mod:
         model = st.selectbox(
             "المحرك:",
-            ["Gemini 1.5 Flash", "Gemini 1.5 Pro"],
+            MODEL_NAMES,
+            index=default_index,
             key=f"model_{key}",
             label_visibility="collapsed",
         )
@@ -42,8 +61,17 @@ def ai_generate_button(
         generate = st.button(f"⚡ {label}", key=f"btn_{key}", type="primary", width="stretch")
 
     if generate:
+        status = st.empty()
         with st.spinner("جاري التوليد..."):
-            result = on_generate(model)
+            # يُمرَّر للمحرك ليعرض تقدّم التحليل المجزّأ للكراسات الكبيرة
+            def report(message: str):
+                status.caption(f"⏳ {message}")
+
+            if _accepts_two_args(on_generate):
+                result = on_generate(model, report)
+            else:
+                result = on_generate(model)
+            status.empty()
             if result:
                 st.session_state[result_state_key] = result
                 if summary_state_key and not st.session_state.get(summary_state_key):

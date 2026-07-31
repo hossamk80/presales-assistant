@@ -15,11 +15,21 @@ st.set_page_config(
 )
 
 # ─── Imports (after page config) ──────────────────────────────────────────────
-from utils.state import init_state
+from utils.state import init_state, load_company_snapshot
 from utils.ai_engine import estimate_tokens
+from utils import db
 
 # ─── Initialize Session State ─────────────────────────────────────────────────
 init_state()
+
+# ملف الشركة يُحمَّل من القرص مرة واحدة لكل جلسة
+if not st.session_state.get("_company_loaded"):
+    _company, _template, _logo = db.load_company()
+    if _company:
+        load_company_snapshot(_company)
+    if _template:
+        st.session_state["c_word_template_bytes"] = _template
+    st.session_state["_company_loaded"] = True
 
 # ─── Global Styles ────────────────────────────────────────────────────────────
 st.markdown("""
@@ -30,6 +40,32 @@ st.markdown("""
 *, .stApp, .main, .block-container,
 [data-testid="stSidebar"], [data-testid="stHeader"] {
     font-family: 'Tajawal', 'Segoe UI', sans-serif !important;
+}
+
+/* ── أيقونات Material ──
+   القاعدة أعلاه تستهدف كل العناصر (*) وكانت تفرض Tajawal على أيقونات
+   Streamlit أيضاً. الأيقونة هناك محرف ارتباط (ligature) في خط Material،
+   فإذا فُرض عليها خط بلا ارتباطات ظهر اسمها نصاً خاماً متداخلاً مع العنوان
+   (keyboard_arrow_down فوق ترويسة الموسّع). نعيد لها خطها هنا.
+   مُحدِّد السمة أعلى أولوية من * فيغلبها رغم !important. */
+span[data-testid="stIconMaterial"],
+[data-testid="stIconMaterial"],
+.material-icons, .material-icons-outlined,
+.material-symbols-rounded, .material-symbols-outlined,
+span[class*="material-symbols"] {
+    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
+                 'Material Icons' !important;
+    font-weight: normal !important;
+    font-style: normal !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    direction: ltr !important;
+    white-space: nowrap !important;
+    word-wrap: normal !important;
+    font-feature-settings: 'liga' !important;
+    -webkit-font-feature-settings: 'liga' !important;
+    font-variant-ligatures: common-ligatures !important;
+    -webkit-font-smoothing: antialiased;
 }
 
 .stApp, body {
@@ -255,6 +291,7 @@ with st.sidebar:
         "nav",
         options=[
             "🏠 لوحة التحكم",
+            "📁 المنافسات",
             "🚀 مساحة العمل",
             "🏢 ملف الشركة",
             "⚙️ إعدادات النظام",
@@ -268,6 +305,15 @@ with st.sidebar:
     st.divider()
 
     # Status Panel
+    project_name = st.session_state.get("_project_name")
+    st.markdown(
+        f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:4px;">
+            <div>{'📂' if project_name else '📁'} &nbsp; المنافسة:
+            {project_name or 'لم تُفتح — العمل غير محفوظ'}</div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
     company = st.session_state.get("c_name")
     api_ok = bool(st.session_state.get("api_gemini"))
     rfp_ok = bool(st.session_state.get("rfp_raw_text"))
@@ -309,8 +355,13 @@ if nav == "🏠 لوحة التحكم":
         rfp_text = st.session_state.get("rfp_raw_text", "")
         st.metric("كراسة الشروط", f"{estimate_tokens(rfp_text):,} توكن" if rfp_text else "لم تُحمَّل")
     with c4:
-        sections_done = sum(1 for k in ["sec_methodology", "sec_plan", "sec_cover"] if st.session_state.get(k))
-        st.metric("الأقسام المكتملة", f"{sections_done} / 3")
+        from utils.state import get_sections, section_content_key
+        included = [s for s in get_sections() if s.get("include") and s["kind"] == "ai"]
+        done = sum(
+            1 for s in included
+            if str(st.session_state.get(section_content_key(s["key"]), "")).strip()
+        )
+        st.metric("الأقسام المكتملة", f"{done} / {len(included)}")
 
     st.divider()
 
@@ -318,10 +369,10 @@ if nav == "🏠 لوحة التحكم":
     st.markdown("### 🗺️ خطوات سير العمل")
     steps = [
         ("1", "⚙️ الإعدادات", "أدخل مفتاح Gemini API وبيانات الشركة.", "#3B82F6"),
-        ("2", "🏢 ملف الشركة", "أدخل بيانات الشركة والقالب الرسمي.", "#8B5CF6"),
-        ("3", "📥 رفع الكراسة", "ارفع ملفات RFP واستخرج النصوص.", "#10B981"),
-        ("4", "🤖 التحليل الذكي", "شغّل تحليل Go/No-Go والأوزان والامتثال.", "#F59E0B"),
-        ("5", "📄 بناء العرض", "أنشئ أقسام العرض الفني واستخرج الوثيقة.", "#EF4444"),
+        ("2", "📥 رفع الكراسة", "ارفع ملفات RFP واستخرج النصوص (مع OCR).", "#8B5CF6"),
+        ("3", "🤖 التحليل الذكي", "Go/No-Go والأوزان والامتثال وجدول الكميات.", "#10B981"),
+        ("4", "📄 بناء العرض", "اقترح الهيكل وصُغ كل قسم من الكراسة.", "#F59E0B"),
+        ("5", "🔍 المراجعة والتسليم", "راجع من ثلاث زوايا وصدّر Word أو PDF.", "#EF4444"),
     ]
     cols = st.columns(5)
     for col, (num, title, desc, color) in zip(cols, steps):
@@ -343,8 +394,8 @@ if nav == "🏠 لوحة التحكم":
     f1, f2, f3 = st.columns(3)
     features = [
         ("🤖 تحليل ذكي شامل", "Go/No-Go · مصفوفة التقييم · فجوات الامتثال"),
-        ("📄 منشئ الوثائق", "توليد الأقسام · حقن القوالب · تصدير Word"),
-        ("📊 جداول تفاعلية", "Compliance Matrix · BOQ · تصدير CSV"),
+        ("📄 منشئ الوثائق", "هيكل مقترح · حقن القوالب · تصدير Word و PDF"),
+        ("🔍 مراجعة ثلاثية", "فنية · تجارية · قانونية · تطبيق بنقرة"),
     ]
     for col, (title, desc) in zip([f1, f2, f3], features):
         with col:
@@ -357,16 +408,23 @@ if nav == "🏠 لوحة التحكم":
             """, unsafe_allow_html=True)
 
 
+# ── Projects ──────────────────────────────────────────────────────────────────
+elif nav == "📁 المنافسات":
+    from views import projects
+    projects.render()
+
+
 # ── Workspace ─────────────────────────────────────────────────────────────────
 elif nav == "🚀 مساحة العمل":
     st.title("🚀 مساحة العمل")
 
-    from pages import analysis, tables, doc_builder
+    from views import analysis, tables, doc_builder, review
 
-    tab1, tab2, tab3 = st.tabs([
+    tab1, tab2, tab3, tab4 = st.tabs([
         "📥 1. التحليل والمخاطر",
-        "📊 2. المراجعة وجدول الكميات",
+        "📊 2. الامتثال وجدول الكميات",
         "📄 3. منشئ العرض الفني",
+        "🔍 4. المراجعة والتسليم",
     ])
     with tab1:
         analysis.render()
@@ -374,24 +432,32 @@ elif nav == "🚀 مساحة العمل":
         tables.render()
     with tab3:
         doc_builder.render()
+    with tab4:
+        review.render()
 
 
 # ── Company Profile ───────────────────────────────────────────────────────────
 elif nav == "🏢 ملف الشركة":
     st.title("🏢 ملف الشركة")
-    from pages import company
+    from views import company
     company.render()
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
 elif nav == "⚙️ إعدادات النظام":
     st.title("⚙️ إعدادات النظام")
-    from pages import settings
+    from views import settings
     settings.render_settings()
 
 
 # ── Data Management ───────────────────────────────────────────────────────────
 elif nav == "💾 إدارة البيانات":
     st.title("💾 إدارة البيانات")
-    from pages import settings
+    from views import settings
     settings.render_data()
+
+
+# ─── Auto-save ────────────────────────────────────────────────────────────────
+# يُنفَّذ بعد رسم الصفحة، فيلتقط أي تغيير أحدثه المستخدم في هذه الدورة.
+from views.projects import autosave  # noqa: E402
+autosave()

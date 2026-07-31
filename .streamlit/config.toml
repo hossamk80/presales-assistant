@@ -1,0 +1,25 @@
+# إعدادات Streamlit للتشغيل خلف وكيل (Replit وغيره).
+# Streamlit يقرأ هذا الملف من مجلد العمل، وReplit يشغّل من جذر المستودع.
+
+[server]
+address = "0.0.0.0"
+port = 8501
+headless = true
+
+# Replit يقدّم التطبيق عبر وكيل على نطاق مختلف، فتعطيل فحص CORS ضروري
+# ليعمل اتصال WebSocket. حماية XSRF تبقى مفعّلة.
+enableCORS = false
+enableXsrfProtection = true
+
+# كراسات الشروط ومرفقاتها قد تتجاوز الحد الافتراضي (200MB)
+maxUploadSize = 400
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#1D4ED8"
+backgroundColor = "#F1F5F9"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1E293B"

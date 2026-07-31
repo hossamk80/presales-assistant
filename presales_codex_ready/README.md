@@ -36,5 +36,7 @@ http://localhost:8501
 ## ملاحظات
 
 - أدخل مفتاح Google Gemini API من صفحة إعدادات النظام داخل التطبيق.
-- موفر الذكاء الاصطناعي المفعّل حالياً هو Google Gemini.
+- موفر الذكاء الاصطناعي المفعّل حالياً هو Google Gemini عبر حزمة `google-genai` الموحّدة.
+- النماذج المتاحة: Gemini 3.6 Flash (الافتراضي) · Gemini 3.1 Pro · Gemini 3.5 Flash-Lite.
+- لتفعيل OCR للملفات الممسوحة ضوئياً: `sudo apt install tesseract-ocr tesseract-ocr-ara poppler-utils` ثم `pip install pytesseract pdf2image`.
 - حقول OpenAI وClaude موجودة كخيارات/حقول إعدادات فقط وليست موفرات مفعّلة حالياً.

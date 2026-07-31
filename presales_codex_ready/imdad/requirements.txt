@@ -1,9 +1,26 @@
 streamlit>=1.35.0
-google-generativeai>=0.5.0
-python-docx>=1.1.0
-PyPDF2>=3.0.0
+
+# Google Gen AI SDK الموحّد — يحل محل google-generativeai المهجورة
+google-genai>=1.0.0
+
+# استخراج النصوص
+pypdf>=5.0.0
 docx2txt>=0.8
 beautifulsoup4>=4.12.0
 pandas>=2.0.0
 openpyxl>=3.1.0
 lxml>=4.9.0
+
+# بناء المستندات
+python-docx>=1.1.0
+
+# ─── اختياري: OCR للملفات الممسوحة ضوئياً ──────────────────────────────────
+# يتطلب أيضاً حزم نظام:
+#   sudo apt install tesseract-ocr tesseract-ocr-ara poppler-utils
+# pytesseract>=0.3.10
+# pdf2image>=1.17.0
+
+# تصدير PDF (اختياري — تصدير Word لا يحتاجه)
+reportlab>=4.0.0
+arabic-reshaper>=3.0.0
+python-bidi>=0.4.2

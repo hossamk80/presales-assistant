@@ -2,9 +2,18 @@
 pages/analysis.py — Tab 1: RFP Upload + AI Analysis
 """
 import streamlit as st
-from utils.ai_engine import ai_generate, estimate_tokens, PROMPTS
+from utils.ai_engine import (
+    DEFAULT_LANGUAGE,
+    ai_generate,
+    build_prompt,
+    estimate_tokens,
+)
 from utils.file_handler import extract_text_from_files
 from components.ui import ai_generate_button
+
+
+def _language() -> str:
+    return st.session_state.get("output_language", DEFAULT_LANGUAGE)
 
 
 def render():
@@ -57,10 +66,12 @@ def render():
             label="توليد تقرير Go/No-Go",
             key="gonogo",
             model_key="m1",
-            on_generate=lambda model: ai_generate(
-                PROMPTS["gonogo"],
+            on_generate=lambda model, report: ai_generate(
+                build_prompt("gonogo", _language()),
                 model_choice=model,
                 rfp_context=st.session_state["rfp_raw_text"],
+                on_progress=report,
+                language=_language(),
             ),
             result_state_key="analysis_gonogo",
             summary_state_key="sum_gonogo",
@@ -74,10 +85,12 @@ def render():
             label="استخراج الأوزان",
             key="eval",
             model_key="m2",
-            on_generate=lambda model: ai_generate(
-                PROMPTS["eval_matrix"],
+            on_generate=lambda model, report: ai_generate(
+                build_prompt("eval_matrix", _language()),
                 model_choice=model,
                 rfp_context=st.session_state["rfp_raw_text"],
+                on_progress=report,
+                language=_language(),
             ),
             result_state_key="evaluation_matrix",
             summary_state_key="sum_eval",
@@ -91,10 +104,12 @@ def render():
             label="فحص الشروط الإلزامية",
             key="compliance",
             model_key="m3",
-            on_generate=lambda model: ai_generate(
-                PROMPTS["compliance"],
+            on_generate=lambda model, report: ai_generate(
+                build_prompt("compliance", _language()),
                 model_choice=model,
                 rfp_context=st.session_state["rfp_raw_text"],
+                on_progress=report,
+                language=_language(),
             ),
             result_state_key="compliance_check",
             summary_state_key="sum_comp",
