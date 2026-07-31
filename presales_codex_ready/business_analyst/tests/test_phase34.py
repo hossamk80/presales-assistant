@@ -46,6 +46,16 @@ def test_section_prompt_covers_writing_criteria(ae):
         assert token in template
 
 
+def test_section_prompt_pins_the_arabic_register(ae):
+    """
+    "لغة رسمية" وحدها لا تمنع العامية ولا الترجمة الحرفية عن الإنجليزية،
+    وكلاهما يُضعف العرض أمام لجنة عربية.
+    """
+    template = ae.PROMPTS["section"]
+    assert "الفصحى" in template
+    assert "عامية" in template
+
+
 def test_section_prompt_builds(ae):
     out = ae.build_prompt(
         "section", "ar",
