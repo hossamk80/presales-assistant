@@ -1,8 +1,11 @@
 """
 pages/settings.py — System Settings: API Keys + Data Management
 """
-import streamlit as st
 import json
+import os
+
+import streamlit as st
+
 from utils.state import get_state_snapshot, load_state_snapshot
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
@@ -24,6 +27,12 @@ def render_settings():
         لا تُشارك session_state مع أي جهة.
         </div>
         """, unsafe_allow_html=True)
+
+        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+            st.info(
+                "🔐 يوجد مفتاح في متغيّرات البيئة (Replit Secrets مثلاً) وقد "
+                "حُمِّل تلقائياً. ما تكتبه هنا يَجُبّه لهذه الجلسة فقط."
+            )
 
         st.session_state["api_gemini"] = st.text_input(
             "🔑 Google Gemini API Key",

@@ -1,0 +1,34 @@
+entrypoint = "presales_codex_ready/imdad/app.py"
+modules = ["python-3.11"]
+
+run = [
+  "streamlit", "run", "presales_codex_ready/imdad/app.py",
+  "--server.address", "0.0.0.0",
+  "--server.port", "8501",
+  "--server.headless", "true",
+]
+
+[nix]
+channel = "stable-24_05"
+
+[env]
+# قاعدة البيانات خارج شجرة الكود ليسهل ربطها بقرص دائم عند النشر
+IMDAD_DB_PATH = "/home/runner/${REPL_SLUG}/data/imdad.db"
+
+# Replit يوجّه المنفذ الخارجي 80 إلى 8501 داخلياً
+[[ports]]
+localPort = 8501
+externalPort = 80
+
+[deployment]
+# ⚠️ اقرأ docs/deploy-replit.md قبل تغيير هذا.
+# Reserved VM يحتفظ بالقرص بين عمليات النشر — وهو المطلوب لأن كل المنافسات
+# ومستودع المعرفة في ملف SQLite على القرص. النشر من نوع Autoscale يمسح
+# الملفات عند كل إعادة تشغيل فتضيع بيانات العطاءات.
+deploymentTarget = "vm"
+run = [
+  "streamlit", "run", "presales_codex_ready/imdad/app.py",
+  "--server.address", "0.0.0.0",
+  "--server.port", "8501",
+  "--server.headless", "true",
+]

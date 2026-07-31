@@ -42,6 +42,32 @@ st.markdown("""
     font-family: 'Tajawal', 'Segoe UI', sans-serif !important;
 }
 
+/* ── أيقونات Material ──
+   القاعدة أعلاه تستهدف كل العناصر (*) وكانت تفرض Tajawal على أيقونات
+   Streamlit أيضاً. الأيقونة هناك محرف ارتباط (ligature) في خط Material،
+   فإذا فُرض عليها خط بلا ارتباطات ظهر اسمها نصاً خاماً متداخلاً مع العنوان
+   (keyboard_arrow_down فوق ترويسة الموسّع). نعيد لها خطها هنا.
+   مُحدِّد السمة أعلى أولوية من * فيغلبها رغم !important. */
+span[data-testid="stIconMaterial"],
+[data-testid="stIconMaterial"],
+.material-icons, .material-icons-outlined,
+.material-symbols-rounded, .material-symbols-outlined,
+span[class*="material-symbols"] {
+    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
+                 'Material Icons' !important;
+    font-weight: normal !important;
+    font-style: normal !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    direction: ltr !important;
+    white-space: nowrap !important;
+    word-wrap: normal !important;
+    font-feature-settings: 'liga' !important;
+    -webkit-font-feature-settings: 'liga' !important;
+    font-variant-ligatures: common-ligatures !important;
+    -webkit-font-smoothing: antialiased;
+}
+
 .stApp, body {
     background-color: #F1F5F9 !important;
     color: #1E293B !important;

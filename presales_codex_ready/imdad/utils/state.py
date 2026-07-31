@@ -2,10 +2,22 @@
 utils/state.py — Centralized Session State Management
 Prevents re-initialization bugs and provides typed defaults.
 """
+import os
+
 import pandas as pd
 import streamlit as st
 
 from utils.ai_engine import DEFAULT_LANGUAGE, DEFAULT_MODEL
+
+
+def _env_api_key() -> str:
+    """
+    مفتاح Gemini من متغيّرات البيئة (Replit Secrets أو بيئة الاستضافة).
+
+    يبقى الإدخال اليدوي من صفحة الإعدادات متاحاً ويَجُبّ هذه القيمة، فالتشغيل
+    المحلي لا يحتاج متغيّر بيئة أصلاً.
+    """
+    return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
 
 # ─── Default DataFrames ────────────────────────────────────────────────────────
 DEFAULT_COMPLIANCE_DF = pd.DataFrame({
@@ -69,7 +81,7 @@ STATE_SCHEMA = {
     "nav_selection": "dashboard",
 
     # API Keys
-    "api_gemini": "",
+    "api_gemini": _env_api_key(),
     "api_openai": "",
     "api_claude": "",
     "ai_model_preference": DEFAULT_MODEL,
