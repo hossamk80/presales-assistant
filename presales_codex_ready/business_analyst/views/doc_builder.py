@@ -7,7 +7,7 @@ views/doc_builder.py — Tab 3: منشئ العرض الفني
 import re
 import streamlit as st
 
-from utils import knowledge, traceability
+from utils import knowledge, submission, traceability
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
@@ -690,6 +690,18 @@ def _render_export(sections: list):
             for title, marks in placeholder_sections.items()
         )
         st.error(t("db.placeholders_found") + "\n\n" + details)
+
+    # مستند ناقص لا يُبطل العرض الفني نفسه — الملف صحيح والنقص في المظروف.
+    # فيُعرض بوضوح ولا يمنع التصدير: قد يبني المستخدم الملف ليراجعه بينما
+    # يلاحق الضمان البنكي.
+    envelope = submission.submission_summary(
+        st.session_state.get("df_submission"), st.session_state.get("project_context")
+    )
+    if envelope["missing"]:
+        st.warning(t("db.envelope_missing") + " · ".join(envelope["missing"][:10]))
+    if envelope["expiring"]:
+        st.error(t("db.envelope_expiring") + "\n\n"
+                 + "\n".join(f"- {item}" for item in envelope["expiring"][:10]))
 
     # متطلب عالي الأهمية بلا تغطية سبب استبعاد مباشر، فيمنع التصدير كما يمنعه
     # النص النائب — لا تحذيراً يمكن تجاوزه سهواً.

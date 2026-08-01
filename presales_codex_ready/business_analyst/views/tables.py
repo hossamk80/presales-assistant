@@ -15,13 +15,15 @@ from utils.state import (
     CRITICALITY_OPTIONS,
     DEFAULT_BOQ_DF,
     DEFAULT_COMPLIANCE_DF,
+    SUBMISSION_HAVE_OPTIONS,
     get_sections,
     migrate_boq_df,
     migrate_compliance_df,
+    migrate_submission_df,
     role_text,
     section_content_key,
 )
-from utils import traceability
+from utils import submission, traceability
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
@@ -29,10 +31,16 @@ from utils.ai_engine import (
     DEFAULT_MODEL,
     EXTRACT_PROMPTS,
     MODEL_NAMES,
+    SUBMISSION_SCHEMA,
     ai_generate_json,
+    language_instruction,
 )
 from components.ui import status_badge
 from utils.i18n import t
+
+
+def _output_language() -> str:
+    return st.session_state.get("output_language", DEFAULT_LANGUAGE)
 
 
 def _model_picker(key: str) -> str:
@@ -241,6 +249,83 @@ def _render_coverage():
                 st.rerun()
 
 
+def _render_submission_docs():
+    """
+    مستندات المظروف: تُستخرج من الكراسة، وحيازتها وإرفاقها قرار بشري.
+
+    الاستبعاد الشكلي لا علاقة له بجودة العرض الفني، فيُتتبَّع مستقلاً عنه.
+    """
+    with st.expander(t("tb.submission"), expanded=False):
+        st.caption(t("tb.submission_hint"))
+
+        df = migrate_submission_df(st.session_state.get("df_submission"))
+        st.session_state["df_submission"] = df
+
+        summary = submission.submission_summary(
+            df, st.session_state.get("project_context")
+        )
+        c1, c2, c3 = st.columns(3)
+        c1.metric(t("tb.sub_total"), summary["total"])
+        c2.metric(t("tb.sub_ready"), f"{summary['ready']} / {summary['mandatory']}")
+        c3.metric(t("tb.sub_missing"), len(summary["missing"]))
+
+        if summary["missing"]:
+            st.error(t("tb.sub_missing_list") + " · ".join(summary["missing"]))
+        if summary["expiring"]:
+            st.error(t("tb.sub_expiring") + "\n\n"
+                     + "\n".join(f"- {item}" for item in summary["expiring"]))
+
+        col_model, col_btn = st.columns([2, 1])
+        with col_model:
+            model = _model_picker("m_submission")
+        with col_btn:
+            st.markdown("<br>", unsafe_allow_html=True)
+            run = st.button(t("tb.sub_extract"), type="primary",
+                            key="extract_submission", width="stretch",
+                            disabled=not st.session_state.get("rfp_raw_text"))
+
+        if run:
+            status = st.empty()
+            with st.spinner(t("common.extracting")):
+                result = ai_generate_json(
+                    EXTRACT_PROMPTS["submission_docs"]
+                    + f"\n{language_instruction(_output_language())}",
+                    schema=SUBMISSION_SCHEMA,
+                    model_choice=model,
+                    rfp_context=st.session_state.get("rfp_raw_text", ""),
+                    merge_key="documents",
+                    on_progress=lambda m: status.caption(f"⏳ {m}"),
+                )
+            status.empty()
+            docs = (result or {}).get("documents") or []
+            if docs:
+                st.session_state["df_submission"] = submission.documents_to_df(docs)
+                st.rerun()
+            elif result is not None:
+                st.warning(t("tb.sub_none"))
+
+        edited = st.data_editor(
+            df,
+            num_rows="dynamic",
+            width="stretch",
+            key="de_submission",
+            column_config={
+                "المستند": st.column_config.TextColumn(t("tb.sub_col_doc"), width="large"),
+                "مرجع البند": st.column_config.TextColumn(t("tb.col_clause"), width="small"),
+                "إلزامي": st.column_config.CheckboxColumn(t("tb.sub_col_mandatory")),
+                "لدينا": st.column_config.SelectboxColumn(
+                    t("tb.sub_col_have"), options=SUBMISSION_HAVE_OPTIONS, required=True
+                ),
+                "تاريخ الانتهاء": st.column_config.TextColumn(
+                    t("tb.sub_col_expiry"), help=t("tb.sub_col_expiry_help")
+                ),
+                "مرفق في المظروف": st.column_config.CheckboxColumn(t("tb.sub_col_attached")),
+                "ملاحظات": st.column_config.TextColumn(t("tb.sub_col_notes"), width="medium"),
+            },
+        )
+        st.session_state["df_submission"] = edited
+
+
 def render():
     st.markdown(t("tb.title"))
 
@@ -358,6 +443,9 @@ def render():
             },
         )
         st.session_state["df_boq"] = edited_boq
+
+    st.divider()
+    _render_submission_docs()
 
     # ── Export Tables ──────────────────────────────────────────────────────────
     st.divider()

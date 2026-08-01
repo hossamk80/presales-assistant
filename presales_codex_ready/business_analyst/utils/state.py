@@ -107,6 +107,47 @@ def migrate_compliance_df(df: "pd.DataFrame") -> "pd.DataFrame":
 
     return out[COMPLIANCE_COLUMNS]
 
+# ─── مستندات التسليم ───────────────────────────────────────────────────────────
+# أكثر أسباب الاستبعاد شيوعاً ليست ضعف العرض الفني بل مستند ناقص في المظروف.
+SUBMISSION_COLUMNS = [
+    "المستند",
+    "مرجع البند",
+    "إلزامي",
+    "لدينا",
+    "تاريخ الانتهاء",
+    "مرفق في المظروف",
+    "ملاحظات",
+]
+
+# "لدينا" و"مرفق" قراران بشريان: النموذج يقرأ الكراسة لا خزانة مستنداتك.
+SUBMISSION_HAVE_OPTIONS = ["بانتظار التحقق", "نعم", "لا", "لا ينطبق"]
+
+DEFAULT_SUBMISSION_DF = pd.DataFrame({
+    "المستند": [""],
+    "مرجع البند": [""],
+    "إلزامي": [True],
+    "لدينا": ["بانتظار التحقق"],
+    "تاريخ الانتهاء": [""],
+    "مرفق في المظروف": [False],
+    "ملاحظات": [""],
+})
+
+
+def migrate_submission_df(df) -> "pd.DataFrame":
+    """يضمن أن جدول المستندات يحمل كل الأعمدة مهما كان مصدره."""
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_SUBMISSION_DF.copy()
+    if list(df.columns) == SUBMISSION_COLUMNS:
+        return df
+
+    out = df.copy()
+    defaults = {"إلزامي": True, "لدينا": "بانتظار التحقق", "مرفق في المظروف": False}
+    for col in SUBMISSION_COLUMNS:
+        if col not in out.columns:
+            out[col] = defaults.get(col, "")
+    return out[SUBMISSION_COLUMNS]
+
+
 # ─── جدول الكميات ──────────────────────────────────────────────────────────────
 # الأعمدة تتبع مخطط الاستخراج الموحّد (9 حقول) لا الشكل المختصر السابق.
 BOQ_COLUMNS = [
@@ -410,6 +451,7 @@ STATE_SCHEMA = {
     # Tables
     "df_compliance": DEFAULT_COMPLIANCE_DF,
     "df_boq": DEFAULT_BOQ_DF,
+    "df_submission": DEFAULT_SUBMISSION_DF,
 
     # UI State
     "ai_generating": False,
@@ -457,6 +499,7 @@ def reset_analysis():
 
     st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
+    st.session_state["df_submission"] = DEFAULT_SUBMISSION_DF.copy()
     st.session_state["review_findings"] = []
     st.session_state["review_scores"] = {}
     st.session_state["review_ran_at"] = ""
@@ -499,6 +542,8 @@ def load_state_snapshot(data: dict):
                         st.session_state[key] = migrate_boq_df(loaded)
                     elif key == "df_compliance":
                         st.session_state[key] = migrate_compliance_df(loaded)
+                    elif key == "df_submission":
+                        st.session_state[key] = migrate_submission_df(loaded)
                     else:
                         st.session_state[key] = loaded
                 except Exception:
