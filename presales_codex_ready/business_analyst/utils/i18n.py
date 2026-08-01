@@ -184,6 +184,38 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "proj.created": {"ar": "✅ أُنشئت المنافسة «{name}».", "en": "✅ Created tender “{name}”."},
     "proj.saved": {"ar": "💾 حُفظت المنافسة.", "en": "💾 Tender saved."},
     "proj.count": {"ar": "**{n} منافسة محفوظة**", "en": "**{n} saved tenders**"},
+    "proj.history": {"ar": "🧠 ذاكرة العطاءات", "en": "🧠 Bid memory"},
+    "proj.history_hint": {
+        "ar": "سجّل نتيجة كل منافسة وسببها، فيستدعي النظام المشابه منها عند "
+              "عطاء جديد. هذه سوابقك أنت — لا بيانات عن المنافسين.",
+        "en": "Record each tender's outcome and why, and the system surfaces the "
+              "similar ones on a new bid. These are your own precedents — not "
+              "data about competitors.",
+    },
+    "proj.history_open_first": {
+        "ar": "افتح منافسة لعرض السوابق المشابهة لها.",
+        "en": "Open a tender to see its similar precedents.",
+    },
+    "proj.won": {"ar": "فاز", "en": "Won"},
+    "proj.lost": {"ar": "خسر", "en": "Lost"},
+    "proj.not_submitted": {"ar": "لم يُقدَّم", "en": "Not submitted"},
+    "proj.unset": {"ar": "بلا نتيجة", "en": "No outcome"},
+    "proj.similar": {"ar": "منافسات سابقة مشابهة", "en": "Similar past tenders"},
+    "proj.no_similar": {
+        "ar": "لا سوابق مشابهة في قاعدتك بعد.",
+        "en": "No similar precedents in your database yet.",
+    },
+    "proj.same_entity": {"ar": "نفس الجهة", "en": "same entity"},
+    "proj.record_outcome": {"ar": "تسجيل نتيجة المنافسة المفتوحة",
+                            "en": "Record the open tender's outcome"},
+    "proj.outcome": {"ar": "النتيجة", "en": "Outcome"},
+    "proj.outcome_note": {"ar": "السبب / الدرس المستفاد", "en": "Reason / lesson"},
+    "proj.outcome_note_ph": {
+        "ar": "مثال: خسرنا على نسبة المحتوى المحلي رغم قوة العرض الفني",
+        "en": "e.g. lost on the local-content percentage despite a strong technical offer",
+    },
+    "proj.save_outcome": {"ar": "💾 احفظ النتيجة", "en": "💾 Save outcome"},
+    "proj.outcome_saved": {"ar": "سُجّلت النتيجة.", "en": "Outcome recorded."},
     "proj.updated": {"ar": "آخر تحديث:", "en": "Updated:"},
     "proj.copy_suffix": {"ar": "(نسخة)", "en": "(copy)"},
     "proj.not_found": {"ar": "❌ لم يُعثر على المنافسة.", "en": "❌ Tender not found."},

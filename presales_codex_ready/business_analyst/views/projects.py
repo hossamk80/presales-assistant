@@ -7,7 +7,7 @@ views/projects.py — إدارة المنافسات المحفوظة
 import json
 import streamlit as st
 
-from utils import db
+from utils import db, history
 from utils.i18n import t
 from utils.state import (
     STATE_SCHEMA,
@@ -99,6 +99,78 @@ def close_project():
     st.session_state.pop("_saved_fingerprint", None)
 
 
+def _render_history(projects: list, pid):
+    """
+    ذاكرة العطاءات: سجل النتائج، والمنافسات السابقة المشابهة للمفتوحة الآن.
+    """
+    stats = history.outcome_stats(projects)
+
+    with st.expander(t("proj.history"), expanded=False):
+        st.caption(t("proj.history_hint"))
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(t("proj.won"), stats["won"])
+        c2.metric(t("proj.lost"), stats["lost"])
+        c3.metric(t("proj.not_submitted"), stats["not_submitted"])
+        c4.metric(t("proj.unset"), stats["unset"])
+
+        if pid is None:
+            st.info(t("proj.history_open_first"))
+            return
+
+        current = next((p for p in projects if p["id"] == pid), None)
+        if current is None:
+            return
+
+        similar = history.similar_projects(
+            projects, current["name"], current.get("entity", ""), exclude_id=pid
+        )
+        if not similar:
+            st.info(t("proj.no_similar"))
+        else:
+            st.markdown(f"**{t('proj.similar')}**")
+            for item in similar:
+                outcome = str(item.get("outcome", "")).strip() or t("proj.unset")
+                marks = []
+                if item["same_entity"]:
+                    marks.append(t("proj.same_entity"))
+                if item["shared_terms"]:
+                    marks.append(" · ".join(item["shared_terms"][:4]))
+                st.markdown(
+                    f"- **{item['name']}** — {outcome}"
+                    + (f"  \n  <span style='color:#64748B;font-size:12px'>"
+                       f"{' | '.join(marks)}</span>" if marks else ""),
+                    unsafe_allow_html=True,
+                )
+                note = str(item.get("outcome_note", "")).strip()
+                if note:
+                    st.caption(f"↳ {note}")
+
+        st.divider()
+        st.markdown(f"**{t('proj.record_outcome')}**")
+        col_out, col_note = st.columns([1, 3])
+        with col_out:
+            outcome = st.selectbox(
+                t("proj.outcome"),
+                options=history.OUTCOME_OPTIONS,
+                index=history.OUTCOME_OPTIONS.index(current.get("outcome") or "")
+                if (current.get("outcome") or "") in history.OUTCOME_OPTIONS else 0,
+                format_func=lambda v: v or t("proj.unset"),
+                key=f"outcome_{pid}",
+            )
+        with col_note:
+            note = st.text_input(
+                t("proj.outcome_note"),
+                value=current.get("outcome_note") or "",
+                placeholder=t("proj.outcome_note_ph"),
+                key=f"outcome_note_{pid}",
+            )
+        if st.button(t("proj.save_outcome"), type="primary", key=f"save_outcome_{pid}"):
+            db.set_outcome(pid, outcome, note.strip())
+            st.success(t("proj.outcome_saved"))
+            st.rerun()
+
+
 def render():
     st.markdown(f"### {t('proj.title')}")
     st.caption(f"{t('proj.caption')} {t('proj.db_path')} `{db.DB_PATH}`")
@@ -156,6 +228,8 @@ def render():
     projects = db.list_projects()
     if not projects:
         return
+
+    _render_history(projects, pid)
 
     st.markdown(t("proj.count", n=len(projects)))
     for proj in projects:
