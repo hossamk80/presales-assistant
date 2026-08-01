@@ -258,7 +258,7 @@ def test_scalar_fields_survive_chunked_merge(ae, monkeypatch):
     درجة الجاهزية حقل قياسي لا قائمة. دمج الأجزاء كان يُرجع القائمة وحدها
     فتضيع الدرجة على الكراسات الكبيرة.
     """
-    def fake_call_json(prompt, model_id, schema):
+    def fake_call_json(prompt, model_id, schema, on_progress=None):
         return {"readiness_score": 71, "assessment": "جيد",
                 "recommendations": ["توصية"], "findings": [{"issue": "x"}]}
 

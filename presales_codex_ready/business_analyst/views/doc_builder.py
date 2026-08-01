@@ -23,7 +23,13 @@ from utils.ai_engine import (
     language_instruction,
     outline_prompt,
 )
-from utils.file_handler import BRAND_COLOR, build_pdf_document, build_word_document
+from utils.file_handler import (
+    BRAND_COLOR,
+    build_pdf_document,
+    build_word_document,
+    confidentiality_notice,
+    resolve_document_tokens,
+)
 from utils.i18n import t
 from utils.state import (
     boq_scope_block,
@@ -637,17 +643,17 @@ def _collect_export_payload(sections: list) -> list:
         item = {"key": sec["key"], "title": sec["title"], "kind": sec["kind"], "content": ""}
 
         if sec["kind"] == "cover":
-            item["content"] = (
+            raw = (
                 st.session_state.get("c_cover_template", "")
                 if st.session_state.get("sec_cover_use_template", True)
                 else st.session_state.get("sec_cover", "")
             )
+            item["content"] = resolve_document_tokens(
+                raw, st.session_state.get("c_name", "")
+            )
         elif sec["kind"] == "docinfo":
-            company = st.session_state.get("c_name", "")
-            item["content"] = (
-                "هذا المستند سري للغاية ومُعدّ حصرياً للجهة المُرسَل إليها.\n"
-                f"الشركة المُقدِّمة: {company}\n"
-                "يُحظر توزيع هذا المستند أو إعادة إنتاجه دون إذن كتابي مسبق."
+            item["content"] = confidentiality_notice(
+                st.session_state.get("c_name", ""), _language()
             )
         elif sec["kind"] == "ai":
             item["content"] = st.session_state.get(section_content_key(sec["key"]), "")

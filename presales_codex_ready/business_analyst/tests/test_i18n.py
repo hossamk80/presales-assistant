@@ -89,6 +89,48 @@ def test_ui_language_is_independent_of_output_language(i18n, fake_streamlit):
     assert ai_engine.is_rtl("ar") is True
 
 
+def test_utils_have_no_hardcoded_arabic_ui_messages(app_dir):
+    """
+    رسائل `utils/` تظهر للمستخدم كما تظهر رسائل `views/`، فتخضع للقاعدة نفسها.
+    كانت أخطاء المحرّك ومستودع المعرفة مكتوبة عربية في الشيفرة، فيراها مستخدم
+    الواجهة الإنجليزية بالعربية.
+
+    يفحص النصوص الثابتة والمنسّقة (f-string) معاً — الأخيرة هي ما أفلت سابقاً.
+    نصوص المستند المصدَّر مستثناة: تلك تتبع لغة المخرجات لا لغة الواجهة.
+    """
+    import ast
+
+    arabic = re.compile(r"[\u0600-\u06FF]")
+    message_calls = {"error", "warning", "info", "success", "caption", "expander"}
+    # نصوص تُكتب داخل الملف المصدَّر، لا في الواجهة
+    exempt_files = {"file_handler.py"}
+    offenders = []
+
+    for path in sorted((app_dir / "utils").glob("*.py")):
+        if path.name in exempt_files:
+            continue
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "attr", getattr(node.func, "id", "")) not in message_calls:
+                continue
+            for arg in node.args:
+                literals = []
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    literals.append(arg.value)
+                elif isinstance(arg, ast.JoinedStr):
+                    literals += [
+                        v.value for v in arg.values
+                        if isinstance(v, ast.Constant) and isinstance(v.value, str)
+                    ]
+                for text in literals:
+                    if arabic.search(text):
+                        offenders.append(f"{path.name}:{arg.lineno} {text[:40]}")
+
+    assert not offenders, "رسالة عربية خارج i18n:\n" + "\n".join(offenders)
+
+
 def test_views_have_no_hardcoded_arabic_ui_text(app_dir):
     """
     حارس التعليمات الدائمة: نصوص الواجهة تمر من i18n لا مكتوبة مباشرةً.

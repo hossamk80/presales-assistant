@@ -14,12 +14,43 @@ import pandas as pd
 # صيغ التواريخ الشائعة في إدخال المستخدم، بالترتيب.
 _DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y")
 
+# دلائل التقويم الهجري في النص: "هـ" · "ه" ملحقة · "هجري" · "AH".
+_HIJRI_MARK_RE = re.compile(r"(هـ|هجري|هجرية|\bAH\b)", re.IGNORECASE)
+
+# سنة هجرية معقولة. خارج هذا المدى الأرجح أنه رقم آخر لا سنة.
+_HIJRI_YEAR_RANGE = (1300, 1600)
+
+
+def _hijri_to_gregorian(year: int, month: int, day: int) -> Optional[datetime.date]:
+    """
+    تحويل تاريخ هجري إلى ميلادي عبر مكتبة أم القرى إن توفّرت.
+
+    التحويل الحسابي التقريبي مرفوض هنا عمداً: فرق يوم واحد عند الحافة يقلب
+    الحكم على شهادة تنتهي قبل الموعد النهائي أو بعده، وهو حكم يُبنى عليه قرار
+    تسليم. فإمّا تحويل صحيح أو لا حكم.
+    """
+    try:                                     # الاسم الحالي للمكتبة
+        from hijridate import Hijri
+    except ImportError:
+        try:                                 # الاسم القديم قبل إعادة التسمية
+            from hijri_converter import Hijri
+        except ImportError:
+            return None
+    try:
+        # نبني التاريخ من الحقول لا من `datetime()`: الأخيرة موجودة في
+        # الإصدار القديم وحده، والجديد يُرجع نوعاً يرث `date` بلا تلك الدالة.
+        g = Hijri(year, month, day).to_gregorian()
+        return datetime.date(g.year, g.month, g.day)
+    except (ValueError, OverflowError, AttributeError):
+        return None
+
 
 def parse_date(value) -> Optional[datetime.date]:
     """
-    يقرأ تاريخاً مكتوباً بأي من الصيغ الشائعة، ويُرجع None إن تعذّر.
+    يقرأ تاريخاً مكتوباً بأي من الصيغ الشائعة، ميلادياً أو هجرياً.
 
-    التاريخ غير المقروء لا يُفترض صالحاً ولا منتهياً — يُترك بلا حكم.
+    التاريخ غير المقروء لا يُفترض صالحاً ولا منتهياً — يُترك بلا حكم. وكذلك
+    الهجري حين تغيب مكتبة التحويل: لا حكم خير من حكم بيوم خاطئ.
     """
     if isinstance(value, datetime.datetime):
         return value.date()
@@ -29,6 +60,15 @@ def parse_date(value) -> Optional[datetime.date]:
     text = str(value or "").strip()
     if not text:
         return None
+
+    if _HIJRI_MARK_RE.search(text):
+        hijri = _parse_hijri(text)
+        if hijri:
+            return hijri
+        # مؤشّر هجري بلا تحويل ممكن: لا نُعامله ميلادياً — 1447/03/15 ميلادياً
+        # تاريخ لا معنى له، وقراءته كذلك أسوأ من عدم قراءته.
+        return None
+
     for fmt in _DATE_FORMATS:
         try:
             return datetime.datetime.strptime(text, fmt).date()
@@ -37,12 +77,38 @@ def parse_date(value) -> Optional[datetime.date]:
     return None
 
 
+def _parse_hijri(text: str) -> Optional[datetime.date]:
+    """يلتقط تاريخاً هجرياً من نص موسوم ويحوّله ميلادياً."""
+    numbers = re.search(r"(\d{1,4})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{1,4})", text)
+    if not numbers:
+        return None
+
+    first, middle, last = (int(g) for g in numbers.groups())
+    low, high = _HIJRI_YEAR_RANGE
+
+    # الترتيب الشائع سنة/شهر/يوم، ويرد أيضاً يوم/شهر/سنة.
+    if low <= first <= high:
+        year, month, day = first, middle, last
+    elif low <= last <= high:
+        year, month, day = last, middle, first
+    else:
+        return None
+
+    if not (1 <= month <= 12 and 1 <= day <= 30):
+        return None
+    return _hijri_to_gregorian(year, month, day)
+
+
 def deadline_date(project_context: Optional[dict]) -> Optional[datetime.date]:
     """الموعد النهائي من السياق الموحّد، إن أمكن قراءته."""
     raw = str((project_context or {}).get("submission_deadline", "")).strip()
     direct = parse_date(raw)
     if direct:
         return direct
+    # نص موسوم بالهجري تولّاه `parse_date` أصلاً. الالتفاف عليه هنا يقرأ
+    # 1447/03/15 سنةً ميلادية فيُخرج موعداً في القرن الخامس عشر.
+    if _HIJRI_MARK_RE.search(raw):
+        return None
     # الموعد قد يأتي داخل جملة ("آخر موعد 2026-09-01 الساعة 12 ظهراً")
     match = re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}", raw)
     return parse_date(match.group(0)) if match else None

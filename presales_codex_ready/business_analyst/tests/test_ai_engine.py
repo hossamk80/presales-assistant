@@ -70,7 +70,7 @@ def test_estimate_tokens_monotonic(ae):
 def test_json_merge_concatenates_across_chunks(ae, monkeypatch):
     calls = {"n": 0}
 
-    def fake_call_json(prompt, model_id, schema):
+    def fake_call_json(prompt, model_id, schema, on_progress=None):
         calls["n"] += 1
         return {"requirements": [{"requirement": f"req-{calls['n']}"}]}
 
@@ -87,7 +87,7 @@ def test_json_merge_concatenates_across_chunks(ae, monkeypatch):
 def test_json_single_call_when_context_fits(ae, monkeypatch):
     calls = {"n": 0}
 
-    def fake_call_json(prompt, model_id, schema):
+    def fake_call_json(prompt, model_id, schema, on_progress=None):
         calls["n"] += 1
         return {"requirements": []}
 

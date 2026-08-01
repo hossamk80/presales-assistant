@@ -5,8 +5,11 @@ utils/ai_engine.py — محرك الذكاء الاصطناعي (Google Gen AI S
 """
 import json
 import re
+import time
 import streamlit as st
 from typing import Any, Callable, Optional
+
+from utils.i18n import t
 
 # ─── سجل النماذج ──────────────────────────────────────────────────────────────
 # الاسم المعروض -> معرّف النموذج في الـ API
@@ -107,16 +110,63 @@ def get_client():
     """يُرجع عميلاً جاهزاً أو None مع رسالة خطأ واضحة."""
     api_key = st.session_state.get("api_gemini")
     if not api_key:
-        st.error("⚠️ يرجى إدخال مفتاح Google Gemini API في **إعدادات النظام** أولاً.")
+        st.error(t("eng.key_missing"))
         return None
     try:
         return _get_client(api_key)
     except ImportError:
-        st.error("❌ مكتبة google-genai غير مثبّتة. شغّل: pip install google-genai")
+        st.error(t("eng.sdk_missing"))
         return None
     except Exception as e:
-        st.error(f"❌ تعذّر تهيئة عميل Gemini: {e}")
+        st.error(t("eng.client_failed", error=e))
         return None
+
+
+# ─── إعادة المحاولة عند الفشل العابر ──────────────────────────────────────────
+#
+# تحليل كراسة كبيرة عشرات الاستدعاءات. حدّ معدّل واحد (429) أو انقطاع لحظي
+# (503) كان يُسقط التحليل كله ويُجبر المستخدم على إعادته من أوله — وقد استُهلك
+# التوكن مرتين. نعيد المحاولة على الأخطاء العابرة وحدها؛ مفتاح خاطئ أو طلب
+# مرفوض لا يُصلحه الانتظار.
+
+RETRY_ATTEMPTS = 3
+RETRY_BASE_DELAY = 2.0          # ثوانٍ، تتضاعف مع كل محاولة
+
+_TRANSIENT_MARKERS = (
+    "429", "500", "502", "503", "504",
+    "rate limit", "resource_exhausted", "quota",
+    "unavailable", "deadline", "timeout", "internal error",
+    "connection", "temporarily",
+)
+
+
+def _is_transient(error: Exception) -> bool:
+    """هل يستحق هذا الخطأ إعادة محاولة؟"""
+    code = getattr(error, "code", None) or getattr(error, "status_code", None)
+    if code in (429, 500, 502, 503, 504):
+        return True
+    text = f"{type(error).__name__} {error}".lower()
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
+def _with_retry(call, on_progress: Optional[Callable[[str], None]] = None):
+    """
+    ينفّذ `call` مع إعادة محاولة تصاعدية على الأخطاء العابرة.
+
+    يُعيد رفع الخطأ بعد استنفاد المحاولات ليعالجه المتصل كما كان يفعل.
+    """
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            return call()
+        except Exception as error:
+            if attempt == RETRY_ATTEMPTS or not _is_transient(error):
+                raise
+            message = t("eng.retrying", n=attempt, total=RETRY_ATTEMPTS - 1)
+            if on_progress:
+                on_progress(message)
+            else:
+                st.warning(message)
+            time.sleep(RETRY_BASE_DELAY * (2 ** (attempt - 1)))
 
 
 def count_tokens_exact(text: str, model_choice: str = DEFAULT_MODEL) -> Optional[int]:
@@ -133,20 +183,24 @@ def count_tokens_exact(text: str, model_choice: str = DEFAULT_MODEL) -> Optional
         return None
 
 
-def _call(prompt: str, model_id: str) -> Optional[str]:
-    """استدعاء واحد للنموذج."""
+def _call(prompt: str, model_id: str,
+          on_progress: Optional[Callable[[str], None]] = None) -> Optional[str]:
+    """استدعاء واحد للنموذج، مع إعادة محاولة على الفشل العابر."""
     client = get_client()
     if client is None:
         return None
     try:
-        response = client.models.generate_content(model=model_id, contents=prompt)
+        response = _with_retry(
+            lambda: client.models.generate_content(model=model_id, contents=prompt),
+            on_progress,
+        )
         text = response.text
         if not text:
-            st.warning("⚠️ رجع النموذج رداً فارغاً — قد يكون الطلب حُجب بفلاتر الأمان.")
+            st.warning(t("eng.empty_reply"))
             return None
         return text
     except Exception as e:
-        st.error(f"❌ خطأ Gemini API: {e}")
+        st.error(t("eng.api_error", error=e))
         return None
 
 
@@ -221,11 +275,11 @@ def ai_generate(
         prompt = f"{prompt}\n{extra_context}"
 
     if not rfp_context:
-        return _call(prompt, model_id)
+        return _call(prompt, model_id, on_progress)
 
     # المسار المعتاد: الكراسة كاملة في استدعاء واحد
     if len(rfp_context) <= CONTEXT_CHAR_BUDGET:
-        return _call(f"{prompt}\n\n---\nنص الكراسة:\n{rfp_context}", model_id)
+        return _call(f"{prompt}\n\n---\nنص الكراسة:\n{rfp_context}", model_id, on_progress)
 
     # المسار الاستثنائي: كراسة أكبر من نافذة السياق
     chunks = _split_into_chunks(rfp_context, CONTEXT_CHAR_BUDGET)
@@ -240,6 +294,7 @@ def ai_generate(
             f"حلّل ما ورد في هذا الجزء فقط ولا تفترض ما في الأجزاء الأخرى.\n\n"
             f"نص الجزء:\n{chunk}",
             model_id,
+            on_progress,
         )
         if part:
             partials.append(f"### نتيجة الجزء {i}\n{part}")
@@ -258,6 +313,7 @@ def ai_generate(
             language_instruction=language_instruction(language),
         ),
         model_id,
+        on_progress,
     )
 
 
@@ -271,24 +327,27 @@ def _strip_code_fence(text: str) -> str:
     return fence.group(1) if fence else stripped
 
 
-def _call_json(prompt: str, model_id: str, schema: dict) -> Optional[Any]:
-    """استدعاء يُرجع JSON مطابقاً للمخطط المحدّد."""
+def _call_json(prompt: str, model_id: str, schema: dict,
+               on_progress: Optional[Callable[[str], None]] = None) -> Optional[Any]:
+    """استدعاء يُرجع JSON مطابقاً للمخطط المحدّد، مع إعادة محاولة عابرة."""
     client = get_client()
     if client is None:
         return None
     try:
         from google.genai import types
 
-        response = client.models.generate_content(
-            model=model_id,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=schema,
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+        )
+        response = _with_retry(
+            lambda: client.models.generate_content(
+                model=model_id, contents=prompt, config=config
             ),
+            on_progress,
         )
     except Exception as e:
-        st.error(f"❌ خطأ Gemini API: {e}")
+        st.error(t("eng.api_error", error=e))
         return None
 
     # المسار المفضّل: كائن مُحلَّل جاهز من الـ SDK
@@ -298,14 +357,14 @@ def _call_json(prompt: str, model_id: str, schema: dict) -> Optional[Any]:
 
     raw = getattr(response, "text", None)
     if not raw:
-        st.warning("⚠️ رجع النموذج رداً فارغاً — قد يكون الطلب حُجب بفلاتر الأمان.")
+        st.warning(t("eng.empty_reply"))
         return None
 
     try:
         return json.loads(_strip_code_fence(raw))
     except json.JSONDecodeError as e:
-        st.error(f"❌ تعذّر تحليل رد النموذج كـ JSON: {e}")
-        with st.expander("عرض الرد الخام"):
+        st.error(t("eng.json_failed", error=e))
+        with st.expander(t("eng.raw_reply")):
             st.code(raw[:3000])
         return None
 
@@ -333,10 +392,13 @@ def ai_generate_json(
     model_id = resolve_model(model_choice)
 
     if not rfp_context:
-        return _call_json(prompt, model_id, schema)
+        return _call_json(prompt, model_id, schema, on_progress)
 
     if len(rfp_context) <= CONTEXT_CHAR_BUDGET:
-        return _call_json(f"{prompt}\n\n---\nنص الكراسة:\n{rfp_context}", model_id, schema)
+        return _call_json(
+            f"{prompt}\n\n---\nنص الكراسة:\n{rfp_context}",
+            model_id, schema, on_progress,
+        )
 
     # كراسة أكبر من نافذة السياق
     chunks = _split_into_chunks(rfp_context, CONTEXT_CHAR_BUDGET)
@@ -350,6 +412,7 @@ def ai_generate_json(
             f"استخرج ما ورد في هذا الجزء فقط.\n\nنص الجزء:\n{chunk}",
             model_id,
             schema,
+            on_progress,
         )
         if part is not None:
             results.append(part)
