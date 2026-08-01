@@ -32,6 +32,19 @@ COMPLIANCE_COLUMNS = [
     "استراتيجية الاستجابة",
     "الالتزام",
     "الشهادة المطلوبة",
+    # تتبّع التغطية: أين عولج هذا المتطلب فعلاً في نص العرض.
+    "التغطية",
+    "القسم المغطّي",
+]
+
+# حالات التغطية. القيمة الافتراضية "غير مفحوص" لا "غير مغطّى": الفرق بين
+# "فحصنا فلم نجد" و"لم نفحص بعد" فرق جوهري عند قرار التسليم.
+COVERAGE_UNCHECKED = "غير مفحوص"
+COVERAGE_COVERED = "مغطّى"
+COVERAGE_PARTIAL = "جزئي"
+COVERAGE_MISSING = "غير مغطّى"
+COVERAGE_OPTIONS = [
+    COVERAGE_UNCHECKED, COVERAGE_COVERED, COVERAGE_PARTIAL, COVERAGE_MISSING,
 ]
 
 LEGACY_COMPLIANCE_COLUMNS = [
@@ -51,6 +64,8 @@ DEFAULT_COMPLIANCE_DF = pd.DataFrame({
     "استراتيجية الاستجابة": [""],
     "الالتزام": ["بانتظار التحقق"],
     "الشهادة المطلوبة": [""],
+    "التغطية": [COVERAGE_UNCHECKED],
+    "القسم المغطّي": [""],
 })
 
 
@@ -82,6 +97,7 @@ def migrate_compliance_df(df: "pd.DataFrame") -> "pd.DataFrame":
         "الالتزام": "بانتظار التحقق",
         "التصنيف": "Technical",
         "الأهمية": "Medium",
+        "التغطية": COVERAGE_UNCHECKED,
     }
     for col in COMPLIANCE_COLUMNS:
         if col not in out.columns:
@@ -90,6 +106,47 @@ def migrate_compliance_df(df: "pd.DataFrame") -> "pd.DataFrame":
             out[col] = out[col].replace("", defaults[col]).fillna(defaults[col])
 
     return out[COMPLIANCE_COLUMNS]
+
+# ─── مستندات التسليم ───────────────────────────────────────────────────────────
+# أكثر أسباب الاستبعاد شيوعاً ليست ضعف العرض الفني بل مستند ناقص في المظروف.
+SUBMISSION_COLUMNS = [
+    "المستند",
+    "مرجع البند",
+    "إلزامي",
+    "لدينا",
+    "تاريخ الانتهاء",
+    "مرفق في المظروف",
+    "ملاحظات",
+]
+
+# "لدينا" و"مرفق" قراران بشريان: النموذج يقرأ الكراسة لا خزانة مستنداتك.
+SUBMISSION_HAVE_OPTIONS = ["بانتظار التحقق", "نعم", "لا", "لا ينطبق"]
+
+DEFAULT_SUBMISSION_DF = pd.DataFrame({
+    "المستند": [""],
+    "مرجع البند": [""],
+    "إلزامي": [True],
+    "لدينا": ["بانتظار التحقق"],
+    "تاريخ الانتهاء": [""],
+    "مرفق في المظروف": [False],
+    "ملاحظات": [""],
+})
+
+
+def migrate_submission_df(df) -> "pd.DataFrame":
+    """يضمن أن جدول المستندات يحمل كل الأعمدة مهما كان مصدره."""
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_SUBMISSION_DF.copy()
+    if list(df.columns) == SUBMISSION_COLUMNS:
+        return df
+
+    out = df.copy()
+    defaults = {"إلزامي": True, "لدينا": "بانتظار التحقق", "مرفق في المظروف": False}
+    for col in SUBMISSION_COLUMNS:
+        if col not in out.columns:
+            out[col] = defaults.get(col, "")
+    return out[SUBMISSION_COLUMNS]
+
 
 # ─── جدول الكميات ──────────────────────────────────────────────────────────────
 # الأعمدة تتبع مخطط الاستخراج الموحّد (9 حقول) لا الشكل المختصر السابق.
@@ -263,6 +320,30 @@ def boq_scope_block(limit: int = 60) -> str:
     return "\n\n--- نطاق العمل من جدول الكميات ---\n" + "\n".join(lines) + tail
 
 
+def company_block() -> str:
+    """
+    ملف الشركة كنص جاهز للحقن في التعليمات.
+
+    قرار الخوض من عدمه يقارن **متطلبات الكراسة بقدرات هذه الشركة** تحديداً؛
+    بدون هذا المقطع يحكم النموذج على المنافسة في المطلق ويُخرج "GO" لعطاء لا
+    تتأهل له الشركة أصلاً.
+    """
+    lines = []
+    for label, key in (
+        ("اسم الشركة", "c_name"),
+        ("السجل التجاري", "c_cr"),
+        ("العنوان", "c_address"),
+        ("نبذة عن الشركة وخبراتها", "c_overview"),
+    ):
+        value = str(st.session_state.get(key, "")).strip()
+        if value:
+            lines.append(f"{label}: {value}")
+
+    if not lines:
+        return ""
+    return "\n\n--- ملف الشركة المقدِّمة ---\n" + "\n".join(lines)
+
+
 def project_context_block() -> str:
     """
     السياق الموحّد للمشروع (الجهة، الموعد، التسليمات، الغرامات، المحتوى المحلي).
@@ -370,6 +451,7 @@ STATE_SCHEMA = {
     # Tables
     "df_compliance": DEFAULT_COMPLIANCE_DF,
     "df_boq": DEFAULT_BOQ_DF,
+    "df_submission": DEFAULT_SUBMISSION_DF,
 
     # UI State
     "ai_generating": False,
@@ -417,6 +499,7 @@ def reset_analysis():
 
     st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
+    st.session_state["df_submission"] = DEFAULT_SUBMISSION_DF.copy()
     st.session_state["review_findings"] = []
     st.session_state["review_scores"] = {}
     st.session_state["review_ran_at"] = ""
@@ -459,6 +542,8 @@ def load_state_snapshot(data: dict):
                         st.session_state[key] = migrate_boq_df(loaded)
                     elif key == "df_compliance":
                         st.session_state[key] = migrate_compliance_df(loaded)
+                    elif key == "df_submission":
+                        st.session_state[key] = migrate_submission_df(loaded)
                     else:
                         st.session_state[key] = loaded
                 except Exception:

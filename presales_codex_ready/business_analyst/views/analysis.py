@@ -18,14 +18,67 @@ from utils.ai_engine import (
     estimate_tokens,
     language_instruction,
 )
+from utils import db, history, knowledge
 from utils.file_handler import extract_texts_per_file
 from utils.i18n import t
-from utils.state import ATTACHMENT_ROLES, guess_attachment_role, role_text
+from utils.state import (
+    ATTACHMENT_ROLES,
+    boq_scope_block,
+    company_block,
+    guess_attachment_role,
+    project_context_block,
+    role_text,
+)
 from components.ui import ai_generate_button
 
 
 def _language() -> str:
     return st.session_state.get("output_language", DEFAULT_LANGUAGE)
+
+
+# استعلام مستودع المعرفة عمّا يُثبت التأهيل — الشهادات والتصنيف والمشاريع
+# المنفَّذة هي ما تسأل عنه لجنة التأهيل، لا نبذة الشركة العامة.
+_QUALIFICATION_QUERY = (
+    "الشهادات والتصنيف والتراخيص والمشاريع السابقة المنفَّذة وخبرات الفريق"
+)
+
+
+def _qualification_context() -> str:
+    """
+    ما يحتاجه قرار الخوض ليكون عن **هذه الشركة**: ملفها، وما يثبت تأهيلها من
+    مستودع المعرفة، وقيود المنافسة، ونطاق العمل من جدول الكميات.
+    """
+    parts = [
+        company_block(),
+        knowledge.build_context(_QUALIFICATION_QUERY),
+        project_context_block(),
+        boq_scope_block(),
+        _history_block(),
+    ]
+    return "\n\n".join(p for p in parts if p)
+
+
+def _history_block() -> str:
+    """
+    دروس المنافسات السابقة المشابهة — سوابقك أنت لا بيانات سوقية.
+
+    خسارتان مع نفس الجهة بسبب المحتوى المحلي معلومة تغيّر قرار الخوض، وكانت
+    محفوظة في قاعدة البيانات بلا من يقرأها.
+    """
+    pid = st.session_state.get("_project_id")
+    if pid is None:
+        return ""
+    try:
+        projects = db.list_projects()
+    except Exception:
+        return ""
+
+    current = next((p for p in projects if p["id"] == pid), None)
+    if current is None:
+        return ""
+    return history.lessons_block(history.similar_projects(
+        projects, current["name"], current.get("entity", ""), exclude_id=pid,
+    ))
 
 
 def _rebuild_combined_text():
@@ -210,6 +263,12 @@ def render():
 
     # ── Section 1: Go/No-Go ────────────────────────────────────────────────────
     with st.expander(t("an.gonogo"), expanded=True):
+        # قرار خوض بلا ملف شركة يعود حكماً على المنافسة في المطلق — نقولها
+        # قبل التشغيل لا بعده.
+        if not company_block():
+            st.warning(t("an.gonogo_no_company"))
+        st.caption(t("an.gonogo_hint"))
+
         ai_generate_button(
             label=t("an.gonogo_btn"),
             key="gonogo",
@@ -218,6 +277,7 @@ def render():
                 build_prompt("gonogo", _language()),
                 model_choice=model,
                 rfp_context=st.session_state["rfp_raw_text"],
+                extra_context=_qualification_context(),
                 on_progress=report,
                 language=_language(),
             ),

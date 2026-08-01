@@ -10,23 +10,37 @@ from utils.state import (
     COMPLIANCE_CATEGORY_OPTIONS,
     COMPLIANCE_COLUMNS,
     COMPLIANCE_STATUS_OPTIONS,
+    COVERAGE_OPTIONS,
+    COVERAGE_UNCHECKED,
     CRITICALITY_OPTIONS,
     DEFAULT_BOQ_DF,
     DEFAULT_COMPLIANCE_DF,
+    SUBMISSION_HAVE_OPTIONS,
+    get_sections,
     migrate_boq_df,
     migrate_compliance_df,
+    migrate_submission_df,
     role_text,
+    section_content_key,
 )
+from utils import submission, traceability
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
+    DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
     EXTRACT_PROMPTS,
     MODEL_NAMES,
+    SUBMISSION_SCHEMA,
     ai_generate_json,
+    language_instruction,
 )
 from components.ui import status_badge
 from utils.i18n import t
+
+
+def _output_language() -> str:
+    return st.session_state.get("output_language", DEFAULT_LANGUAGE)
 
 
 def _model_picker(key: str) -> str:
@@ -66,6 +80,9 @@ def _compliance_to_df(items: list) -> pd.DataFrame:
             # الالتزام قرار بشري — يبدأ دائماً بانتظار التحقق ولا يفترضه النموذج
             "الالتزام": "بانتظار التحقق",
             "الشهادة المطلوبة": str(it.get("certificate", "")).strip(),
+            # الاستخراج يقرأ الكراسة لا نص العرض، فلا علم له بالتغطية بعد.
+            "التغطية": COVERAGE_UNCHECKED,
+            "القسم المغطّي": "",
         })
     return pd.DataFrame(rows)[COMPLIANCE_COLUMNS] if rows else DEFAULT_COMPLIANCE_DF.copy()
 
@@ -185,6 +202,130 @@ def _extraction_bar(kind: str):
     st.rerun()
 
 
+def _section_content(key: str) -> str:
+    return str(st.session_state.get(section_content_key(key), ""))
+
+
+def _render_coverage():
+    """
+    مصفوفة التتبّع: أي متطلب عولج في أي قسم، وما الذي لم يُعالَج.
+
+    الفحص يقارن نص العرض المكتوب فعلاً بالمصفوفة، فلا يُشغَّل قبل الكتابة.
+    """
+    with st.expander(t("tb.coverage"), expanded=True):
+        st.caption(t("tb.coverage_hint"))
+
+        df = st.session_state.get("df_compliance")
+        summary = traceability.coverage_summary(df)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(t("tb.cov_covered"), f"{summary['covered']} / {summary['total']}")
+        c2.metric(t("tb.cov_partial"), summary["partial"])
+        c3.metric(t("tb.cov_missing"), summary["missing"])
+        c4.metric(t("tb.cov_unchecked"), summary["unchecked"])
+
+        if summary["blocking"]:
+            st.error(t("tb.cov_blocking") + "\n\n"
+                     + "\n".join(f"- {item}" for item in summary["blocking"]))
+
+        model = _model_picker("m_coverage")
+
+        if st.button(t("tb.cov_run"), type="primary", key="run_coverage"):
+            status = st.empty()
+            with st.spinner(t("tb.cov_running")):
+                updated = traceability.run_coverage_check(
+                    df,
+                    get_sections(),
+                    content_of=_section_content,
+                    model_choice=model,
+                    language=st.session_state.get("output_language", DEFAULT_LANGUAGE),
+                    on_progress=lambda m: status.caption(f"⏳ {m}"),
+                )
+            status.empty()
+            if updated is None:
+                st.warning(t("tb.cov_failed"))
+            else:
+                st.session_state["df_compliance"] = updated
+                st.rerun()
+
+
+def _render_submission_docs():
+    """
+    مستندات المظروف: تُستخرج من الكراسة، وحيازتها وإرفاقها قرار بشري.
+
+    الاستبعاد الشكلي لا علاقة له بجودة العرض الفني، فيُتتبَّع مستقلاً عنه.
+    """
+    with st.expander(t("tb.submission"), expanded=False):
+        st.caption(t("tb.submission_hint"))
+
+        df = migrate_submission_df(st.session_state.get("df_submission"))
+        st.session_state["df_submission"] = df
+
+        summary = submission.submission_summary(
+            df, st.session_state.get("project_context")
+        )
+        c1, c2, c3 = st.columns(3)
+        c1.metric(t("tb.sub_total"), summary["total"])
+        c2.metric(t("tb.sub_ready"), f"{summary['ready']} / {summary['mandatory']}")
+        c3.metric(t("tb.sub_missing"), len(summary["missing"]))
+
+        if summary["missing"]:
+            st.error(t("tb.sub_missing_list") + " · ".join(summary["missing"]))
+        if summary["expiring"]:
+            st.error(t("tb.sub_expiring") + "\n\n"
+                     + "\n".join(f"- {item}" for item in summary["expiring"]))
+
+        col_model, col_btn = st.columns([2, 1])
+        with col_model:
+            model = _model_picker("m_submission")
+        with col_btn:
+            st.markdown("<br>", unsafe_allow_html=True)
+            run = st.button(t("tb.sub_extract"), type="primary",
+                            key="extract_submission", width="stretch",
+                            disabled=not st.session_state.get("rfp_raw_text"))
+
+        if run:
+            status = st.empty()
+            with st.spinner(t("common.extracting")):
+                result = ai_generate_json(
+                    EXTRACT_PROMPTS["submission_docs"]
+                    + f"\n{language_instruction(_output_language())}",
+                    schema=SUBMISSION_SCHEMA,
+                    model_choice=model,
+                    rfp_context=st.session_state.get("rfp_raw_text", ""),
+                    merge_key="documents",
+                    on_progress=lambda m: status.caption(f"⏳ {m}"),
+                )
+            status.empty()
+            docs = (result or {}).get("documents") or []
+            if docs:
+                st.session_state["df_submission"] = submission.documents_to_df(docs)
+                st.rerun()
+            elif result is not None:
+                st.warning(t("tb.sub_none"))
+
+        edited = st.data_editor(
+            df,
+            num_rows="dynamic",
+            width="stretch",
+            key="de_submission",
+            column_config={
+                "المستند": st.column_config.TextColumn(t("tb.sub_col_doc"), width="large"),
+                "مرجع البند": st.column_config.TextColumn(t("tb.col_clause"), width="small"),
+                "إلزامي": st.column_config.CheckboxColumn(t("tb.sub_col_mandatory")),
+                "لدينا": st.column_config.SelectboxColumn(
+                    t("tb.sub_col_have"), options=SUBMISSION_HAVE_OPTIONS, required=True
+                ),
+                "تاريخ الانتهاء": st.column_config.TextColumn(
+                    t("tb.sub_col_expiry"), help=t("tb.sub_col_expiry_help")
+                ),
+                "مرفق في المظروف": st.column_config.CheckboxColumn(t("tb.sub_col_attached")),
+                "ملاحظات": st.column_config.TextColumn(t("tb.sub_col_notes"), width="medium"),
+            },
+        )
+        st.session_state["df_submission"] = edited
+
+
 def render():
     st.markdown(t("tb.title"))
 
@@ -241,10 +382,19 @@ def render():
                     t("tb.col_status"), options=COMPLIANCE_STATUS_OPTIONS, required=True
                 ),
                 "الشهادة المطلوبة": st.column_config.TextColumn(t("tb.col_certificate")),
+                "التغطية": st.column_config.SelectboxColumn(
+                    t("tb.col_coverage"), options=COVERAGE_OPTIONS, width="small"
+                ),
+                "القسم المغطّي": st.column_config.TextColumn(
+                    t("tb.col_covered_in"), width="medium"
+                ),
             },
         )
         # Persist changes immediately
         st.session_state["df_compliance"] = edited_comp
+
+    st.divider()
+    _render_coverage()
 
     st.divider()
 
@@ -293,6 +443,9 @@ def render():
             },
         )
         st.session_state["df_boq"] = edited_boq
+
+    st.divider()
+    _render_submission_docs()
 
     # ── Export Tables ──────────────────────────────────────────────────────────
     st.divider()

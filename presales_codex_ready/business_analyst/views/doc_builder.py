@@ -7,7 +7,7 @@ views/doc_builder.py — Tab 3: منشئ العرض الفني
 import re
 import streamlit as st
 
-from utils import knowledge
+from utils import knowledge, submission, traceability
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
@@ -672,11 +672,15 @@ def _render_export(sections: list):
         if PLACEHOLDER_RE.search(p["content"])
     }
 
-    c1, c2, c3, c4 = st.columns(4)
+    coverage = traceability.coverage_summary(st.session_state.get("df_compliance"))
+
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric(t("db.chk_company"), "✅" if st.session_state.get("c_name") else "❌")
     c2.metric(t("db.chk_rfp"), "✅" if st.session_state.get("rfp_raw_text") else "❌")
     c3.metric(t("db.chk_written"), f"{len(text_items) - len(empty_sections)} / {len(text_items)}")
     c4.metric(t("db.chk_placeholders"), "✅" if not has_placeholders else "❌")
+    c5.metric(t("db.chk_coverage"),
+              f"{coverage['covered']} / {coverage['total']}" if coverage["total"] else "—")
 
     if empty_sections:
         st.warning(t("db.empty_sections") + " · ".join(empty_sections))
@@ -686,6 +690,26 @@ def _render_export(sections: list):
             for title, marks in placeholder_sections.items()
         )
         st.error(t("db.placeholders_found") + "\n\n" + details)
+
+    # مستند ناقص لا يُبطل العرض الفني نفسه — الملف صحيح والنقص في المظروف.
+    # فيُعرض بوضوح ولا يمنع التصدير: قد يبني المستخدم الملف ليراجعه بينما
+    # يلاحق الضمان البنكي.
+    envelope = submission.submission_summary(
+        st.session_state.get("df_submission"), st.session_state.get("project_context")
+    )
+    if envelope["missing"]:
+        st.warning(t("db.envelope_missing") + " · ".join(envelope["missing"][:10]))
+    if envelope["expiring"]:
+        st.error(t("db.envelope_expiring") + "\n\n"
+                 + "\n".join(f"- {item}" for item in envelope["expiring"][:10]))
+
+    # متطلب عالي الأهمية بلا تغطية سبب استبعاد مباشر، فيمنع التصدير كما يمنعه
+    # النص النائب — لا تحذيراً يمكن تجاوزه سهواً.
+    if coverage["blocking"]:
+        st.error(
+            t("db.coverage_blocking", count=len(coverage["blocking"])) + "\n\n"
+            + "\n".join(f"- {item}" for item in coverage["blocking"][:10])
+        )
 
     if st.session_state.get("c_word_template_bytes"):
         st.success(t("db.template_on"))
@@ -714,7 +738,7 @@ def _render_export(sections: list):
     if entity_name:
         st.caption(f"{t('db.submitted_to')} **{entity_name}**")
     slug = (company_name or "Proposal").replace(" ", "_")[:20]
-    blocked = has_placeholders or not payload
+    blocked = has_placeholders or not payload or bool(coverage["blocking"])
 
     col_w, col_p = st.columns(2)
 

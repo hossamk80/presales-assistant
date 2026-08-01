@@ -184,6 +184,38 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "proj.created": {"ar": "✅ أُنشئت المنافسة «{name}».", "en": "✅ Created tender “{name}”."},
     "proj.saved": {"ar": "💾 حُفظت المنافسة.", "en": "💾 Tender saved."},
     "proj.count": {"ar": "**{n} منافسة محفوظة**", "en": "**{n} saved tenders**"},
+    "proj.history": {"ar": "🧠 ذاكرة العطاءات", "en": "🧠 Bid memory"},
+    "proj.history_hint": {
+        "ar": "سجّل نتيجة كل منافسة وسببها، فيستدعي النظام المشابه منها عند "
+              "عطاء جديد. هذه سوابقك أنت — لا بيانات عن المنافسين.",
+        "en": "Record each tender's outcome and why, and the system surfaces the "
+              "similar ones on a new bid. These are your own precedents — not "
+              "data about competitors.",
+    },
+    "proj.history_open_first": {
+        "ar": "افتح منافسة لعرض السوابق المشابهة لها.",
+        "en": "Open a tender to see its similar precedents.",
+    },
+    "proj.won": {"ar": "فاز", "en": "Won"},
+    "proj.lost": {"ar": "خسر", "en": "Lost"},
+    "proj.not_submitted": {"ar": "لم يُقدَّم", "en": "Not submitted"},
+    "proj.unset": {"ar": "بلا نتيجة", "en": "No outcome"},
+    "proj.similar": {"ar": "منافسات سابقة مشابهة", "en": "Similar past tenders"},
+    "proj.no_similar": {
+        "ar": "لا سوابق مشابهة في قاعدتك بعد.",
+        "en": "No similar precedents in your database yet.",
+    },
+    "proj.same_entity": {"ar": "نفس الجهة", "en": "same entity"},
+    "proj.record_outcome": {"ar": "تسجيل نتيجة المنافسة المفتوحة",
+                            "en": "Record the open tender's outcome"},
+    "proj.outcome": {"ar": "النتيجة", "en": "Outcome"},
+    "proj.outcome_note": {"ar": "السبب / الدرس المستفاد", "en": "Reason / lesson"},
+    "proj.outcome_note_ph": {
+        "ar": "مثال: خسرنا على نسبة المحتوى المحلي رغم قوة العرض الفني",
+        "en": "e.g. lost on the local-content percentage despite a strong technical offer",
+    },
+    "proj.save_outcome": {"ar": "💾 احفظ النتيجة", "en": "💾 Save outcome"},
+    "proj.outcome_saved": {"ar": "سُجّلت النتيجة.", "en": "Outcome recorded."},
     "proj.updated": {"ar": "آخر تحديث:", "en": "Updated:"},
     "proj.copy_suffix": {"ar": "(نسخة)", "en": "(copy)"},
     "proj.not_found": {"ar": "❌ لم يُعثر على المنافسة.", "en": "❌ Tender not found."},
@@ -244,6 +276,21 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "en": "1️⃣ Bid/no-bid decision (Go / No-Go)",
     },
     "an.gonogo_btn": {"ar": "توليد تقرير Go/No-Go", "en": "Generate Go/No-Go report"},
+    "an.gonogo_hint": {
+        "ar": "يقارن متطلبات التأهيل في الكراسة بملف الشركة ومستودع معرفتها، "
+              "ويُخرج فجوات التأهيل. التوصية اقتراح — القرار قرارك.",
+        "en": "Compares the tender's qualification requirements against the company "
+              "profile and knowledge base, and lists the qualification gaps. The "
+              "recommendation is a proposal — the decision is yours.",
+    },
+    "an.gonogo_no_company": {
+        "ar": "⚠️ ملف الشركة فارغ — سيحكم التحليل على المنافسة في المطلق لا على "
+              "ملاءمتها لكم. أكمل **ملف الشركة** وارفع الشهادات والمشاريع السابقة "
+              "إلى مستودع المعرفة أولاً.",
+        "en": "⚠️ The company profile is empty — the analysis will judge the tender "
+              "in the abstract, not its fit for you. Fill in the **company profile** "
+              "and upload certificates and past projects to the knowledge base first.",
+    },
     "an.gonogo_note": {
         "ar": "✍️ قرار المهندس المعتمد (يُمرَّر للـ AI لاحقاً):",
         "en": "✍️ Approved engineer decision (passed to the AI later):",
@@ -327,6 +374,65 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "tb.col_strategy": {"ar": "استراتيجية الاستجابة", "en": "Compliance strategy"},
     "tb.col_status": {"ar": "الالتزام", "en": "Compliance"},
     "tb.col_certificate": {"ar": "الشهادة المطلوبة", "en": "Required certificate"},
+    "tb.submission": {"ar": "📎 مستندات التسليم", "en": "📎 Submission documents"},
+    "tb.submission_hint": {
+        "ar": "أكثر أسباب الاستبعاد شيوعاً مستند ناقص أو شهادة منتهية، لا ضعف "
+              "العرض الفني. تُستخرج القائمة من الكراسة — والحيازة والإرفاق قرارك أنت.",
+        "en": "The most common reason for exclusion is a missing document or an "
+              "expired certificate, not a weak technical proposal. The list is "
+              "extracted from the tender — having and attaching them is your call.",
+    },
+    "tb.sub_total": {"ar": "مستندات مطلوبة", "en": "Documents required"},
+    "tb.sub_ready": {"ar": "إلزامي جاهز", "en": "Mandatory ready"},
+    "tb.sub_missing": {"ar": "ناقص", "en": "Missing"},
+    "tb.sub_missing_list": {
+        "ar": "⚠️ مستندات إلزامية غير جاهزة: ",
+        "en": "⚠️ Mandatory documents not ready: ",
+    },
+    "tb.sub_expiring": {
+        "ar": "🚨 شهادات تنتهي قبل الموعد النهائي — لن تُقبل يوم الفتح:",
+        "en": "🚨 Certificates expiring before the deadline — they will not be "
+              "accepted on opening day:",
+    },
+    "tb.sub_extract": {"ar": "📎 استخرج المستندات", "en": "📎 Extract documents"},
+    "tb.sub_none": {
+        "ar": "لم يُعثر على مستندات مشترطة في الكراسة — راجع يدوياً.",
+        "en": "No required documents found in the tender — check manually.",
+    },
+    "tb.sub_col_doc": {"ar": "المستند", "en": "Document"},
+    "tb.sub_col_mandatory": {"ar": "إلزامي", "en": "Mandatory"},
+    "tb.sub_col_have": {"ar": "لدينا", "en": "We have it"},
+    "tb.sub_col_expiry": {"ar": "تاريخ الانتهاء", "en": "Expiry date"},
+    "tb.sub_col_expiry_help": {
+        "ar": "بصيغة 2026-09-01. يُقارَن بالموعد النهائي للمنافسة.",
+        "en": "Format 2026-09-01. Compared against the tender deadline.",
+    },
+    "tb.sub_col_attached": {"ar": "مرفق في المظروف", "en": "In the envelope"},
+    "tb.sub_col_notes": {"ar": "ملاحظات", "en": "Notes"},
+    "tb.col_coverage": {"ar": "التغطية", "en": "Coverage"},
+    "tb.col_covered_in": {"ar": "عولج في", "en": "Addressed in"},
+    "tb.coverage": {"ar": "🎯 مصفوفة التتبّع", "en": "🎯 Traceability matrix"},
+    "tb.coverage_hint": {
+        "ar": "يقارن كل متطلب بنص الأقسام المُدرَجة ويحدّد أين عولج وما لم يُعالَج. "
+              "شغّله بعد كتابة الأقسام.",
+        "en": "Matches each requirement against the text of the included sections and "
+              "shows where it was addressed and what was not. Run it after drafting.",
+    },
+    "tb.cov_covered": {"ar": "مغطّى", "en": "Covered"},
+    "tb.cov_partial": {"ar": "جزئي", "en": "Partial"},
+    "tb.cov_missing": {"ar": "غير مغطّى", "en": "Not covered"},
+    "tb.cov_unchecked": {"ar": "غير مفحوص", "en": "Unchecked"},
+    "tb.cov_run": {"ar": "🎯 افحص التغطية", "en": "🎯 Check coverage"},
+    "tb.cov_running": {"ar": "جاري فحص التغطية...", "en": "Checking coverage..."},
+    "tb.cov_failed": {
+        "ar": "تعذّر الفحص — تأكد من وجود متطلبات في المصفوفة ونص مكتوب في الأقسام.",
+        "en": "Check failed — make sure the matrix has requirements and the sections "
+              "have text.",
+    },
+    "tb.cov_blocking": {
+        "ar": "🚨 متطلبات عالية الأهمية غير مغطّاة — تمنع التصدير:",
+        "en": "🚨 High-criticality requirements not covered — export is blocked:",
+    },
     "tb.export": {"ar": "#### 📥 تصدير الجداول", "en": "#### 📥 Export tables"},
     "tb.export_comp": {"ar": "📥 تصدير Compliance Matrix (CSV)", "en": "📥 Export Compliance Matrix (CSV)"},
     "tb.export_boq": {"ar": "📥 تصدير BOQ (CSV)", "en": "📥 Export BOQ (CSV)"},
@@ -436,6 +542,24 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "db.chk_rfp": {"ar": "تحليل الكراسة", "en": "Tender analysis"},
     "db.chk_written": {"ar": "أقسام مكتوبة", "en": "Sections drafted"},
     "db.chk_placeholders": {"ar": "لا يوجد نص ناقص", "en": "No missing text"},
+    "db.chk_coverage": {"ar": "تغطية المتطلبات", "en": "Requirement coverage"},
+    "db.envelope_missing": {
+        "ar": "📎 مستندات إلزامية غير جاهزة في المظروف (لا تمنع بناء الملف، "
+              "لكنها تمنع قبول العرض): ",
+        "en": "📎 Mandatory envelope documents not ready (this does not block "
+              "building the file, but it blocks acceptance of the bid): ",
+    },
+    "db.envelope_expiring": {
+        "ar": "🚨 شهادات تنتهي قبل الموعد النهائي للمنافسة:",
+        "en": "🚨 Certificates expiring before the tender deadline:",
+    },
+    "db.coverage_blocking": {
+        "ar": "🚨 {count} متطلباً عالي الأهمية بلا تغطية مؤكَّدة — التصدير موقوف. "
+              "افحص التغطية من شاشة الجداول ثم عالج الناقص:",
+        "en": "🚨 {count} high-criticality requirements without confirmed coverage — "
+              "export is blocked. Run the coverage check on the Tables screen, then "
+              "address what is missing:",
+    },
     "db.empty_sections": {"ar": "📝 أقسام مُدرَجة وفارغة: ", "en": "📝 Included but empty: "},
     "db.placeholders_found": {
         "ar": "🚨 يوجد نص بين أقواس [ ] يحتاج تعبئة يدوية قبل التصدير:",

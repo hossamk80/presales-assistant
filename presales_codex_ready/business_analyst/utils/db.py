@@ -63,12 +63,30 @@ CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id);
 """
 
 
+# أعمدة أُضيفت بعد أول إصدار. CREATE TABLE IF NOT EXISTS لا يُعدّل جدولاً
+# قائماً، فقواعد البيانات الموجودة تحتاج إضافتها صراحةً.
+_ADDED_COLUMNS = (
+    ("projects", "outcome", "TEXT DEFAULT ''"),
+    ("projects", "outcome_note", "TEXT DEFAULT ''"),
+)
+
+
+def _migrate(conn: sqlite3.Connection):
+    """يضيف الأعمدة الناقصة إلى قاعدة بيانات أُنشئت بإصدار أقدم."""
+    for table, column, decl in _ADDED_COLUMNS:
+        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.commit()
+
+
 def _connect() -> sqlite3.Connection:
     os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
 
 
@@ -100,10 +118,19 @@ def _now() -> str:
 
 def list_projects() -> list:
     rows = get_conn().execute(
-        "SELECT id, name, reference, entity, created_at, updated_at "
-        "FROM projects ORDER BY updated_at DESC"
+        "SELECT id, name, reference, entity, created_at, updated_at, "
+        "outcome, outcome_note FROM projects ORDER BY updated_at DESC"
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def set_outcome(project_id: int, outcome: str, note: str = ""):
+    """يسجّل نتيجة المنافسة وسببها — مصدر ذاكرة العطاءات الوحيد."""
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE projects SET outcome = ?, outcome_note = ? WHERE id = ?",
+            (outcome, note, project_id),
+        )
 
 
 def create_project(name: str, payload: dict, reference: str = "", entity: str = "") -> int:
