@@ -279,6 +279,30 @@ def boq_scope_block(limit: int = 60) -> str:
     return "\n\n--- نطاق العمل من جدول الكميات ---\n" + "\n".join(lines) + tail
 
 
+def company_block() -> str:
+    """
+    ملف الشركة كنص جاهز للحقن في التعليمات.
+
+    قرار الخوض من عدمه يقارن **متطلبات الكراسة بقدرات هذه الشركة** تحديداً؛
+    بدون هذا المقطع يحكم النموذج على المنافسة في المطلق ويُخرج "GO" لعطاء لا
+    تتأهل له الشركة أصلاً.
+    """
+    lines = []
+    for label, key in (
+        ("اسم الشركة", "c_name"),
+        ("السجل التجاري", "c_cr"),
+        ("العنوان", "c_address"),
+        ("نبذة عن الشركة وخبراتها", "c_overview"),
+    ):
+        value = str(st.session_state.get(key, "")).strip()
+        if value:
+            lines.append(f"{label}: {value}")
+
+    if not lines:
+        return ""
+    return "\n\n--- ملف الشركة المقدِّمة ---\n" + "\n".join(lines)
+
+
 def project_context_block() -> str:
     """
     السياق الموحّد للمشروع (الجهة، الموعد، التسليمات، الغرامات، المحتوى المحلي).

@@ -244,6 +244,21 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "en": "1️⃣ Bid/no-bid decision (Go / No-Go)",
     },
     "an.gonogo_btn": {"ar": "توليد تقرير Go/No-Go", "en": "Generate Go/No-Go report"},
+    "an.gonogo_hint": {
+        "ar": "يقارن متطلبات التأهيل في الكراسة بملف الشركة ومستودع معرفتها، "
+              "ويُخرج فجوات التأهيل. التوصية اقتراح — القرار قرارك.",
+        "en": "Compares the tender's qualification requirements against the company "
+              "profile and knowledge base, and lists the qualification gaps. The "
+              "recommendation is a proposal — the decision is yours.",
+    },
+    "an.gonogo_no_company": {
+        "ar": "⚠️ ملف الشركة فارغ — سيحكم التحليل على المنافسة في المطلق لا على "
+              "ملاءمتها لكم. أكمل **ملف الشركة** وارفع الشهادات والمشاريع السابقة "
+              "إلى مستودع المعرفة أولاً.",
+        "en": "⚠️ The company profile is empty — the analysis will judge the tender "
+              "in the abstract, not its fit for you. Fill in the **company profile** "
+              "and upload certificates and past projects to the knowledge base first.",
+    },
     "an.gonogo_note": {
         "ar": "✍️ قرار المهندس المعتمد (يُمرَّر للـ AI لاحقاً):",
         "en": "✍️ Approved engineer decision (passed to the AI later):",
