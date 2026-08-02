@@ -777,6 +777,47 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "role.boq": {"ar": "جدول الكميات", "en": "Bill of quantities"},
     "role.other": {"ar": "مرفق آخر", "en": "Other attachment"},
 
+    # ── محرّك النموذج ومستودع المعرفة / Engine & knowledge base ──
+    # رسائل تظهر للمستخدم من داخل `utils/`. كانت مكتوبة عربية في الشيفرة،
+    # فكان مستخدم الواجهة الإنجليزية يرى خطأً بالعربية.
+    "eng.key_missing": {
+        "ar": "⚠️ يرجى إدخال مفتاح Google Gemini API في **إعدادات النظام** أولاً.",
+        "en": "⚠️ Enter your Google Gemini API key in **System settings** first.",
+    },
+    "eng.sdk_missing": {
+        "ar": "❌ مكتبة google-genai غير مثبّتة. شغّل: pip install google-genai",
+        "en": "❌ google-genai is not installed. Run: pip install google-genai",
+    },
+    "eng.client_failed": {
+        "ar": "❌ تعذّر تهيئة عميل Gemini: {error}",
+        "en": "❌ Could not initialise the Gemini client: {error}",
+    },
+    "eng.api_error": {
+        "ar": "❌ خطأ Gemini API: {error}",
+        "en": "❌ Gemini API error: {error}",
+    },
+    "eng.empty_reply": {
+        "ar": "⚠️ رجع النموذج رداً فارغاً — قد يكون الطلب حُجب بفلاتر الأمان.",
+        "en": "⚠️ The model returned an empty reply — the request may have been blocked by safety filters.",
+    },
+    "eng.retrying": {
+        "ar": "⏳ تعذّر الاتصال مؤقتاً — إعادة المحاولة {n} من {total}…",
+        "en": "⏳ Temporary connection failure — retry {n} of {total}…",
+    },
+    "eng.json_failed": {
+        "ar": "❌ تعذّر تحليل رد النموذج كـ JSON: {error}",
+        "en": "❌ Could not parse the model reply as JSON: {error}",
+    },
+    "eng.raw_reply": {"ar": "عرض الرد الخام", "en": "Show raw reply"},
+    "kb.embed_failed": {
+        "ar": "❌ تعذّر توليد متجهات التضمين: {error}",
+        "en": "❌ Could not generate embeddings: {error}",
+    },
+    "kb.no_text": {
+        "ar": "⚠️ لم يُستخرج نص من `{name}` — لم يُضَف للمستودع.",
+        "en": "⚠️ No text extracted from `{name}` — it was not added to the repository.",
+    },
+
     # ── فئات المعرفة / KB categories ──
     "kbcat.cv": {"ar": "السير الذاتية", "en": "CVs"},
     "kbcat.cert": {"ar": "الشهادات والاعتمادات", "en": "Certifications"},

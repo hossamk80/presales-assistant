@@ -163,6 +163,68 @@ BRAND_FONT_AR = "Traditional Arabic"
 BRAND_FONT_EN = "Calibri"
 
 
+# ─── نصوص المستند الثابتة ─────────────────────────────────────────────────────
+#
+# هذه نصوص تُكتب **داخل الملف المصدَّر**، فتتبع لغة المخرجات لا لغة الواجهة:
+# مستخدم يعمل بواجهة عربية ويولّد عرضاً إنجليزياً يجب أن يخرج ملفه إنجليزياً
+# بالكامل. لذلك لا تمر من `i18n` — تلك للواجهة وحدها.
+
+_CONFIDENTIALITY = {
+    "ar": (
+        "هذا المستند سري للغاية ومُعدّ حصرياً للجهة المُرسَل إليها.\n"
+        "الشركة المُقدِّمة: {company}\n"
+        "يُحظر توزيع هذا المستند أو إعادة إنتاجه دون إذن كتابي مسبق."
+    ),
+    "en": (
+        "This document is strictly confidential and prepared solely for the "
+        "receiving entity.\n"
+        "Submitted by: {company}\n"
+        "Distribution or reproduction without prior written consent is prohibited."
+    ),
+}
+
+# الرموز التي تُستبدل بقيم حقيقية قبل التصدير. تُكتب بين أقواس مربعة عمداً
+# ليحجبها فحص النص النائب إن بقيت بلا قيمة — اسم شركة مفقود على الغلاف عيب
+# لا يقلّ عن نص نائب منسي.
+COMPANY_TOKENS = ("[اسم الشركة]", "[Company Name]", "[COMPANY]")
+
+
+def confidentiality_notice(company_name: str, language: str = "ar") -> str:
+    """
+    إشعار السرية ومعلومات المستند بلغة المخرجات.
+
+    كان مكتوباً عربياً في `views/doc_builder.py`، فكان العرض الإنجليزي الكامل
+    يحمل صفحة عربية أمام لجنة الفتح.
+    """
+    company = str(company_name or "").strip()
+    if language == "both":
+        return (
+            _CONFIDENTIALITY["ar"].format(company=company)
+            + "\n\n"
+            + _CONFIDENTIALITY["en"].format(company=company)
+        )
+    template = _CONFIDENTIALITY.get(language, _CONFIDENTIALITY["ar"])
+    return template.format(company=company)
+
+
+def resolve_document_tokens(text: str, company_name: str) -> str:
+    """
+    يستبدل رموز الشركة في نص المستند بقيمتها الحقيقية.
+
+    خطاب التقديم الافتراضي يحمل `[اسم الشركة]`، وبوابة التصدير تحجب أي نص
+    فيه `[...]`. فكان المستخدم الجديد يجد التصدير محجوباً بنص افتراضي شحنّاه
+    نحن. الاستبدال هنا يرفع الحجب متى عُرف اسم الشركة، ويُبقيه متى جُهل —
+    وهو الحجب الصحيح.
+    """
+    company = str(company_name or "").strip()
+    if not company:
+        return text
+    out = str(text or "")
+    for token in COMPANY_TOKENS:
+        out = out.replace(token, company)
+    return out
+
+
 def _rgb(hex_color: str):
     """تحويل لون سداسي عشري إلى RGBColor مع تجاهل أي صيغة غير صالحة."""
     from docx.shared import RGBColor

@@ -17,6 +17,7 @@ from utils.ai_engine import (
     ai_generate_json,
     build_prompt,
 )
+from utils.file_handler import resolve_document_tokens
 from utils.i18n import t
 from utils.state import get_sections, project_context_block, section_content_key
 
@@ -39,10 +40,13 @@ def _written_sections() -> list:
         if not sec.get("include") or sec["kind"] not in ("ai", "cover"):
             continue
         if sec["kind"] == "cover":
-            content = (
+            # الرموز تُستبدل هنا كما تُستبدل عند التصدير، وإلا رصد الوكيل الفني
+            # `[اسم الشركة]` نصاً نائباً منسياً وهو رمز يُملأ آلياً.
+            content = resolve_document_tokens(
                 st.session_state.get("c_cover_template", "")
                 if st.session_state.get("sec_cover_use_template", True)
-                else st.session_state.get("sec_cover", "")
+                else st.session_state.get("sec_cover", ""),
+                st.session_state.get("c_name", ""),
             )
         else:
             content = st.session_state.get(section_content_key(sec["key"]), "")

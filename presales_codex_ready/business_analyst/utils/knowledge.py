@@ -12,6 +12,7 @@ from typing import Optional
 
 from utils import db
 from utils.ai_engine import get_client
+from utils.i18n import t
 
 EMBED_MODEL = "gemini-embedding-001"
 
@@ -108,7 +109,7 @@ def embed_texts(texts: list, task_type: str) -> Optional[list]:
         # الاقتطاع يُبطل التطبيع، فنعيده حتى يصح الجداء القياسي كتشابه جيبي
         return [_normalize(list(e.values)) for e in response.embeddings]
     except Exception as e:
-        st.error(f"❌ تعذّر توليد متجهات التضمين: {e}")
+        st.error(t("kb.embed_failed", error=e))
         return None
 
 
@@ -122,7 +123,7 @@ def ingest_file(file, category: str) -> Optional[int]:
     text = _extract_single(file).strip()
 
     if not text:
-        st.warning(f"⚠️ لم يُستخرج نص من `{file.name}` — لم يُضَف للمستودع.")
+        st.warning(t("kb.no_text", name=file.name))
         return None
 
     chunks = chunk_text(text)
