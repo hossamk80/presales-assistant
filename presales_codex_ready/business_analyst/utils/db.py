@@ -60,6 +60,20 @@ CREATE TABLE IF NOT EXISTS kb_chunks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_kb_chunks_doc ON kb_chunks(doc_id);
+
+-- نسخ المرفقات: الجهات تُصدر تعديلات بعد نشر الكراسة، وكانت الرفعة الجديدة
+-- تمحو القديمة بلا أثر — فلا يُعرف ما الذي تغيّر ولا أي متطلب صار على شرط
+-- ملغى. كل رفعة تُحفظ نسخةً لتُقارَن بما قبلها.
+CREATE TABLE IF NOT EXISTS attachment_versions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    label      TEXT DEFAULT '',
+    payload    TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachment_versions_project
+    ON attachment_versions(project_id);
 """
 
 
@@ -274,3 +288,63 @@ def kb_stats() -> dict:
         "(SELECT COUNT(*) FROM kb_chunks) AS chunks"
     ).fetchone()
     return dict(row)
+
+
+# ─── نسخ المرفقات ─────────────────────────────────────────────────────────────
+
+
+def add_attachment_version(project_id: int, texts: dict, roles: dict,
+                           label: str = "") -> int:
+    """يحفظ لقطة من نصوص المرفقات وأدوارها كما هي وقت الرفع."""
+    payload = {"texts": texts or {}, "roles": roles or {}}
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO attachment_versions (project_id, created_at, label, payload) "
+            "VALUES (?, ?, ?, ?)",
+            (project_id, _now(), label, json.dumps(payload, ensure_ascii=False)),
+        )
+        return cur.lastrowid
+
+
+def list_attachment_versions(project_id: int) -> list:
+    """بيانات النسخ بلا حمولتها — القائمة تُعرض كثيراً والنصوص ضخمة."""
+    rows = get_conn().execute(
+        "SELECT id, created_at, label, LENGTH(payload) AS size "
+        "FROM attachment_versions WHERE project_id = ? ORDER BY id DESC",
+        (project_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def load_attachment_version(version_id: int) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM attachment_versions WHERE id = ?", (version_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    data = dict(row)
+    data["payload"] = json.loads(data["payload"])
+    return data
+
+
+def previous_attachment_version(project_id: int,
+                                before_id: Optional[int] = None) -> Optional[dict]:
+    """أحدث نسخة قبل المعرّف المعطى — طرف المقارنة الافتراضي."""
+    if before_id is None:
+        rows = get_conn().execute(
+            "SELECT id FROM attachment_versions WHERE project_id = ? "
+            "ORDER BY id DESC LIMIT 1 OFFSET 1",
+            (project_id,),
+        ).fetchone()
+    else:
+        rows = get_conn().execute(
+            "SELECT id FROM attachment_versions WHERE project_id = ? AND id < ? "
+            "ORDER BY id DESC LIMIT 1",
+            (project_id, before_id),
+        ).fetchone()
+    return load_attachment_version(rows["id"]) if rows else None
+
+
+def delete_attachment_version(version_id: int):
+    with transaction() as conn:
+        conn.execute("DELETE FROM attachment_versions WHERE id = ?", (version_id,))

@@ -146,7 +146,8 @@ def _apply_proposed_outline(proposed: list):
     by_key = {s["key"]: s for s in existing}
 
     head = [s for s in existing if s["kind"] in ("cover", "docinfo")]
-    tail = [s for s in existing if s["kind"] in ("table_compliance", "table_boq")]
+    tail = [s for s in existing
+            if s["kind"] in ("table_compliance", "table_boq", "table_timeline")]
 
     taken = {s["key"] for s in head + tail}
     body = []
@@ -758,6 +759,7 @@ def _render_export(sections: list):
                         template_bytes=st.session_state.get("c_word_template_bytes"),
                         df_compliance=st.session_state.get("df_compliance"),
                         df_boq=st.session_state.get("df_boq"),
+                        df_timeline=st.session_state.get("df_timeline"),
                         include_toc=include_toc,
                         include_page_numbers=include_pageno,
                         rtl=is_rtl(_language()),
@@ -780,6 +782,7 @@ def _render_export(sections: list):
                         sections=payload,
                         df_compliance=st.session_state.get("df_compliance"),
                         df_boq=st.session_state.get("df_boq"),
+                        df_timeline=st.session_state.get("df_timeline"),
                         include_toc=include_toc,
                         include_page_numbers=include_pageno,
                         rtl=is_rtl(_language()),

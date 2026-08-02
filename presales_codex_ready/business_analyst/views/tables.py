@@ -7,6 +7,9 @@ import streamlit as st
 import pandas as pd
 from utils.state import (
     BOQ_COLUMNS,
+    DEFAULT_TIMELINE_DF,
+    migrate_timeline_df,
+    timeline_to_df,
     COMPLIANCE_CATEGORY_OPTIONS,
     COMPLIANCE_COLUMNS,
     COMPLIANCE_STATUS_OPTIONS,
@@ -23,7 +26,7 @@ from utils.state import (
     role_text,
     section_content_key,
 )
-from utils import submission, traceability
+from utils import submission, timeline as timeline_utils, traceability
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
@@ -32,6 +35,7 @@ from utils.ai_engine import (
     EXTRACT_PROMPTS,
     MODEL_NAMES,
     SUBMISSION_SCHEMA,
+    TIMELINE_SCHEMA,
     ai_generate_json,
     language_instruction,
 )
@@ -326,6 +330,120 @@ def _render_submission_docs():
         st.session_state["df_submission"] = edited
 
 
+def _render_timeline():
+    """
+    الجدول الزمني المُهيكل: مراحل واعتماديات وتسليمات، مع فحص حسابي فوري.
+
+    كان هذا القسم الإلزامي يخرج نصاً حراً لا يُقاس على مدة العقد ولا يُرسم.
+    """
+    with st.expander(t("tl.title"), expanded=False):
+        st.caption(t("tl.hint"))
+
+        df = migrate_timeline_df(st.session_state.get("df_timeline"))
+        st.session_state["df_timeline"] = df
+
+        ctx = st.session_state.get("project_context") or {}
+        report = timeline_utils.validate(
+            df, ctx, st.session_state.get("timeline_contract_weeks")
+        )
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric(t("tl.phases"), report["phases"])
+        c2.metric(t("tl.span"), report["span_weeks"] or "—")
+        c3.metric(t("tl.contract"), report["contract_weeks"] or t("tl.contract_unknown"))
+
+        if report["errors"]:
+            st.error(t("tl.errors") + "\n\n"
+                     + "\n".join(f"- {e}" for e in report["errors"]))
+        if report["uncovered_deliverables"]:
+            st.warning(t("tl.uncovered") + "\n\n" + "\n".join(
+                f"- {d}" for d in report["uncovered_deliverables"][:10]))
+        if report["warnings"]:
+            st.warning(t("tl.warnings") + "\n\n"
+                       + "\n".join(f"- {w}" for w in report["warnings"]))
+        if report["phases"] and not report["errors"] and not report["warnings"]:
+            st.success(t("tl.ok"))
+
+        col_model, col_btn, col_reset = st.columns([2, 2, 1])
+        with col_model:
+            model = _model_picker("m_timeline")
+        with col_btn:
+            run = st.button(t("tl.extract"), type="primary", key="extract_timeline",
+                            width="stretch",
+                            disabled=not st.session_state.get("rfp_raw_text"))
+        with col_reset:
+            if st.button(f"↩️ {t('common.reset')}", key="reset_timeline", width="stretch"):
+                st.session_state["df_timeline"] = DEFAULT_TIMELINE_DF.copy()
+                st.session_state.pop("de_timeline", None)
+                st.rerun()
+
+        if run:
+            status = st.empty()
+            with st.spinner(t("tl.extracting")):
+                result = ai_generate_json(
+                    EXTRACT_PROMPTS["timeline_items"]
+                    + f"\n{language_instruction(_output_language())}",
+                    schema=TIMELINE_SCHEMA,
+                    model_choice=model,
+                    rfp_context=st.session_state.get("rfp_raw_text", ""),
+                    merge_key="phases",
+                    on_progress=lambda m: status.caption(f"⏳ {m}"),
+                )
+            status.empty()
+            phases = (result or {}).get("phases") or []
+            if phases:
+                st.session_state["df_timeline"] = timeline_to_df(result)
+                st.session_state["timeline_contract_weeks"] = (
+                    result.get("contract_duration_weeks") or 0
+                )
+                st.session_state.pop("de_timeline", None)
+                st.success(t("tl.extracted", n=len(phases)))
+                st.rerun()
+            elif result is not None:
+                st.warning(t("tl.none"))
+
+        edited = st.data_editor(
+            df,
+            num_rows="dynamic",
+            width="stretch",
+            key="de_timeline",
+            column_config={
+                "رقم المرحلة": st.column_config.NumberColumn(
+                    t("tl.col_number"), min_value=1, width="small"),
+                "المرحلة": st.column_config.TextColumn(t("tl.col_phase"), width="medium"),
+                "البداية (أسبوع)": st.column_config.NumberColumn(
+                    t("tl.col_start"), min_value=1, width="small"),
+                "المدة (أسبوع)": st.column_config.NumberColumn(
+                    t("tl.col_duration"), min_value=1, width="small"),
+                "يعتمد على": st.column_config.TextColumn(t("tl.col_depends"), width="small"),
+                "التسليمات": st.column_config.TextColumn(
+                    t("tl.col_deliverables"), width="large"),
+                "معلم دفع": st.column_config.CheckboxColumn(
+                    t("tl.col_payment"), help=t("tl.col_payment_help")),
+                "وزن الإنجاز %": st.column_config.NumberColumn(
+                    t("tl.col_weight"), min_value=0.0, max_value=100.0),
+            },
+        )
+        st.session_state["df_timeline"] = edited
+
+        grid = timeline_utils.gantt_grid(edited)
+        if grid:
+            st.caption(t("tl.gantt"))
+            st.dataframe(_gantt_preview(grid), width="stretch", hide_index=True)
+
+
+def _gantt_preview(grid: dict) -> pd.DataFrame:
+    """معاينة المخطط في الواجهة — نفس شبكة المستند المصدَّر."""
+    prefix = "أ" if grid["unit"] == "week" else "ش"
+    columns = [f"{prefix}{i + 1}" for i in range(grid["columns"])]
+    rows = []
+    for row in grid["rows"]:
+        record = {t("tl.col_phase"): row["label"]}
+        record.update({c: ("█" if on else "") for c, on in zip(columns, row["cells"])})
+        rows.append(record)
+    return pd.DataFrame(rows)
+
+
 def render():
     st.markdown(t("tb.title"))
 
@@ -443,6 +561,9 @@ def render():
             },
         )
         st.session_state["df_boq"] = edited_boq
+
+    st.divider()
+    _render_timeline()
 
     st.divider()
     _render_submission_docs()

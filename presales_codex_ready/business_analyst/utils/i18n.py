@@ -777,6 +777,115 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "role.boq": {"ar": "جدول الكميات", "en": "Bill of quantities"},
     "role.other": {"ar": "مرفق آخر", "en": "Other attachment"},
 
+    # ── الجدول الزمني / Timeline ──
+    "tl.title": {"ar": "### 🗓️ الجدول الزمني ومعالم التسليم", "en": "### 🗓️ Timeline & milestones"},
+    "tl.hint": {
+        "ar": "مراحل بأسابيع نسبية لا بتواريخ — تاريخ الترسية غير معلوم بعد. "
+              "«معلم دفع» علامة داخلية لا تدخل المستند الفني.",
+        "en": "Phases in relative weeks, not dates — the award date is not yet known. "
+              "The payment-milestone flag stays internal and never enters the technical document.",
+    },
+    "tl.extract": {"ar": "🗓️ استخرج الخطة الزمنية", "en": "🗓️ Extract timeline"},
+    "tl.extracting": {"ar": "جاري بناء الخطة الزمنية…", "en": "Building the timeline…"},
+    "tl.extracted": {"ar": "✅ استُخرجت {n} مرحلة.", "en": "✅ Extracted {n} phases."},
+    "tl.none": {"ar": "لم يُستخرج أي مرحلة من الكراسة.", "en": "No phases were extracted."},
+    "tl.phases": {"ar": "المراحل", "en": "Phases"},
+    "tl.span": {"ar": "امتداد الخطة (أسبوع)", "en": "Plan span (weeks)"},
+    "tl.contract": {"ar": "مدة العقد (أسبوع)", "en": "Contract duration (weeks)"},
+    "tl.contract_unknown": {"ar": "غير مذكورة", "en": "Not stated"},
+    "tl.errors": {"ar": "❌ الخطة غير قابلة للتنفيذ كما هي:", "en": "❌ The plan is not executable as it stands:"},
+    "tl.warnings": {"ar": "⚠️ ملاحظات على الخطة:", "en": "⚠️ Notes on the plan:"},
+    "tl.ok": {"ar": "✅ لا تعارض مرصود في الخطة.", "en": "✅ No conflicts detected in the plan."},
+    "tl.uncovered": {"ar": "تسليمات بلا مرحلة تقابلها:", "en": "Deliverables with no matching phase:"},
+    "tl.col_number": {"ar": "#", "en": "#"},
+    "tl.col_phase": {"ar": "المرحلة", "en": "Phase"},
+    "tl.col_start": {"ar": "البداية (أسبوع)", "en": "Start (week)"},
+    "tl.col_duration": {"ar": "المدة (أسبوع)", "en": "Duration (weeks)"},
+    "tl.col_depends": {"ar": "يعتمد على", "en": "Depends on"},
+    "tl.col_deliverables": {"ar": "التسليمات", "en": "Deliverables"},
+    "tl.col_payment": {"ar": "معلم دفع", "en": "Payment milestone"},
+    "tl.col_payment_help": {
+        "ar": "علامة داخلية للفريق التجاري — لا تُصدَّر في العرض الفني.",
+        "en": "Internal flag for the commercial team — never exported in the technical proposal.",
+    },
+    "tl.col_weight": {"ar": "وزن الإنجاز %", "en": "Progress weight %"},
+    "tl.gantt": {"ar": "معاينة المخطط الزمني", "en": "Gantt preview"},
+
+    # ── اتساق الأرقام / Cross-section consistency ──
+    "cs.title": {"ar": "🔢 اتساق الأرقام بين الأقسام", "en": "🔢 Cross-section number consistency"},
+    "cs.hint": {
+        "ar": "فحص حسابي بلا استدعاء نموذج: يقارن مدة التنفيذ المذكورة في الأقسام "
+              "بالجدول الزمني وبمدة العقد.",
+        "en": "A local check with no model call: compares the execution duration stated in "
+              "the sections against the timeline and the contract duration.",
+    },
+    "cs.ok": {"ar": "✅ لا تناقض مرصود في مدد التنفيذ.", "en": "✅ No contradictions found in stated durations."},
+    "cs.found": {"ar": "❌ {n} تناقضاً في الأرقام:", "en": "❌ {n} numeric contradictions:"},
+    "cs.no_sections": {
+        "ar": "لا أقسام مكتوبة بعد ليُفحص اتساقها.",
+        "en": "No written sections yet to check.",
+    },
+
+    # ── الملاحق والتعديلات / Addenda ──
+    "ad.title": {"ar": "📌 الملاحق والتعديلات", "en": "📌 Addenda & amendments"},
+    "ad.hint": {
+        "ar": "الجهات تُصدر تعديلات بعد نشر الكراسة. كل رفعة تُحفظ نسخةً، فتُقارَن "
+              "بما قبلها ويُعرَف أي متطلب صار على شرط تغيّر.",
+        "en": "Entities issue amendments after publication. Every upload is stored as a version "
+              "so it can be compared with the previous one.",
+    },
+    "ad.versions": {"ar": "النسخ المحفوظة: {n}", "en": "Stored versions: {n}"},
+    "ad.no_versions": {
+        "ar": "لا نسخة محفوظة بعد — تُحفظ نسخة تلقائياً مع كل استخراج.",
+        "en": "No versions stored yet — one is saved automatically on each extraction.",
+    },
+    "ad.need_two": {
+        "ar": "المقارنة تحتاج نسختين على الأقل. ارفع الملحق أو التعديل واستخرج مرة أخرى.",
+        "en": "Comparison needs at least two versions. Upload the amendment and extract again.",
+    },
+    "ad.compare": {"ar": "🔍 قارن بالنسخة السابقة", "en": "🔍 Compare with previous version"},
+    "ad.no_changes": {"ar": "✅ لا فرق عن النسخة السابقة.", "en": "✅ No difference from the previous version."},
+    "ad.changed_summary": {
+        "ar": "تغيّر: {changed} ملفاً · أُضيف: {added} · حُذف: {removed} · "
+              "أسطر جديدة: {added_lines} · أسطر مرفوعة: {removed_lines}",
+        "en": "Changed: {changed} files · Added: {added} · Removed: {removed} · "
+              "New lines: {added_lines} · Removed lines: {removed_lines}",
+    },
+    "ad.affected": {
+        "ar": "🎯 {n} متطلباً يُرجَّح أن التعديل مسّه:",
+        "en": "🎯 {n} requirements likely touched by the amendment:",
+    },
+    "ad.affected_none": {
+        "ar": "لم يُرصد متطلب متأثر — راجع التغيير يدوياً قبل الاطمئنان.",
+        "en": "No affected requirement detected — review the change manually before relying on this.",
+    },
+    "ad.mark": {"ar": "↩️ أعِد المتأثر إلى «غير مفحوص»", "en": "↩️ Reset affected rows to “unchecked”"},
+    "ad.marked": {
+        "ar": "أُعيد {n} متطلباً إلى «غير مفحوص» — أعِد فحص التغطية قبل التصدير.",
+        "en": "{n} requirements reset to “unchecked” — re-run the coverage check before exporting.",
+    },
+    "ad.version_label": {"ar": "نسخة {n} · {at}", "en": "Version {n} · {at}"},
+    "ad.added_files": {"ar": "ملفات جديدة", "en": "New files"},
+    "ad.removed_files": {"ar": "ملفات اختفت", "en": "Removed files"},
+    "ad.changed_files": {"ar": "ملفات تغيّرت", "en": "Changed files"},
+    "ad.sample_added": {"ar": "أمثلة على النص المُضاف:", "en": "Sample added text:"},
+
+    # ── لوحة المواعيد / Deadline board ──
+    "dl.title": {"ar": "⏳ المواعيد", "en": "⏳ Key dates"},
+    "dl.deadline": {"ar": "الموعد النهائي", "en": "Submission deadline"},
+    "dl.remaining": {"ar": "المتبقّي", "en": "Remaining"},
+    "dl.days": {"ar": "{n} يوماً", "en": "{n} days"},
+    "dl.today": {"ar": "اليوم!", "en": "Today!"},
+    "dl.passed": {"ar": "انقضى منذ {n} يوماً", "en": "Passed {n} days ago"},
+    "dl.unreadable": {
+        "ar": "الموعد غير مقروء كتاريخ — لا عدّ تنازلي ولا فحص صلاحية.",
+        "en": "The deadline is not readable as a date — no countdown and no validity check.",
+    },
+    "dl.offer_validity": {"ar": "سريان العرض", "en": "Offer validity"},
+    "dl.bid_bond": {"ar": "الضمان الابتدائي", "en": "Bid bond"},
+    "dl.expiring": {"ar": "مستندات تنتهي قبل الموعد: {n}", "en": "Documents expiring before the deadline: {n}"},
+    "dl.soon": {"ar": "⚠️ الموعد النهائي بعد {n} يوماً فقط.", "en": "⚠️ Only {n} days left before the deadline."},
+
     # ── محرّك النموذج ومستودع المعرفة / Engine & knowledge base ──
     # رسائل تظهر للمستخدم من داخل `utils/`. كانت مكتوبة عربية في الشيفرة،
     # فكان مستخدم الواجهة الإنجليزية يرى خطأً بالعربية.
