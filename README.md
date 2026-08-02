@@ -296,16 +296,31 @@ acceptance test, effort and dependency:
 المستودع يحمل `.devcontainer`، فتفتح Codespaces وتنتظر انتهاء التهيئة ثم:
 
 ```bash
-streamlit run presales_codex_ready/business_analyst/app.py
+./scripts/run.sh          # التشغيل
+./scripts/test.sh         # الاختبارات
 ```
 
-التهيئة تُثبّت المكتبات وخطوط العربية وأدوات OCR، وتفتح المنفذ 8501 تلقائياً.
-أضِف مفتاح Gemini كسرّ في Codespaces باسم `GEMINI_API_KEY` ليقرأه التطبيق، أو
-أدخله من صفحة **إعدادات النظام**. قاعدة البيانات خارج شجرة الكود
-(`/workspaces/data/analyst.db`) فلا تُمحى مع تنظيف المستودع.
+السكربتان يعملان **من أي مجلد**: يجدان جذر المستودع بأنفسهما، ويستعملان
+`.venv` إن وُجدت، ويشغّلان من المجلد الصحيح. هذا يمنع ثلاثة أخطاء متكرّرة:
+مسار نسبي من داخل مجلد التطبيق، و`streamlit` من بايثون النظام بينما المكتبات
+في البيئة الافتراضية، وضياع `.streamlit/config.toml` عند التشغيل من مجلد آخر.
 
-Open in Codespaces, wait for setup, then run the command above. Fonts, OCR
-tooling and dependencies are installed automatically; port 8501 is forwarded.
+التهيئة تُثبّت المكتبات وخطوط العربية وأدوات OCR **داخل `.venv`**، وتفتح
+المنفذ 8501 تلقائياً. أضِف مفتاح Gemini كسرّ في Codespaces باسم
+`GEMINI_API_KEY` ليقرأه التطبيق، أو أدخله من صفحة **إعدادات النظام**. قاعدة
+البيانات خارج شجرة الكود (`/workspaces/data/analyst.db`) فلا تُمحى مع تنظيف
+المستودع.
+
+إن أُنشئ الـ Codespace قبل إضافة `.devcontainer` فلن تكون التهيئة قد عملت.
+شغّلها يدوياً مرة واحدة:
+
+```bash
+bash .devcontainer/setup.sh
+```
+
+Both scripts work from any directory: they locate the repo root themselves,
+use `.venv` when present, and run from the correct working directory. If your
+Codespace predates the devcontainer, run `bash .devcontainer/setup.sh` once.
 
 ## مجلد التطبيق الرئيسي
 
@@ -323,13 +338,24 @@ presales_codex_ready/business_analyst/app.py
 
 ## أوامر التشغيل من جذر المستودع
 
+الطريقة الموصى بها — من أي مجلد داخل المستودع:
+
 ```bash
-cd /workspace/presales-assistant/presales_codex_ready/business_analyst
+bash .devcontainer/setup.sh   # مرة واحدة: ينشئ .venv ويثبّت كل شيء فيها
+./scripts/run.sh
+```
+
+يدوياً إن أردت التحكّم الكامل — **لاحظ أن البيئة الافتراضية في جذر المستودع
+لا في مجلد التطبيق**، وأن التشغيل من الجذر ليُقرأ `.streamlit/config.toml`:
+
+```bash
+cd <جذر المستودع>
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-streamlit run app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
+python -m pip install -r presales_codex_ready/business_analyst/requirements.txt
+python -m streamlit run presales_codex_ready/business_analyst/app.py \
+  --server.address 0.0.0.0 --server.port 8501 --server.headless true
 ```
 
 بعد التشغيل افتح المتصفح على:
@@ -337,6 +363,9 @@ streamlit run app.py --server.address 0.0.0.0 --server.port 8501 --server.headle
 ```text
 http://localhost:8501
 ```
+
+في Codespaces يُفتح المنفذ تلقائياً — استعمل رابط **المنافذ / Ports** لا
+`localhost`.
 
 ## إعدادات مهمة
 

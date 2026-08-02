@@ -23,7 +23,8 @@
         "ms-python.vscode-pylance"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.terminal.activateEnvironment": true,
         "python.testing.pytestEnabled": true,
         "python.testing.pytestArgs": [
           "presales_codex_ready/business_analyst/tests"

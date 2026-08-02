@@ -6,9 +6,16 @@
 #   · أدوات OCR — كثير من كراسات اعتماد ملفات ممسوحة ضوئياً بلا طبقة نص.
 #   · مسار قاعدة بيانات خارج شجرة الكود — حتى لا تُمحى بيانات العطاءات
 #     مع أي عملية تنظيف للمستودع.
+#
+# **كل التثبيت داخل `.venv`**: الـ README يوصي بإنشائها، وVS Code يفعّلها
+# تلقائياً في كل طرفية جديدة. تثبيتٌ في بايثون النظام بينما الطرفية على
+# البيئة الافتراضية يُنتج بالضبط: `No module named pytest` مع أن التثبيت
+# «نجح». مصدر واحد للحقيقة يمنع ذلك.
 set -euo pipefail
 
-APP_DIR="presales_codex_ready/business_analyst"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_DIR="${REPO_ROOT}/presales_codex_ready/business_analyst"
+VENV="${REPO_ROOT}/.venv"
 
 echo "▶ حزم النظام / system packages…"
 sudo apt-get update -qq
@@ -19,15 +26,22 @@ sudo apt-get install -y -qq \
   tesseract-ocr-ara \
   poppler-utils
 
+if [ ! -x "${VENV}/bin/python" ]; then
+  echo "▶ إنشاء البيئة الافتراضية / creating .venv…"
+  python -m venv "${VENV}"
+fi
+
+PY="${VENV}/bin/python"
+
 echo "▶ مكتبات Python / Python packages…"
-python -m pip install --upgrade pip --quiet
-python -m pip install --quiet -r "${APP_DIR}/requirements.txt"
+"${PY}" -m pip install --upgrade pip --quiet
+"${PY}" -m pip install --quiet -r "${APP_DIR}/requirements.txt"
 
 # اختيارية في requirements لكنها مطلوبة لتشغيل مسار OCR فعلياً
-python -m pip install --quiet pytesseract pdf2image
+"${PY}" -m pip install --quiet pytesseract pdf2image
 
 # أدوات الاختبار — CI يشغّلها، ومن المفيد تشغيلها هنا قبل الدفع
-python -m pip install --quiet pytest pytest-timeout
+"${PY}" -m pip install --quiet pytest pytest-timeout
 
 # قاعدة البيانات خارج شجرة الكود وتبقى ما بقيت الحاوية
 mkdir -p /workspaces/data
@@ -37,11 +51,11 @@ cat <<'EOF'
 ────────────────────────────────────────────────────────────
 ✅ البيئة جاهزة / Environment ready
 
-التشغيل / Run:
-    streamlit run presales_codex_ready/business_analyst/app.py
+التشغيل / Run — من أي مجلد / from any directory:
+    ./scripts/run.sh
 
 الاختبارات / Tests:
-    cd presales_codex_ready/business_analyst && python -m pytest tests/ -q
+    ./scripts/test.sh
 
 ⚠️  مفتاح Gemini / Gemini API key
     أضِفه كسرّ في Codespaces باسم GEMINI_API_KEY فيقرأه التطبيق تلقائياً،
