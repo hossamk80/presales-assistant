@@ -434,6 +434,87 @@ def _add_docx_table(doc, header: list, rows: list, rtl: bool = True):
     doc.add_paragraph()
 
 
+def _shade_cell(cell, hex_color: str):
+    """تظليل خانة جدول Word — لا واجهة عليا لها في python-docx."""
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:val"), "clear")
+    shading.set(qn("w:color"), "auto")
+    shading.set(qn("w:fill"), hex_color)
+    cell._tc.get_or_add_tcPr().append(shading)
+
+
+def _gantt_header(grid: dict, rtl: bool) -> list:
+    """ترويسة المخطط: عمود الاسم ثم أرقام الوحدات الزمنية."""
+    unit = grid.get("unit", "week")
+    if rtl:
+        label = "المرحلة"
+        prefix = "أ" if unit == "week" else "ش"
+    else:
+        label = "Phase"
+        prefix = "W" if unit == "week" else "M"
+    return [label] + [f"{prefix}{i + 1}" for i in range(grid["columns"])]
+
+
+def _add_gantt_docx(doc, grid: dict, rtl: bool, accent_hex: str):
+    """
+    يرسم المخطط الزمني جدولاً مظلَّلاً في Word.
+
+    جدول لا صورة: يخرج نفسه في Word و PDF بلا مكتبة رسم ولا خط مفقود، ويبقى
+    مقروءاً عند الطباعة بالأبيض والأسود.
+    """
+    header = _gantt_header(grid, rtl)
+    # كل صف: نصّه وعلامة التظليل لكل خانة، محاذيان دائماً. القلب في العربية
+    # يقلبهما معاً — قلب أحدهما وحده يُظلّل الأسبوع الخطأ.
+    rows = [
+        ([r["label"]] + ["" for _ in r["cells"]], [False] + list(r["cells"]))
+        for r in grid["rows"]
+    ]
+
+    if rtl:
+        header = list(reversed(header))
+        rows = [(list(reversed(text)), list(reversed(marks))) for text, marks in rows]
+
+    table = doc.add_table(rows=1, cols=len(header))
+    table.style = "Table Grid"
+
+    for i, col in enumerate(header):
+        cell = table.rows[0].cells[i]
+        cell.text = str(col)
+        for p in cell.paragraphs:
+            _para_dir(p, rtl, center=True)
+            for run in p.runs:
+                run.bold = True
+
+    fill = str(accent_hex or BRAND_COLOR).lstrip("#").upper()
+    for text, marks in rows:
+        cells = table.add_row().cells
+        for i, (value, active) in enumerate(zip(text, marks)):
+            cells[i].text = str(value)
+            for p in cells[i].paragraphs:
+                _para_dir(p, rtl, center=not value)
+            if active:
+                _shade_cell(cells[i], fill)
+    doc.add_paragraph()
+
+
+def _render_timeline_docx(doc, df_timeline, rtl: bool, brand_color: str,
+                          empty_note: str):
+    """جدول المراحل ثم المخطط المظلَّل — بلا الأعمدة المالية."""
+    from utils.timeline import export_df, gantt_grid
+
+    block = _df_to_table_block(export_df(df_timeline))
+    if not block:
+        _para_dir(doc.add_paragraph(empty_note), rtl)
+        return
+    _add_docx_table(doc, *block, rtl=rtl)
+    grid = gantt_grid(df_timeline)
+    if grid:
+        _add_gantt_docx(doc, grid, rtl, brand_color)
+
+
 def _df_to_table_block(df: Optional[pd.DataFrame]) -> Optional[tuple]:
     if df is None or df.empty:
         return None
@@ -448,6 +529,7 @@ def build_word_document(
     template_bytes: Optional[bytes] = None,
     df_compliance: Optional[pd.DataFrame] = None,
     df_boq: Optional[pd.DataFrame] = None,
+    df_timeline: Optional[pd.DataFrame] = None,
     include_toc: bool = True,
     include_page_numbers: bool = True,
     rtl: bool = True,
@@ -536,7 +618,9 @@ def build_word_document(
         kind = sec.get("kind")
         _para_dir(doc.add_heading(sec.get("title", ""), 1), rtl)
 
-        if kind in ("table_compliance", "table_boq"):
+        if kind == "table_timeline":
+            _render_timeline_docx(doc, df_timeline, rtl, brand_color, empty_note)
+        elif kind in ("table_compliance", "table_boq"):
             block = _df_to_table_block(
                 df_compliance if kind == "table_compliance" else df_boq
             )
@@ -691,6 +775,7 @@ def build_pdf_document(
     proposal_title: str = "",
     entity_name: str = "",
     brand_color: str = BRAND_COLOR,
+    df_timeline: Optional[pd.DataFrame] = None,
 ) -> BytesIO:
     """
     يبني نسخة PDF من نفس الأقسام. في العربية يُشكَّل النص ويُحاذى لليمين.
@@ -847,13 +932,71 @@ def build_pdf_document(
         ]))
         return t
 
+    def gantt_flowable(grid: dict):
+        """
+        المخطط الزمني جدولاً مظلَّلاً — نفس ما يخرج في Word.
+
+        جدول لا صورة: بلا مكتبة رسم ولا خط مفقود، ويبقى مقروءاً عند الطباعة
+        بالأبيض والأسود لأن الخانة المظلَّلة تظهر رمادية داكنة.
+        """
+        header = _gantt_header(grid, rtl)
+        rows = [
+            ([r["label"]] + ["" for _ in r["cells"]], [False] + list(r["cells"]))
+            for r in grid["rows"]
+        ]
+        if rtl:
+            header = list(reversed(header))
+            rows = [(list(reversed(txt)), list(reversed(mk))) for txt, mk in rows]
+
+        # عمود الاسم أعرض من خانات الزمن — الأخيرة فارغة يكفيها التظليل
+        name_col = min(6 * cm, avail * 0.35)
+        unit_w = (avail - name_col) / max(grid["columns"], 1)
+        widths = [unit_w] * len(header)
+        widths[len(header) - 1 if rtl else 0] = name_col
+
+        cell = ParagraphStyle("gcell", parent=body, fontSize=8, leading=11,
+                              spaceAfter=0, alignment=TA_CENTER)
+        cell_b = ParagraphStyle("gcellb", parent=cell, fontName=FONT_B)
+
+        data = [[P(str(c), cell_b, w - 6) for c, w in zip(header, widths)]]
+        style = [
+            ("BACKGROUND", (0, 0), (-1, 0), accent),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CBD5E1")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ]
+        for r, (text, marks) in enumerate(rows, start=1):
+            data.append([P(str(v), cell, w - 6) for v, w in zip(text, widths)])
+            for c, active in enumerate(marks):
+                if active:
+                    style.append(("BACKGROUND", (c, r), (c, r), accent))
+
+        t = Table(data, colWidths=widths, repeatRows=1)
+        t.setStyle(TableStyle(style))
+        return t
+
     heading_styles = {1: h1, 2: h2, 3: h3}
 
     for idx, sec in enumerate(sections):
         kind = sec.get("kind")
         story.append(H(sec.get("title", ""), h1, level=0))
 
-        if kind == "table_compliance":
+        if kind == "table_timeline":
+            from utils.timeline import export_df, gantt_grid
+
+            block = _df_to_table_block(export_df(df_timeline))
+            if block:
+                story.append(table_flowable(*block))
+                grid = gantt_grid(df_timeline)
+                if grid:
+                    story.append(Spacer(1, 0.4 * cm))
+                    story.append(gantt_flowable(grid))
+            else:
+                story.append(P(
+                    "[لا توجد خطة زمنية]" if rtl else "[No timeline]", body))
+        elif kind == "table_compliance":
             block = _df_to_table_block(df_compliance)
             story.append(table_flowable(*block) if block
                          else P("[لا توجد بيانات في جدول الامتثال]", body))

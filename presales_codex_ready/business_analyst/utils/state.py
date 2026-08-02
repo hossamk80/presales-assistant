@@ -206,6 +206,87 @@ def migrate_boq_df(df: "pd.DataFrame") -> "pd.DataFrame":
 
     return out[BOQ_COLUMNS]
 
+# ─── الجدول الزمني ─────────────────────────────────────────────────────────────
+# قسم إلزامي (الرابع من السبعة) كان يخرج نصاً حراً: بلا مراحل ولا اعتماديات ولا
+# معالم قابلة للتحقق، فلا يُقاس على مدة العقد ولا يُرسم مخططاً.
+#
+# "معلم دفع" علامة لا مبلغ، و**تُستبعد من المخرَج الفني** — انظر
+# `utils/timeline.py:export_columns`.
+TIMELINE_COLUMNS = [
+    "رقم المرحلة",
+    "المرحلة",
+    "البداية (أسبوع)",
+    "المدة (أسبوع)",
+    "يعتمد على",
+    "التسليمات",
+    "معلم دفع",
+    "وزن الإنجاز %",
+]
+
+DEFAULT_TIMELINE_DF = pd.DataFrame({
+    "رقم المرحلة": [1],
+    "المرحلة": [""],
+    "البداية (أسبوع)": [1],
+    "المدة (أسبوع)": [1],
+    "يعتمد على": [""],
+    "التسليمات": [""],
+    "معلم دفع": [False],
+    "وزن الإنجاز %": [0.0],
+})
+
+
+def migrate_timeline_df(df) -> "pd.DataFrame":
+    """يضمن أن الجدول الزمني يحمل كل أعمدته مهما كان مصدره."""
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_TIMELINE_DF.copy()
+    if list(df.columns) == TIMELINE_COLUMNS:
+        return df
+
+    out = df.copy()
+    defaults = {
+        "رقم المرحلة": 1, "البداية (أسبوع)": 1, "المدة (أسبوع)": 1,
+        "معلم دفع": False, "وزن الإنجاز %": 0.0,
+    }
+    for col in TIMELINE_COLUMNS:
+        if col not in out.columns:
+            out[col] = defaults.get(col, "")
+    return out[TIMELINE_COLUMNS]
+
+
+def timeline_to_df(payload: dict) -> "pd.DataFrame":
+    """تحويل الخطة المستخرجة إلى جدول قابل للتحرير."""
+    rows = []
+    for i, item in enumerate((payload or {}).get("phases") or [], start=1):
+        name = str(item.get("phase_name", "")).strip()
+        if not name:
+            continue
+        rows.append({
+            "رقم المرحلة": _as_int(item.get("phase_number"), i),
+            "المرحلة": name,
+            "البداية (أسبوع)": max(1, _as_int(item.get("start_week"), 1)),
+            "المدة (أسبوع)": max(1, _as_int(item.get("duration_weeks"), 1)),
+            "يعتمد على": str(item.get("depends_on", "")).strip(),
+            "التسليمات": str(item.get("deliverables", "")).strip(),
+            "معلم دفع": bool(item.get("payment_milestone", False)),
+            "وزن الإنجاز %": _as_float(item.get("weight_percent"), 0.0),
+        })
+    return pd.DataFrame(rows)[TIMELINE_COLUMNS] if rows else DEFAULT_TIMELINE_DF.copy()
+
+
+def _as_int(value, default: int) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(value, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # ─── هيكل العرض الفني ──────────────────────────────────────────────────────────
 # كل قسم: key فريد · title العنوان · include هل يُدرج · kind نوع المحتوى
 #   kind = "cover" خطاب التقديم · "docinfo" إشعار السرية
@@ -236,6 +317,8 @@ DEFAULT_SECTIONS = [
      "guidance": "الهيكل التنظيمي للفريق والأدوار والخبرات المطلوبة."},
     {"key": "external", "title": "المتطلبات الخارجية والضمانات", "kind": "ai", "include": False,
      "guidance": "الضمانات والتأمينات والمتطلبات التي تقع على الجهة."},
+    {"key": "timeline_table", "title": "الجدول الزمني ومعالم التسليم", "kind": "table_timeline", "include": False,
+     "guidance": ""},
     {"key": "compliance_table", "title": "جدول الامتثال بالمواصفات", "kind": "table_compliance", "include": True,
      "guidance": ""},
     {"key": "boq_table", "title": "جدول الكميات (BOQ)", "kind": "table_boq", "include": False,
@@ -360,6 +443,9 @@ def project_context_block() -> str:
         ("المشروع", "project_title"),
         ("الجهة المصدِرة", "issuing_entity"),
         ("الموعد النهائي", "submission_deadline"),
+        ("مدة تنفيذ العقد", "contract_duration"),
+        ("سريان العرض", "offer_validity"),
+        ("الضمان الابتدائي", "bid_bond"),
         ("ملخص النطاق", "scope_summary"),
         ("متطلبات المحتوى المحلي", "local_content_requirements"),
     ):
@@ -452,6 +538,9 @@ STATE_SCHEMA = {
     "df_compliance": DEFAULT_COMPLIANCE_DF,
     "df_boq": DEFAULT_BOQ_DF,
     "df_submission": DEFAULT_SUBMISSION_DF,
+    "df_timeline": DEFAULT_TIMELINE_DF,
+    # مدة العقد بالأسابيع كما استخرجها النموذج — سقف يُقاس عليه الجدول
+    "timeline_contract_weeks": 0,
 
     # UI State
     "ai_generating": False,
@@ -500,6 +589,8 @@ def reset_analysis():
     st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
     st.session_state["df_submission"] = DEFAULT_SUBMISSION_DF.copy()
+    st.session_state["df_timeline"] = DEFAULT_TIMELINE_DF.copy()
+    st.session_state["timeline_contract_weeks"] = 0
     st.session_state["review_findings"] = []
     st.session_state["review_scores"] = {}
     st.session_state["review_ran_at"] = ""
@@ -544,6 +635,8 @@ def load_state_snapshot(data: dict):
                         st.session_state[key] = migrate_compliance_df(loaded)
                     elif key == "df_submission":
                         st.session_state[key] = migrate_submission_df(loaded)
+                    elif key == "df_timeline":
+                        st.session_state[key] = migrate_timeline_df(loaded)
                     else:
                         st.session_state[key] = loaded
                 except Exception:

@@ -17,6 +17,7 @@ from utils.ai_engine import (
     ai_generate_json,
     build_prompt,
 )
+from utils import consistency
 from utils.file_handler import resolve_document_tokens
 from utils.i18n import t
 from utils.state import get_sections, project_context_block, section_content_key
@@ -268,6 +269,28 @@ def _render_agent_scores(findings: list):
     st.divider()
 
 
+def _render_consistency(sections: list):
+    """
+    اتساق الأرقام بين الأقسام — فحص حسابي يسبق لجنة الوكلاء.
+
+    يُشغَّل بلا استدعاء ولا توكن، ونتيجته قابلة للتفسير سطراً سطراً. تناقض
+    المدد بين قسمين يرصده مُقيّم الجهة قبل أن يرصده فريق العطاء.
+    """
+    with st.expander(t("cs.title"), expanded=False):
+        st.caption(t("cs.hint"))
+        findings = consistency.check(
+            sections,
+            st.session_state.get("df_timeline"),
+            st.session_state.get("project_context"),
+            st.session_state.get("timeline_contract_weeks"),
+        )
+        if not findings:
+            st.success(t("cs.ok"))
+            return
+        st.error(t("cs.found", n=len(findings)) + "\n\n"
+                 + "\n".join(f"- {f['message']}" for f in findings))
+
+
 def render():
     st.markdown(t("rv.title"))
     st.caption(t("rv.caption"))
@@ -279,6 +302,8 @@ def render():
 
     if not st.session_state.get("rfp_raw_text"):
         st.warning(t("rv.no_rfp"))
+
+    _render_consistency(sections)
 
     st.caption(t("rv.will_review", n=len(sections)))
 

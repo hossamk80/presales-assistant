@@ -18,7 +18,7 @@ from utils.ai_engine import (
     estimate_tokens,
     language_instruction,
 )
-from utils import db, history, knowledge
+from utils import addenda, db, history, knowledge, submission
 from utils.file_handler import extract_texts_per_file
 from utils.i18n import t
 from utils.state import (
@@ -125,6 +125,7 @@ def _render_upload():
         st.session_state["attachment_texts"] = texts
         st.session_state["attachment_roles"] = roles
         _rebuild_combined_text()
+        _snapshot_version()
         st.rerun()
 
 
@@ -250,6 +251,174 @@ def _render_project_context():
             st.info(f"{t('an.local_content')} {ctx['local_content_requirements']}")
 
 
+# ─── الملاحق والتعديلات ───────────────────────────────────────────────────────
+
+
+def _snapshot_version():
+    """
+    يحفظ نسخة من المرفقات عند كل استخراج.
+
+    بدونها تمحو الرفعة الجديدة القديمة بلا أثر، فلا يُعرف ما الذي غيّره
+    التعديل ولا أي متطلب صار على شرط ملغى.
+    """
+    pid = st.session_state.get("_project_id")
+    if pid is None:
+        return
+    try:
+        db.add_attachment_version(
+            pid,
+            st.session_state.get("attachment_texts") or {},
+            st.session_state.get("attachment_roles") or {},
+        )
+    except Exception:
+        # فشل الحفظ لا يُسقط الاستخراج — النص بين يدي المستخدم بالفعل
+        pass
+
+
+def _render_addenda():
+    """مقارنة رفعة المرفقات بما قبلها، وتحديد المتطلبات التي مسّها التعديل."""
+    pid = st.session_state.get("_project_id")
+    if pid is None:
+        return
+
+    try:
+        versions = db.list_attachment_versions(pid)
+    except Exception:
+        return
+
+    with st.expander(t("ad.title"), expanded=False):
+        st.caption(t("ad.hint"))
+
+        if not versions:
+            st.info(t("ad.no_versions"))
+            return
+
+        st.caption(t("ad.versions", n=len(versions)))
+        for i, version in enumerate(versions[:5]):
+            st.markdown(
+                f"- {t('ad.version_label', n=len(versions) - i, at=version['created_at'])}"
+            )
+
+        if len(versions) < 2:
+            st.info(t("ad.need_two"))
+            return
+
+        if st.button(t("ad.compare"), type="primary", key="compare_versions"):
+            st.session_state["_addenda_diff"] = _compute_diff(versions)
+            st.rerun()
+
+        diff = st.session_state.get("_addenda_diff")
+        if not diff:
+            return
+
+        if not addenda.has_changes(diff):
+            st.success(t("ad.no_changes"))
+            return
+
+        stats = addenda.summarize(diff)
+        st.warning(t(
+            "ad.changed_summary",
+            changed=stats["changed_files"], added=stats["added_files"],
+            removed=stats["removed_files"], added_lines=stats["added_lines"],
+            removed_lines=stats["removed_lines"],
+        ))
+
+        for label, names in (
+            (t("ad.added_files"), diff["added"]),
+            (t("ad.removed_files"), diff["removed"]),
+            (t("ad.changed_files"), [c["name"] for c in diff["changed"]]),
+        ):
+            if names:
+                st.markdown(f"**{label}**: " + " · ".join(names))
+
+        sample = [ln for ln in diff["new_text"].splitlines() if ln.strip()][:6]
+        if sample:
+            with st.expander(t("ad.sample_added")):
+                for line in sample:
+                    st.markdown(f"- {line[:200]}")
+
+        affected = addenda.affected_requirements(
+            st.session_state.get("df_compliance"), diff
+        )
+        if not affected:
+            st.info(t("ad.affected_none"))
+            return
+
+        st.error(t("ad.affected", n=len(affected)) + "\n\n" + "\n".join(
+            f"- **{a['req_id']}** — {a['requirement'][:90]} · _{a['reason'][:90]}_"
+            for a in affected[:12]
+        ))
+
+        if st.button(t("ad.mark"), type="primary", key="mark_affected"):
+            st.session_state["df_compliance"] = addenda.mark_unchecked(
+                st.session_state.get("df_compliance"), affected
+            )
+            st.session_state.pop("de_compliance", None)
+            st.success(t("ad.marked", n=len(affected)))
+
+
+def _compute_diff(versions: list) -> dict:
+    """يقارن أحدث نسختين محفوظتين."""
+    latest = db.load_attachment_version(versions[0]["id"]) or {}
+    previous = db.load_attachment_version(versions[1]["id"]) or {}
+    return addenda.diff_versions(
+        (previous.get("payload") or {}).get("texts"),
+        (latest.get("payload") or {}).get("texts"),
+    )
+
+
+# ─── لوحة المواعيد ────────────────────────────────────────────────────────────
+
+# تحذير مبكّر: أقل من هذا العدد من الأيام يعني أن التحضير صار سباقاً
+DEADLINE_WARNING_DAYS = 10
+
+
+def _render_deadlines():
+    """
+    الموعد النهائي وما يرتبط به. التسليم المتأخر خسارة كاملة لا نقص درجات،
+    وسريان العرض والضمان الابتدائي موعدان يُغفَلان فيسقط عرض مكتمل فنياً.
+    """
+    ctx = st.session_state.get("project_context") or {}
+    if not ctx:
+        return
+
+    with st.expander(t("dl.title"), expanded=True):
+        deadline = submission.deadline_date(ctx)
+        summary = submission.submission_summary(
+            st.session_state.get("df_submission"), ctx
+        )
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric(t("dl.deadline"), ctx.get("submission_deadline") or t("common.none"))
+
+        if deadline is None:
+            c2.metric(t("dl.remaining"), "—")
+            st.caption(t("dl.unreadable"))
+        else:
+            import datetime as _dt
+
+            days = (deadline - _dt.date.today()).days
+            if days > 0:
+                remaining = t("dl.days", n=days)
+            elif days == 0:
+                remaining = t("dl.today")
+            else:
+                remaining = t("dl.passed", n=abs(days))
+            c2.metric(t("dl.remaining"), remaining)
+            if 0 <= days <= DEADLINE_WARNING_DAYS:
+                st.warning(t("dl.soon", n=days))
+
+        c3.metric(t("dl.expiring"), len(summary["expiring"]))
+
+        for label, key in (
+            (t("dl.offer_validity"), "offer_validity"),
+            (t("dl.bid_bond"), "bid_bond"),
+        ):
+            value = str(ctx.get(key, "")).strip()
+            if value:
+                st.markdown(f"**{label}**: {value}")
+
+
 def render():
     _render_upload()
 
@@ -258,8 +427,10 @@ def render():
         return
 
     _render_attachment_roles()
+    _render_addenda()
     st.divider()
     _render_project_context()
+    _render_deadlines()
 
     # ── Section 1: Go/No-Go ────────────────────────────────────────────────────
     with st.expander(t("an.gonogo"), expanded=True):

@@ -185,15 +185,28 @@ def test_default_boq_matches_columns(state):
 
 def test_project_context_schema_matches_spec(ae):
     props = ae.PROJECT_CONTEXT_SCHEMA["properties"]
-    assert set(props) == {
+    core = {
         "project_title", "issuing_entity", "submission_deadline", "scope_summary",
         "key_deliverables", "technical_constraints", "contractual_penalties",
         "required_certifications", "local_content_requirements",
     }
+    assert core <= set(props)
     for key in ("key_deliverables", "technical_constraints",
                 "contractual_penalties", "required_certifications"):
         assert props[key]["type"] == "ARRAY"
-    assert set(ae.PROJECT_CONTEXT_SCHEMA["required"]) == set(props)
+    assert set(ae.PROJECT_CONTEXT_SCHEMA["required"]) == core
+
+
+def test_schedule_fields_are_optional_not_required(ae):
+    """
+    مدة العقد وسريان العرض والضمان الابتدائي حقول مضافة تخدم الجدول الزمني
+    ولوحة المواعيد. تبقى **خارج `required`** عمداً: إلزام النموذج بها يدفعه
+    إلى اختلاق مدة عقد غير مذكورة، والخطة تُقاس عليها.
+    """
+    props = ae.PROJECT_CONTEXT_SCHEMA["properties"]
+    added = {"contract_duration", "offer_validity", "bid_bond"}
+    assert added <= set(props)
+    assert not (added & set(ae.PROJECT_CONTEXT_SCHEMA["required"]))
 
 
 def test_project_context_prompt_exists(ae):
