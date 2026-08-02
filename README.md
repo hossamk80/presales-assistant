@@ -132,12 +132,11 @@ presales_codex_ready/
 2. **`boot`** — يشغّل الخادم فعلياً ويتحقق من استجابته، إضافةً إلى اختبار
    يقلع التطبيق كاملاً عبر `streamlit.testing` ويمرّ على كل صفحاته.
 
-للتشغيل محلياً عند الحاجة:
+للتشغيل محلياً عند الحاجة — من أي مجلد داخل المستودع:
 
 ```bash
-cd presales_codex_ready/business_analyst
-pip install pytest
-python -m pytest tests/ -v
+./scripts/test.sh          # كل الاختبارات
+./scripts/test.sh -v       # بتفصيل
 ```
 
 ## التخزين والخصوصية
@@ -260,36 +259,22 @@ enforced by a CI test.
 ## ما هو غير منفَّذ
 
 - **تكامل منصة اعتماد** — يتطلب وصولاً رسمياً للواجهة البرمجية لا يملكه
-  المشروع، والبديل العملي (تنزيل يدوي واحد لكل منافسة) في
-  [`docs/etimad-integration.md`](docs/etimad-integration.md).
+  المشروع، والبديل العملي تنزيل يدوي واحد لكل منافسة.
 - **طبقة الذكاء السوقي** (المنافسون · العروض السابقة · حركة الأسعار) — بيانات
   تاريخية مجمّعة، منتج قائم بذاته لا نتيجة استدعاء واجهة.
 
-المقارنة الكاملة مع المنصات التجارية في
-[`docs/comparison-technicalproposal.md`](docs/comparison-technicalproposal.md).
+## الحالة والنواقص وخطة التنفيذ
 
-## مراجعة 360 درجة — النواقص وخارطة الإكمال
+**كل ذلك في ملف واحد**: [`docs/PLAN.md`](docs/PLAN.md) — مميزات النظام اليوم،
+ومقارنة السوق مع المنصات الرائدة والمنافس المحلي، والنواقص مرتّبة بالخطورة،
+وخطة تنفيذ بخمس مراحل لكل مهمة فيها معرّف ونوع (إضافة · تعديل · إصلاح) وملفات
+وشرط قبول وتقدير جهد، وملحقان للنشر على Replit وتكامل اعتماد.
 
-مراجعة شاملة للنظام من سبع زوايا (العطاءات · هندسة المبيعات · هندسة البرمجيات ·
-تحليل الأعمال · المحتوى والجودة · المبيعات · إدارة المشاريع) في
-[`docs/system-360-review.md`](docs/system-360-review.md): تدقيق السلسلة الأربعية
-(تحليل الكراسة ← مطابقة المتطلبات ← كتابة العرض ← استخراجه)، والنواقص مرتّبة
-بالخطورة، وحكم على كل بند من قائمة المتطلبات المطلوبة (أوديو · المورّد الرئيسي ·
-سجل الكوادر · الجدول الزمني · ملف العميل · بطاقة الأسعار · سابقة الأعمال ·
-نماذج العروض السابقة · إعدادات الذكاء الاصطناعي · صلاحيات المستخدمين · خفض
-استهلاك التوكن وقياسه · إدارة البرومبتات لكل وكيل)، ثم خارطة إكمال بخمس مراحل.
+يُحدَّث ذلك الملف **في مكانه** مع كل دفعة ويحمل تاريخ آخر تحديث — لا تُنشأ نسخة
+ثانية منه.
 
-A 360° review across seven professional lenses, with a severity-ranked gap
-list, a verdict on each requested module, and a five-phase completion roadmap:
-[`docs/system-360-review.md`](docs/system-360-review.md).
-
-وخطة التنفيذ المشتقّة منها في [`docs/execution-plan.md`](docs/execution-plan.md):
-كل نقص صار مهمة لها معرّف وملفات وشرط قبول وتقدير جهد واعتمادية — خمس مراحل
-بإجمالي 120 يوم عمل، مع تسلسل مقترح وأسرع مسار لأثر ملموس.
-
-The derived execution plan — every gap as an identified task with files,
-acceptance test, effort and dependency:
-[`docs/execution-plan.md`](docs/execution-plan.md).
+Everything — capabilities, market comparison, severity-ranked gaps and the
+five-phase execution plan — lives in one file: [`docs/PLAN.md`](docs/PLAN.md).
 
 ## التشغيل على GitHub Codespaces
 
@@ -375,7 +360,7 @@ http://localhost:8501
 - النماذج المتاحة: Gemini 3.6 Flash (الافتراضي) · Gemini 3.1 Pro · Gemini 3.5 Flash-Lite.
 - تُمرَّر كراسة الشروط كاملة ضمن نافذة السياق (مليون توكن)، ومع الكراسات الأكبر يتحول المحرك تلقائياً إلى تحليل مجزّأ ثم دمج.
 - **النشر على خادم خارجي (Replit مثلاً) يُخرج بيانات العطاءات من جهازك** —
-  اعتبارات الخصوصية في [`docs/deploy-replit.md`](docs/deploy-replit.md).
+  اعتبارات الخصوصية وخطوات النشر في [`docs/PLAN.md`](docs/PLAN.md) (ملحق أ).
 - حقول OpenAI وClaude موجودة كخيارات/حقول إعدادات فقط وليست موفرات مفعّلة حالياً.
 
 ### تصدير PDF بالعربية
