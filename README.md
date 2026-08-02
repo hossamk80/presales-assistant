@@ -283,6 +283,30 @@ A 360° review across seven professional lenses, with a severity-ranked gap
 list, a verdict on each requested module, and a five-phase completion roadmap:
 [`docs/system-360-review.md`](docs/system-360-review.md).
 
+وخطة التنفيذ المشتقّة منها في [`docs/execution-plan.md`](docs/execution-plan.md):
+كل نقص صار مهمة لها معرّف وملفات وشرط قبول وتقدير جهد واعتمادية — خمس مراحل
+بإجمالي 120 يوم عمل، مع تسلسل مقترح وأسرع مسار لأثر ملموس.
+
+The derived execution plan — every gap as an identified task with files,
+acceptance test, effort and dependency:
+[`docs/execution-plan.md`](docs/execution-plan.md).
+
+## التشغيل على GitHub Codespaces
+
+المستودع يحمل `.devcontainer`، فتفتح Codespaces وتنتظر انتهاء التهيئة ثم:
+
+```bash
+streamlit run presales_codex_ready/business_analyst/app.py
+```
+
+التهيئة تُثبّت المكتبات وخطوط العربية وأدوات OCR، وتفتح المنفذ 8501 تلقائياً.
+أضِف مفتاح Gemini كسرّ في Codespaces باسم `GEMINI_API_KEY` ليقرأه التطبيق، أو
+أدخله من صفحة **إعدادات النظام**. قاعدة البيانات خارج شجرة الكود
+(`/workspaces/data/analyst.db`) فلا تُمحى مع تنظيف المستودع.
+
+Open in Codespaces, wait for setup, then run the command above. Fonts, OCR
+tooling and dependencies are installed automatically; port 8501 is forwarded.
+
 ## مجلد التطبيق الرئيسي
 
 مجلد التطبيق الرئيسي هو:
