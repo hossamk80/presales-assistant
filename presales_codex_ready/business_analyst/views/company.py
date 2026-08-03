@@ -6,7 +6,7 @@ views/company.py — ملف الشركة ومستودع المعرفة
 """
 import streamlit as st
 
-from utils import db, knowledge
+from utils import db, knowledge, providers
 from utils.file_handler import BRAND_COLOR, BRAND_FONT_AR
 from utils.i18n import t
 from utils.state import get_company_snapshot
@@ -139,7 +139,8 @@ def _render_knowledge_base():
     c1.metric(t("co.kb_docs"), stats.get("docs", 0))
     c2.metric(t("co.kb_chunks"), stats.get("chunks", 0))
 
-    has_key = bool(st.session_state.get("api_gemini"))
+    # الفهرسة تستدعي **موفّر التضمين** لا موفّر النص، فالجاهزية تُقاس عليه.
+    has_key = providers.embed_ready()
     if not has_key:
         st.warning(t("co.kb_needs_key"))
 

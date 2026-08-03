@@ -31,9 +31,7 @@ from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
     DEFAULT_LANGUAGE,
-    DEFAULT_MODEL,
     EXTRACT_PROMPTS,
-    MODEL_NAMES,
     SUBMISSION_SCHEMA,
     TIMELINE_SCHEMA,
     ai_generate_json,
@@ -48,12 +46,15 @@ def _output_language() -> str:
 
 
 def _model_picker(key: str) -> str:
-    """منتقي نموذج مضغوط يتبع التفضيل الافتراضي."""
-    current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
+    """منتقي نموذج مضغوط يتبع الموفّر النشط وتفضيله الافتراضي."""
+    from utils.ai_engine import default_model_name, model_names
+
+    options = model_names()
+    current = default_model_name()
     return st.selectbox(
         t("common.engine"),
-        MODEL_NAMES,
-        index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
+        options,
+        index=options.index(current) if current in options else 0,
         key=key,
         label_visibility="collapsed",
     )
@@ -131,7 +132,7 @@ def _mandatory_list_reference() -> str:
     """
     from utils import knowledge
 
-    if not knowledge.is_populated() or not st.session_state.get("api_gemini"):
+    if not knowledge.is_populated():
         return ""
     return knowledge.build_context(
         "القائمة الإلزامية للمحتوى المحلي المنتجات الإلزامية هيئة المحتوى المحلي",

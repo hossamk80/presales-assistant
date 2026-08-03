@@ -8,9 +8,7 @@ import streamlit as st
 
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
-    DEFAULT_MODEL,
     EXTRACT_PROMPTS,
-    MODEL_NAMES,
     PROJECT_CONTEXT_SCHEMA,
     ai_generate,
     ai_generate_json,
@@ -189,11 +187,14 @@ def _render_project_context():
     with st.expander(t("an.context_title"), expanded=not ctx):
         c_model, c_btn = st.columns([3, 2])
         with c_model:
-            current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
+            from utils.ai_engine import default_model_name, model_names
+
+            options = model_names()
+            current = default_model_name()
             model = st.selectbox(
                 t("common.engine"),
-                MODEL_NAMES,
-                index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
+                options,
+                index=options.index(current) if current in options else 0,
                 key="model_context",
                 label_visibility="collapsed",
             )

@@ -9,8 +9,6 @@ import streamlit as st
 
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
-    DEFAULT_MODEL,
-    MODEL_NAMES,
     REVIEW_LENSES,
     REVIEW_SCHEMA,
     ai_generate,
@@ -317,11 +315,14 @@ def render():
             label_visibility="collapsed",
         )
     with c_model:
-        current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
+        from utils.ai_engine import default_model_name, model_names
+
+        options = model_names()
+        current = default_model_name()
         model = st.selectbox(
             t("common.engine"),
-            MODEL_NAMES,
-            index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
+            options,
+            index=options.index(current) if current in options else 0,
             key="model_review",
             label_visibility="collapsed",
         )
