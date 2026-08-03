@@ -35,11 +35,18 @@ CREATE TABLE IF NOT EXISTS projects (
     payload     TEXT NOT NULL
 );
 
+-- ملف الشركة (13-1): كان الجدول مقيَّداً بصف واحد `CHECK (id = 1)` لأن النظام
+-- بُني لفرد يعمل لشركة واحدة. قسم العطاءات قد يخدم أكثر من كيان (شركة أمّ
+-- وذراع تنفيذية، أو مكتب استشاري يعدّ عروضاً لعملائه)، وكل ما بعده —
+-- المستخدمون والأدوار وإسناد الأقسام — يفترض قاعدة تحتمل أكثر من شركة.
+-- القيد أُلغي، وقاعدة قديمة تُرقّى في `_migrate_company` بلا فقد بيانات.
 CREATE TABLE IF NOT EXISTS company (
-    id       INTEGER PRIMARY KEY CHECK (id = 1),
-    payload  TEXT NOT NULL,
-    template BLOB,
-    logo     BLOB
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT '',
+    payload    TEXT NOT NULL,
+    template   BLOB,
+    logo       BLOB
 );
 
 CREATE TABLE IF NOT EXISTS kb_documents (
@@ -132,11 +139,53 @@ _ADDED_COLUMNS = (
     # 11-6: تغيير نموذج التضمين يُبطل المتجهات المخزَّنة. نحفظ اسم النموذج
     # مع كل مقطع حتى نعدّ المقاطع المعطَّلة صراحةً بدل إهمالها صامتةً.
     ("kb_chunks", "embed_model", "TEXT DEFAULT ''"),
+    # 13-1: الشركة صارت صفاً من صفوف لا صفاً وحيداً، فلها اسم وتاريخ إنشاء.
+    ("company", "name", "TEXT NOT NULL DEFAULT ''"),
+    ("company", "created_at", "TEXT NOT NULL DEFAULT ''"),
 )
+
+# أعمدة جدول الشركة بترتيبها في المخطط الحالي — يستعملها الترحيل لنقل ما
+# يوجد منها في القاعدة القديمة ويترك الباقي لقيمته الافتراضية.
+_COMPANY_COLUMNS = ("id", "name", "created_at", "payload", "template", "logo")
+
+
+def _migrate_company(conn: sqlite3.Connection):
+    """
+    يُلغي قيد الصف الواحد `CHECK (id = 1)` من قاعدة أُنشئت قبل 13-1.
+
+    SQLite لا يُسقط قيداً بـ ALTER TABLE، فالسبيل الوحيد إعادة بناء الجدول:
+    جدول جديد بالمخطط الحالي ← نسخ الصفوف الموجودة ← إسقاط القديم ← تسمية.
+    كل ذلك داخل معاملة واحدة، فإن فشل شيء بقيت القاعدة القديمة كما هي.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'company'"
+    ).fetchone()
+    if row is None or "CHECK" not in (row["sql"] or "").upper():
+        return
+
+    old = {r["name"] for r in conn.execute("PRAGMA table_info(company)")}
+    carried = [c for c in _COMPANY_COLUMNS if c in old]
+    columns = ", ".join(carried)
+    conn.execute("""
+        CREATE TABLE company_migrated (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT '',
+            payload    TEXT NOT NULL,
+            template   BLOB,
+            logo       BLOB
+        )
+    """)
+    conn.execute(
+        f"INSERT INTO company_migrated ({columns}) SELECT {columns} FROM company"
+    )
+    conn.execute("DROP TABLE company")
+    conn.execute("ALTER TABLE company_migrated RENAME TO company")
 
 
 def _migrate(conn: sqlite3.Connection):
-    """يضيف الأعمدة الناقصة إلى قاعدة بيانات أُنشئت بإصدار أقدم."""
+    """يُرقّي قاعدة بيانات أُنشئت بإصدار أقدم إلى المخطط الحالي."""
+    _migrate_company(conn)
     for table, column, decl in _ADDED_COLUMNS:
         existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
@@ -247,39 +296,115 @@ def duplicate_project(project_id: int, new_name: str) -> Optional[int]:
 # ─── ملف الشركة ───────────────────────────────────────────────────────────────
 
 
-def load_company() -> tuple[dict, Optional[bytes], Optional[bytes]]:
-    row = get_conn().execute("SELECT * FROM company WHERE id = 1").fetchone()
+# الشركة الفاعلة: النظام يعرض ملف شركة واحدة في كل لحظة. حتى تصل المستخدمون
+# (13-2) يبقى الاختيار على مستوى العملية، وقيمته الافتراضية أقدم شركة مسجَّلة —
+# فقاعدة بها شركة واحدة تتصرّف تماماً كما كانت قبل إلغاء القيد.
+_active_company_id: Optional[int] = None
+
+
+def list_companies() -> list:
+    rows = get_conn().execute(
+        "SELECT id, name, created_at FROM company ORDER BY id"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def active_company_id() -> Optional[int]:
+    """الشركة المختارة إن كانت لا تزال موجودة، وإلا أقدم شركة، وإلا `None`."""
+    row = get_conn().execute(
+        "SELECT id FROM company WHERE id = ?", (_active_company_id,)
+    ).fetchone() if _active_company_id is not None else None
+    if row is not None:
+        return row["id"]
+    row = get_conn().execute("SELECT MIN(id) AS id FROM company").fetchone()
+    return row["id"] if row and row["id"] is not None else None
+
+
+def set_active_company(company_id: Optional[int]):
+    global _active_company_id
+    _active_company_id = company_id
+
+
+def create_company(name: str = "", payload: Optional[dict] = None) -> int:
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO company (name, created_at, payload) VALUES (?, ?, ?)",
+            (name, _now(), json.dumps(payload or {}, ensure_ascii=False)),
+        )
+        return cur.lastrowid
+
+
+def rename_company(company_id: int, name: str):
+    with transaction() as conn:
+        conn.execute("UPDATE company SET name = ? WHERE id = ?", (name, company_id))
+
+
+def delete_company(company_id: int) -> bool:
+    """يحذف شركة. يعيد `False` إن لم تكن موجودة أو كانت الأخيرة الباقية."""
+    ids = [r["id"] for r in list_companies()]
+    if company_id not in ids or len(ids) <= 1:
+        return False
+    with transaction() as conn:
+        conn.execute("DELETE FROM company WHERE id = ?", (company_id,))
+    if _active_company_id == company_id:
+        set_active_company(None)
+    return True
+
+
+def _company_row(company_id: Optional[int]):
+    target = active_company_id() if company_id is None else company_id
+    if target is None:
+        return None
+    return get_conn().execute(
+        "SELECT * FROM company WHERE id = ?", (target,)
+    ).fetchone()
+
+
+def load_company(company_id: Optional[int] = None) -> tuple[dict, Optional[bytes],
+                                                            Optional[bytes]]:
+    row = _company_row(company_id)
     if row is None:
         return {}, None, None
     return json.loads(row["payload"]), row["template"], row["logo"]
 
 
 def save_company(payload: dict, template: Optional[bytes] = None,
-                 logo: Optional[bytes] = None):
-    """يحفظ ملف الشركة. القالب والشعار يُحدَّثان فقط عند تمرير قيمة صريحة."""
-    existing = get_conn().execute("SELECT * FROM company WHERE id = 1").fetchone()
+                 logo: Optional[bytes] = None,
+                 company_id: Optional[int] = None) -> int:
+    """
+    يحفظ ملف الشركة ويعيد معرّفها. القالب والشعار يُحدَّثان فقط عند تمرير قيمة
+    صريحة — وإلا فقد المستخدم قالب شركته بمجرد تعديل رقم هاتف.
+    """
+    existing = _company_row(company_id)
     if existing is None:
         with transaction() as conn:
-            conn.execute(
-                "INSERT INTO company (id, payload, template, logo) VALUES (1, ?, ?, ?)",
-                (json.dumps(payload, ensure_ascii=False), template, logo),
+            cur = conn.execute(
+                "INSERT INTO company (id, name, created_at, payload, template, logo) "
+                "VALUES (?, '', ?, ?, ?, ?)",
+                (company_id, _now(), json.dumps(payload, ensure_ascii=False),
+                 template, logo),
             )
-        return
+            return company_id if company_id is not None else cur.lastrowid
 
     with transaction() as conn:
         conn.execute(
-            "UPDATE company SET payload = ?, template = ?, logo = ? WHERE id = 1",
+            "UPDATE company SET payload = ?, template = ?, logo = ? WHERE id = ?",
             (
                 json.dumps(payload, ensure_ascii=False),
                 existing["template"] if template is None else template,
                 existing["logo"] if logo is None else logo,
+                existing["id"],
             ),
         )
+    return existing["id"]
 
 
-def clear_company_template():
+def clear_company_template(company_id: Optional[int] = None):
+    row = _company_row(company_id)
+    if row is None:
+        return
     with transaction() as conn:
-        conn.execute("UPDATE company SET template = NULL WHERE id = 1")
+        conn.execute("UPDATE company SET template = NULL WHERE id = ?", (row["id"],))
 
 
 # ─── مستودع المعرفة ───────────────────────────────────────────────────────────
