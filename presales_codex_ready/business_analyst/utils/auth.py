@@ -81,6 +81,8 @@ PERMISSIONS: dict[str, tuple] = {
     "sections.write": (ADMIN, BID_MANAGER, WRITER),
     # 13-4: إسناد الأقسام لمُلّاكها — ومن يملكه يعدّل أي قسم بصرف النظر عن مالكه
     "sections.assign": (ADMIN, BID_MANAGER),
+    # 13-5: قراءة سجل التدقيق — يكشف من فعل ماذا، فليس لكل من يكتب
+    "audit.view": (ADMIN, BID_MANAGER),
     # المراجعة: المراجع يشغّلها ولا يكتب، والكاتب يطبّق الثغرة على قسمه
     "review.run": (ADMIN, BID_MANAGER, REVIEWER),
     # سؤال المساعد لا يمسّ النص لكنه استدعاء نموذج بكلفة — يُمنع عن المطّلع
@@ -229,6 +231,11 @@ def start_session(user_id: int):
     st.session_state[_FAILED_KEY] = 0
     st.session_state.pop(_COOLDOWN_KEY, None)
     db.touch_user_login(user_id)
+    # 13-5: الاستيراد هنا لا في الأعلى — `audit` يقرأ المستخدم الحالي من هذه
+    # الوحدة، فاستيراده على مستوى الملف حلقة.
+    from utils import audit
+
+    audit.record(audit.AUTH_LOGIN)
 
 
 def logout():

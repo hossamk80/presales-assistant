@@ -28,7 +28,7 @@ from utils.file_handler import (
     confidentiality_notice,
     resolve_document_tokens,
 )
-from utils import auth
+from utils import audit, auth
 from utils.i18n import t
 from utils.state import (
     SECTION_STATUSES,
@@ -137,6 +137,8 @@ def _render_outline_designer():
                 st.session_state["proposal_title"] = str(result["proposal_title"]).strip()
             if proposed:
                 _apply_proposed_outline(proposed)
+                audit.record(audit.OUTLINE_PROPOSE, source=audit.AI,
+                             detail=str(len(proposed)))
                 st.rerun()
             elif result is not None:
                 st.warning(t("db.no_sections"))
@@ -252,6 +254,20 @@ def _render_assignment_board(sections: list):
             st.caption(t("db.board_unassigned", n=unassigned))
 
 
+def _assign_owner(key: str):
+    owner = st.session_state.get(f"owner_{key}")
+    if set_section_owner(key, owner):
+        audit.record(audit.SECTION_ASSIGN, target=audit.section_target(key),
+                     detail=str(owner or ""))
+
+
+def _assign_status(key: str):
+    status = st.session_state.get(f"status_{key}")
+    if set_section_status(key, status):
+        audit.record(audit.SECTION_STATUS, target=audit.section_target(key),
+                     detail=str(status))
+
+
 def _render_section_assignment(sec: dict):
     """إسناد قسم بعينه وحالته — داخل موسّع القسم نفسه."""
     people = _people()
@@ -271,9 +287,7 @@ def _render_section_assignment(sec: dict):
             key=f"owner_{key}",
             disabled=not may_assign,
             help=t("db.owner_help") if may_assign else t("db.owner_locked"),
-            on_change=lambda k=key: set_section_owner(
-                k, st.session_state.get(f"owner_{k}")
-            ),
+            on_change=lambda k=key: _assign_owner(k),
         )
     with c_status:
         # الحالة يحدّثها مالك القسم نفسه — هي إقراره لا حكم غيره عليه
@@ -284,13 +298,16 @@ def _render_section_assignment(sec: dict):
             format_func=lambda s: t("db.status_" + s),
             key=f"status_{key}",
             disabled=not auth.can_edit_section(sec),
-            on_change=lambda k=key: set_section_status(
-                k, st.session_state.get(f"status_{k}")
-            ),
+            on_change=lambda k=key: _assign_status(k),
         )
 
     if not auth.can_edit_section(sec) and auth.can("sections.write"):
         st.info(t("db.owned_by_other", name=_owner_label(sec, people)))
+
+    # 13-5: مصدر النص الحالي — سؤال لجنة الفحص لا سؤال فضول
+    source = audit.section_source(key)
+    if source:
+        st.caption(t("db.source_" + source))
 
 
 def _render_mandatory_check(sections: list):
@@ -615,6 +632,9 @@ def _render_ai_editor(sec: dict):
             status.empty()
             if out:
                 st.session_state[ckey] = out
+                audit.record(audit.SECTION_GENERATE,
+                             target=audit.section_target(key), source=audit.AI,
+                             detail=sec["title"])
                 # نُبطل مفتاح المحرر ليعرض النص المولَّد الجديد
                 st.session_state.pop(f"ta_{key}", None)
                 st.rerun()
@@ -760,6 +780,8 @@ def _apply_refinement(sec: dict, request: str, model: str):
     st.session_state[f"_undo_{ckey}"] = current
     st.session_state[ckey] = revised
     st.session_state.pop(f"ta_{sec['key']}", None)
+    audit.record(audit.SECTION_REFINE, target=audit.section_target(sec["key"]),
+                 source=audit.AI, detail=request[:120])
 
 
 def _answer_question(sec: dict, question: str, model: str):
@@ -975,6 +997,7 @@ def _render_export(sections: list):
                         **brand,
                     )
                 st.session_state["_built_docx"] = bio.getvalue()
+                audit.record(audit.EXPORT_BUILD, detail="docx")
                 st.success(t("db.built_word"))
             except Exception as e:
                 st.error(t("db.build_failed", error=e))
@@ -997,6 +1020,7 @@ def _render_export(sections: list):
                         **brand,
                     )
                 st.session_state["_built_pdf"] = bio.getvalue()
+                audit.record(audit.EXPORT_BUILD, detail="pdf")
                 st.success(t("db.built_pdf"))
             except ImportError as e:
                 st.error(

@@ -7,7 +7,7 @@ views/projects.py — إدارة المنافسات المحفوظة
 import json
 import streamlit as st
 
-from utils import auth, db, history
+from utils import audit, auth, db, history
 from utils.i18n import t
 from utils.state import (
     STATE_SCHEMA,
@@ -33,6 +33,7 @@ def save_current(show_toast: bool = False) -> bool:
     if pid is None or not auth.can("projects.edit"):
         return False
     snapshot = get_project_snapshot()
+    _audit_section_edits(snapshot)
     db.save_project(pid, snapshot)
     st.session_state["_saved_fingerprint"] = _fingerprint(snapshot)
     if show_toast:
@@ -42,6 +43,25 @@ def save_current(show_toast: bool = False) -> bool:
 
 def _fingerprint(snapshot: dict) -> str:
     return json.dumps(snapshot, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _audit_section_edits(snapshot: dict):
+    """
+    يسجّل نصوص الأقسام التي تغيّرت منذ آخر حفظ (13-5).
+
+    اللقطة المحفوظة موجودة أصلاً في `_saved_fingerprint` — نقرأها بدل حفظ نسخة
+    ثانية من كل شيء لغرض المقارنة وحدها.
+    """
+    raw = st.session_state.get("_saved_fingerprint")
+    if not raw:
+        return                      # أول حفظ: لا «قبل» يُقارَن به
+    try:
+        before = json.loads(raw)
+    except (TypeError, ValueError):
+        return
+    from utils.state import get_sections
+
+    audit.record_section_edits(before, snapshot, [s["key"] for s in get_sections()])
 
 
 def autosave():
@@ -59,6 +79,7 @@ def autosave():
         snapshot = get_project_snapshot()
         fingerprint = _fingerprint(snapshot)
         if fingerprint != st.session_state.get("_saved_fingerprint"):
+            _audit_section_edits(snapshot)
             db.save_project(current_project_id(), snapshot)
             st.session_state["_saved_fingerprint"] = fingerprint
     except Exception as e:
@@ -172,6 +193,7 @@ def _render_history(projects: list, pid):
         if st.button(t("proj.save_outcome"), type="primary", key=f"save_outcome_{pid}",
                      disabled=auth.blocked("projects.edit")):
             db.set_outcome(pid, outcome, note.strip())
+            audit.record(audit.PROJECT_OUTCOME, project_id=pid, detail=outcome)
             st.success(t("proj.outcome_saved"))
             st.rerun()
 
@@ -286,6 +308,8 @@ def render():
                     st.session_state["_project_id"] = new_id
                     st.session_state["_project_name"] = name.strip()
                     st.session_state["_saved_fingerprint"] = _fingerprint(get_project_snapshot())
+                    audit.record(audit.PROJECT_CREATE, project_id=new_id,
+                                 project_name=name.strip())
                     st.success(t("proj.created", name=name.strip()))
                     st.rerun()
 
@@ -318,7 +342,10 @@ def render():
             with c_dup:
                 if st.button(t("common.copy"), key=f"dup_{proj['id']}", width="stretch",
                              disabled=auth.blocked("projects.create")):
-                    db.duplicate_project(proj["id"], f"{proj['name']} {t('proj.copy_suffix')}")
+                    new_id = db.duplicate_project(
+                        proj["id"], f"{proj['name']} {t('proj.copy_suffix')}")
+                    audit.record(audit.PROJECT_DUPLICATE, project_id=new_id,
+                                 project_name=proj["name"], detail=str(proj["id"]))
                     st.rerun()
             with c_del:
                 # 13-3: الحذف لمدير العطاءات ومدير النظام. الزر معطَّل، والفحص
@@ -333,6 +360,8 @@ def render():
                         else:
                             if is_open:
                                 close_project()
+                            audit.record(audit.PROJECT_DELETE, project_id=proj["id"],
+                                         project_name=proj["name"])
                             db.delete_project(proj["id"])
                             st.session_state.pop(confirm_key, None)
                             st.rerun()

@@ -370,7 +370,7 @@ def test_each_role_gets_exactly_its_matrix_row(auth):
         auth.BID_MANAGER: {
             "data.manage", "projects.create", "projects.edit", "projects.delete",
             "tables.edit", "sections.write", "sections.assign", "review.run",
-            "assistant.ask", "company.edit", "export",
+            "assistant.ask", "company.edit", "export", "audit.view",
         },
         auth.WRITER: {
             "projects.create", "projects.edit", "tables.edit", "sections.write",
@@ -586,3 +586,134 @@ def test_signed_out_visitor_edits_nothing(auth, sections):
     section = _own(sections, "exec", 0)          # 0 يعني غير مُسند
     assert sections.section_owner(section) is None
     assert auth.can_edit_section(section) is False
+
+
+# ─── 13-5: سجل التدقيق ───────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def trail(auth):
+    """سجل التدقيق فوق قاعدة معزولة، بمستخدم داخل."""
+    from utils import audit as audit_module
+
+    _add(auth, "sara", "strong-pass-1", display_name="سارة")
+    auth.login("sara", "strong-pass-1")
+    return audit_module
+
+
+def test_every_event_carries_a_person_and_a_time(trail, temp_db):
+    """شرط قبول 13-5: كل تغيير قابل للتتبّع لشخص ووقت."""
+    assert trail.record(trail.PROJECT_CREATE, project_id=3, project_name="منافسة") is True
+
+    entry = temp_db.list_audit_entries()[0]
+    assert entry["username"] == "سارة"
+    assert entry["user_id"] == temp_db.get_user("sara")["id"]
+    assert entry["created_at"]
+    assert entry["action"] == trail.PROJECT_CREATE
+    assert entry["project_id"] == 3
+
+
+def test_login_is_recorded_by_itself(auth, temp_db):
+    """الدخول نفسه حدث — وإلا لم يُعرف من كان على الجهاز وقت التغيير."""
+    _add(auth, "sara", "strong-pass-1")
+    assert temp_db.count_audit_entries() == 0
+
+    auth.login("sara", "strong-pass-1")
+    assert [e["action"] for e in temp_db.list_audit_entries()] == ["auth.login"]
+
+
+def test_the_trail_has_no_update_or_delete(temp_db):
+    """سجل يُنقّح ليس سجلاً — الطبقة نفسها لا تملك الأداة."""
+    names = dir(temp_db)
+    assert "add_audit_entry" in names
+    assert not [n for n in names
+                if "audit" in n and ("delete" in n or "update" in n or "clear" in n)]
+
+
+def test_a_deleted_user_leaves_their_trail_behind(trail, temp_db, auth):
+    """حذف حساب لا يمحو أثر ما فعله، ولا يترك صفاً بلا اسم."""
+    user_id = temp_db.get_user("sara")["id"]
+    trail.record(trail.PROJECT_DELETE, project_id=1, project_name="منافسة")
+
+    temp_db.delete_user(user_id)
+    entry = temp_db.list_audit_entries(action=trail.PROJECT_DELETE)[0]
+    assert entry["username"] == "سارة"          # اللقطة باقية
+    assert entry["user_id"] == user_id
+
+
+def test_events_are_filtered_by_project_and_by_person(trail, temp_db, auth):
+    trail.record(trail.EXPORT_BUILD, project_id=1)
+    trail.record(trail.EXPORT_BUILD, project_id=2)
+
+    _add(auth, "omar", "strong-pass-2")
+    other = temp_db.get_user("omar")["id"]
+    auth.start_session(other)                    # يسجّل دخولاً كذلك
+    trail.record(trail.EXPORT_BUILD, project_id=1)
+
+    assert len(trail.entries(project_id=1, action=trail.EXPORT_BUILD)) == 2
+    assert len(trail.entries(user_id=other, action=trail.EXPORT_BUILD)) == 1
+
+
+def test_newest_event_comes_first(trail, temp_db):
+    trail.record(trail.SECTION_GENERATE, target="section:exec", source=trail.AI)
+    trail.record(trail.SECTION_EDIT, target="section:exec")
+
+    actions = [e["action"] for e in trail.entries()]
+    assert actions[0] == trail.SECTION_EDIT
+
+
+def test_section_source_follows_the_last_write(trail):
+    """نصّ ولّده النموذج ثم حرّره إنسان صار مسؤولية إنسان."""
+    assert trail.section_source("exec", project_id=1) == ""
+
+    trail.record(trail.SECTION_GENERATE, target=trail.section_target("exec"),
+                 source=trail.AI, project_id=1)
+    assert trail.section_source("exec", project_id=1) == "ai"
+
+    trail.record(trail.SECTION_EDIT, target=trail.section_target("exec"),
+                 source=trail.HUMAN, project_id=1)
+    assert trail.section_source("exec", project_id=1) == "human"
+
+
+def test_non_content_events_do_not_change_the_source(trail):
+    """الإسناد ليس كتابة — لا يجعل نصاً ولّده النموذج نصَّ إنسان."""
+    trail.record(trail.SECTION_GENERATE, target=trail.section_target("exec"),
+                 source=trail.AI, project_id=1)
+    trail.record(trail.SECTION_ASSIGN, target=trail.section_target("exec"),
+                 project_id=1)
+
+    assert trail.section_source("exec", project_id=1) == "ai"
+
+
+def test_an_unknown_source_is_stored_as_human(trail, temp_db):
+    trail.record(trail.SECTION_EDIT, target="section:x", source="magic")
+    assert temp_db.list_audit_entries()[0]["source"] == "human"
+
+
+def test_only_changed_sections_are_recorded_on_save(trail, temp_db):
+    before = {"sec_exec": "نص", "sec_plan": "خطة"}
+    after = {"sec_exec": "نص أطول", "sec_plan": "خطة"}
+
+    assert trail.record_section_edits(before, after, ["exec", "plan"]) == 1
+    entries = temp_db.list_audit_entries(action=trail.SECTION_EDIT)
+    assert [e["target"] for e in entries] == ["section:exec"]
+
+
+def test_a_failing_trail_never_breaks_the_work(trail, monkeypatch, temp_db):
+    """أن يفشل حفظ منافسة لأن سطر تدقيق تعذّر أسوأ من أثر ناقص."""
+    def boom(*a, **k):
+        raise RuntimeError("القرص ممتلئ")
+
+    monkeypatch.setattr(temp_db, "add_audit_entry", boom)
+    assert trail.record(trail.PROJECT_CREATE) is False
+
+
+def test_reading_the_trail_is_not_for_everyone(auth):
+    """السجل يكشف من فعل ماذا — ليس لكل من يكتب."""
+    _add(auth, "kateb", "strong-pass-1", role=auth.WRITER)
+    auth.login("kateb", "strong-pass-1")
+    assert auth.blocked("audit.view")
+
+    _add(auth, "manager", "strong-pass-2", role=auth.BID_MANAGER)
+    auth.login("manager", "strong-pass-2")
+    assert auth.can("audit.view")
