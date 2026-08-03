@@ -311,3 +311,33 @@ def rfp_context_block(query: str, top_k: int = RFP_TOP_K) -> str:
         "\n\n--- بنود كراسة الشروط ذات الصلة بهذا القسم (مسترجعة آلياً) ---\n"
         + "\n\n---\n".join(hits)
     )
+
+
+def rfp_context_for(text: str, query: str, top_k: int = RFP_TOP_K) -> str:
+    """
+    بنود الكراسة ذات الصلة، بالتضمين إن توفّر وإلا بالاسترجاع اللفظي.
+
+    التضمين يحتاج موفّر تضمين بمفتاح؛ ومستخدم الموفّر المحلي (Ollama بلا
+    مفتاح) لم يكن يحصل على استرجاع إطلاقاً فيعود لتمرير الكراسة كاملة. BM25
+    حسابي بحت — بلا شبكة ولا مفتاح ولا كلفة — فيسدّ تلك الثغرة.
+    """
+    body = (text or "").strip()
+    if not body:
+        return ""
+
+    if providers.embed_ready() and index_rfp(body):
+        block = rfp_context_block(query, top_k=top_k)
+        if block:
+            return block
+
+    # المسار الحسابي: لا مفتاح ولا استدعاء
+    from utils import retrieval, savings
+
+    focused, stats = retrieval.focused_context(body, query)
+    if not stats.get("applied"):
+        return ""
+    savings.record(savings.METHOD_RETRIEVAL, stats["before"], stats["after"])
+    return (
+        "\n\n--- بنود كراسة الشروط ذات الصلة بهذا القسم (مسترجعة لفظياً) ---\n"
+        + focused
+    )

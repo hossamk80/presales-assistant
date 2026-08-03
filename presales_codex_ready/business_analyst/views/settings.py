@@ -11,7 +11,7 @@ import time
 import pandas as pd
 import streamlit as st
 
-from utils import db, knowledge, providers
+from utils import db, knowledge, providers, savings
 from utils.i18n import UI_LANGUAGES, t
 from utils.providers import catalog
 from utils.state import get_state_snapshot, load_state_snapshot
@@ -262,6 +262,29 @@ def _usage_section():
                 )
         if not db.usage_totals("").get("calls"):
             st.info(t("st.usage_empty"))
+
+        # ما تجنّبناه بالمعالجة المحلية — مقابل ما أُنفق أعلاه
+        led = savings.summary()
+        if led["tokens_before"] or led["avoided_calls"]:
+            st.markdown(f"**{t('st.savings')}**")
+            st.caption(t("st.savings_hint"))
+            s1, s2, s3 = st.columns(3)
+            s1.metric(t("st.savings_tokens"), f"{led['tokens_saved']:,}",
+                      delta=f"-{round(led['ratio'] * 100)}%")
+            s2.metric(t("st.savings_avoided"), f"{led['avoided_calls']:,}")
+            s3.metric(t("st.savings_sent"), f"{led['tokens_after']:,}")
+            by_method = {
+                t(f"st.method_{method}"): tokens
+                for method, tokens in led["by_method"].items() if tokens
+            }
+            if by_method:
+                st.dataframe(
+                    pd.DataFrame(
+                        [{t("st.usage_col_group"): k, t("st.savings_tokens"): v}
+                         for k, v in by_method.items()]
+                    ),
+                    hide_index=True, width="stretch",
+                )
 
 
 def render_settings():
