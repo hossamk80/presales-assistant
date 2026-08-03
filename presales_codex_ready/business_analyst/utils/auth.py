@@ -79,6 +79,8 @@ PERMISSIONS: dict[str, tuple] = {
     # المحتوى
     "tables.edit": (ADMIN, BID_MANAGER, WRITER),
     "sections.write": (ADMIN, BID_MANAGER, WRITER),
+    # 13-4: إسناد الأقسام لمُلّاكها — ومن يملكه يعدّل أي قسم بصرف النظر عن مالكه
+    "sections.assign": (ADMIN, BID_MANAGER),
     # المراجعة: المراجع يشغّلها ولا يكتب، والكاتب يطبّق الثغرة على قسمه
     "review.run": (ADMIN, BID_MANAGER, REVIEWER),
     # سؤال المساعد لا يمسّ النص لكنه استدعاء نموذج بكلفة — يُمنع عن المطّلع
@@ -345,6 +347,29 @@ def can(permission: str, user: Optional[dict] = None) -> bool:
 def blocked(permission: str, user: Optional[dict] = None) -> bool:
     """عكس `can` — تُمرَّر مباشرةً إلى `disabled=` في عناصر الواجهة."""
     return not can(permission, user)
+
+
+def can_edit_section(section: dict) -> bool:
+    """
+    هل يعدّل المستخدم الحالي هذا القسم بعينه؟ (13-4)
+
+    ثلاث حالات فوق صلاحية الكتابة العامة:
+      · قسم **غير مُسند** — متاح لكل من يكتب، فالإسناد تنظيم لا شرط بدء.
+      · قسم **مُسند إليه** — يعدّله.
+      · قسم **مُسند إلى غيره** — محجوب، إلا لمن يملك الإسناد (مدير العطاءات
+        ومدير النظام) فهو مسؤول عن العرض كله لا عن قسم فيه.
+    """
+    if not can("sections.write"):
+        return False
+
+    owner = (section or {}).get("owner")
+    if not isinstance(owner, int) or owner <= 0:
+        return True
+    if can("sections.assign"):
+        return True
+
+    user = current_user()
+    return bool(user and user["id"] == owner)
 
 
 def permissions_of(role: str) -> set:

@@ -369,8 +369,8 @@ def test_each_role_gets_exactly_its_matrix_row(auth):
         auth.ADMIN: set(auth.PERMISSIONS),
         auth.BID_MANAGER: {
             "data.manage", "projects.create", "projects.edit", "projects.delete",
-            "tables.edit", "sections.write", "review.run", "assistant.ask",
-            "company.edit", "export",
+            "tables.edit", "sections.write", "sections.assign", "review.run",
+            "assistant.ask", "company.edit", "export",
         },
         auth.WRITER: {
             "projects.create", "projects.edit", "tables.edit", "sections.write",
@@ -481,3 +481,108 @@ def test_the_last_admin_keeps_role_and_account(auth, temp_db):
 def test_role_of_falls_back_for_a_signed_out_visitor(auth):
     assert auth.role_of() == auth.VIEWER
     assert auth.blocked("projects.edit")
+
+
+# ─── 13-4: إسناد الأقسام ─────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def sections(auth, fake_streamlit):
+    """هيكل عرض في جلسة معزولة مع طبقة الصلاحيات فوقه."""
+    from utils import state
+
+    state.init_state()
+    return state
+
+
+def _own(state, key, owner):
+    assert state.set_section_owner(key, owner) is True
+    return next(s for s in state.get_sections() if s["key"] == key)
+
+
+def test_section_starts_unassigned_and_not_started(sections):
+    section = next(s for s in sections.get_sections() if s["kind"] == "ai")
+    assert sections.section_owner(section) is None
+    assert sections.section_status(section) == "todo"
+
+
+def test_owner_and_status_survive_a_round_trip(sections):
+    section = _own(sections, "exec", 7)
+    assert sections.section_owner(section) == 7
+
+    assert sections.set_section_status("exec", "ready") is True
+    section = next(s for s in sections.get_sections() if s["key"] == "exec")
+    assert sections.section_status(section) == "ready"
+
+
+def test_unknown_status_is_refused_and_unknown_section_is_ignored(sections):
+    assert sections.set_section_status("exec", "done_ish") is False
+    assert sections.set_section_owner("no_such_section", 3) is False
+
+
+def test_a_pre_assignment_section_reads_its_defaults(sections):
+    """قسم من منافسة حُفظت قبل 13-4 لا يحمل الحقلين — ولا ينهار."""
+    legacy = {"key": "old", "title": "قسم قديم", "kind": "ai", "include": True}
+    assert sections.section_owner(legacy) is None
+    assert sections.section_status(legacy) == "todo"
+
+
+def test_a_writer_edits_only_what_is_theirs_or_unassigned(auth, sections):
+    """شرط قبول 13-4: تعديل قسم لا يملكه المستخدم محجوب."""
+    from utils import db
+
+    auth.add_user("sara", "strong-pass-1", role=auth.WRITER)
+    auth.add_user("omar", "strong-pass-2", role=auth.WRITER)
+    sara = db.get_user("sara")["id"]
+    omar = db.get_user("omar")["id"]
+
+    auth.start_session(sara)
+    unassigned = next(s for s in sections.get_sections() if s["key"] == "scope")
+    assert auth.can_edit_section(unassigned) is True      # غير مُسند: متاح
+
+    mine = _own(sections, "exec", sara)
+    assert auth.can_edit_section(mine) is True
+
+    theirs = _own(sections, "plan", omar)
+    assert auth.can_edit_section(theirs) is False         # ← شرط القبول
+
+
+def test_a_bid_manager_edits_a_section_owned_by_someone_else(auth, sections):
+    """مسؤول عن العرض كله لا عن قسم فيه — وإلا تعطّل التسليم بغياب كاتب."""
+    from utils import db
+
+    auth.add_user("sara", "strong-pass-1", role=auth.WRITER)
+    auth.add_user("manager", "strong-pass-2", role=auth.BID_MANAGER)
+    sara = db.get_user("sara")["id"]
+
+    auth.start_session(db.get_user("manager")["id"])
+    theirs = _own(sections, "plan", sara)
+    assert auth.can_edit_section(theirs) is True
+    assert auth.can("sections.assign")
+
+
+def test_a_reviewer_edits_nothing_even_when_assigned_to_them(auth, sections):
+    """الإسناد لا يمنح صلاحية كتابة لمن لا يملكها أصلاً."""
+    from utils import db
+
+    auth.add_user("nour", "strong-pass-1", role=auth.REVIEWER)
+    nour = db.get_user("nour")["id"]
+    auth.start_session(nour)
+
+    assigned_to_them = _own(sections, "exec", nour)
+    assert auth.can_edit_section(assigned_to_them) is False
+    assert auth.blocked("sections.assign")
+
+
+def test_a_writer_cannot_reassign_sections(auth, sections):
+    auth.add_user("sara", "strong-pass-1", role=auth.WRITER)
+    from utils import db
+
+    auth.start_session(db.get_user("sara")["id"])
+    assert auth.blocked("sections.assign")
+
+
+def test_signed_out_visitor_edits_nothing(auth, sections):
+    section = _own(sections, "exec", 0)          # 0 يعني غير مُسند
+    assert sections.section_owner(section) is None
+    assert auth.can_edit_section(section) is False

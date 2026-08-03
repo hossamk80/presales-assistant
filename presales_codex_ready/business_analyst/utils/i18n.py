@@ -1341,6 +1341,41 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── إسناد الأقسام (13-4) / Section assignment ──
+    "db.owner": {"ar": "مالك القسم", "en": "Section owner"},
+    "db.owner_none": {"ar": "غير مُسند", "en": "Unassigned"},
+    "db.owner_gone": {"ar": "مالك لم يعد متاحاً", "en": "Owner no longer available"},
+    "db.owner_help": {
+        "ar": "المُسند إليه وحده يعدّل هذا القسم. القسم غير المُسند متاح لكل من يكتب.",
+        "en": "Only the assignee may edit this section. An unassigned section is open "
+              "to anyone who writes.",
+    },
+    "db.owner_locked": {
+        "ar": "الإسناد لمدير العطاءات ومدير النظام.",
+        "en": "Assignment is for the bid manager and the system administrator.",
+    },
+    "db.owned_by_other": {
+        "ar": "🔒 هذا القسم مُسند إلى {name} — للعرض فقط بالنسبة لك.",
+        "en": "🔒 This section is assigned to {name} — read-only for you.",
+    },
+    "db.status": {"ar": "الحالة", "en": "Status"},
+    "db.status_todo": {"ar": "لم يبدأ", "en": "Not started"},
+    "db.status_in_progress": {"ar": "قيد الكتابة", "en": "In progress"},
+    "db.status_ready": {"ar": "جاهز للمراجعة", "en": "Ready for review"},
+    "db.board": {"ar": "🗂️ لوحة الأقسام", "en": "🗂️ Section board"},
+    "db.board_hint": {
+        "ar": "من يكتب ماذا، وأين وصل — بلا فتح كل قسم على حدة.",
+        "en": "Who writes what, and how far along — without opening each section.",
+    },
+    "db.board_section": {"ar": "القسم", "en": "Section"},
+    "db.board_owner": {"ar": "المالك", "en": "Owner"},
+    "db.board_status": {"ar": "الحالة", "en": "Status"},
+    "db.board_text": {"ar": "النص", "en": "Text"},
+    "db.board_unassigned": {
+        "ar": "⚠️ {n} قسماً بلا مالك.",
+        "en": "⚠️ {n} section(s) without an owner.",
+    },
+
     # ── الأدوار (13-3) / Roles ──
     "role.admin": {"ar": "مدير النظام", "en": "System administrator"},
     "role.bid_manager": {"ar": "مدير العطاءات", "en": "Bid manager"},
