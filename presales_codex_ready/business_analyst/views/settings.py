@@ -336,7 +336,7 @@ def _users_section():
                 pd.DataFrame([{
                     t("us.col_username"): r["username"],
                     t("us.col_display_name"): r["display_name"],
-                    t("us.col_role"): r["role"],
+                    t("us.col_role"): t(f'role.{r["role"]}'),
                     t("us.col_active"): "✅" if r["active"] else "⛔",
                     t("us.col_last_login"): r["last_login"] or t("common.none"),
                 } for r in rows]),
@@ -350,10 +350,21 @@ def _users_section():
         with c2:
             display_name = st.text_input(t("au.display_name"),
                                          key="new_user_display_name")
-        password = st.text_input(t("au.password"), type="password",
-                                 key="new_user_password")
+        c3, c4 = st.columns(2)
+        with c3:
+            password = st.text_input(t("au.password"), type="password",
+                                     key="new_user_password")
+        with c4:
+            # الافتراضي أدنى الأدوار — الحساب الجديد لا يرث صلاحيات من أنشأه
+            role = st.selectbox(
+                t("us.col_role"), auth.ROLES,
+                index=auth.ROLES.index(auth.NEW_USER_ROLE),
+                format_func=lambda r: t(f"role.{r}"),
+                key="new_user_role", help=t("role.help"),
+            )
+        st.caption(t(f"role.{role}_hint"))
         if st.button(t("us.add_btn"), type="primary", key="new_user_add"):
-            problem = auth.add_user(username, password, display_name)
+            problem = auth.add_user(username, password, display_name, role)
             if problem:
                 st.error(t(problem))
             else:
@@ -373,6 +384,26 @@ def _users_section():
         target = db.get_user_by_id(target_id)
         if target is None:
             return
+
+        role_allowed = auth.can_change_role(target_id)
+        new_role = st.selectbox(
+            t("us.col_role"), auth.ROLES,
+            index=auth.ROLES.index(auth.role_of(target)),
+            format_func=lambda r: t(f"role.{r}"),
+            key="manage_user_role", disabled=not role_allowed,
+        )
+        st.caption(t(f"role.{new_role}_hint"))
+        if not role_allowed:
+            st.caption(t("us.cannot_change_role"))
+        elif new_role != target["role"] and st.button(
+            t("us.save_role"), key="manage_user_save_role", type="primary"
+        ):
+            problem = auth.set_role(target_id, new_role)
+            if problem:
+                st.error(t(problem))
+            else:
+                st.success(t("us.role_saved"))
+                st.rerun()
 
         reset = st.text_input(t("us.reset_password"), type="password",
                               key="manage_user_password",
@@ -406,20 +437,26 @@ def _users_section():
 def render_settings():
     st.markdown(t("st.title"))
 
-    st.markdown(
-        f"""<div style="background:#FEF3C7;padding:12px 16px;border-radius:8px;
-                    margin-bottom:12px;font-family:Tajawal,sans-serif;font-size:14px;
-                    color:#92400E;">{t("st.key_warning")}</div>""",
-        unsafe_allow_html=True,
-    )
+    # 13-3: المفاتيح والنماذج وحدّ الإنفاق لمدير النظام. غير المصرَّح له لا
+    # يرى الحقول معطَّلة — لا يراها أصلاً: مفتاح معروض ولو معطَّلاً مفتاح مقروء.
+    if auth.can("settings.manage"):
+        st.markdown(
+            f"""<div style="background:#FEF3C7;padding:12px 16px;border-radius:8px;
+                        margin-bottom:12px;font-family:Tajawal,sans-serif;font-size:14px;
+                        color:#92400E;">{t("st.key_warning")}</div>""",
+            unsafe_allow_html=True,
+        )
+        _provider_section()
+        _task_models_section()
+        _embedding_section()
+        _budget_section()
+    else:
+        st.info(t("role.settings_admin_only"))
 
-    _provider_section()
-    _task_models_section()
-    _embedding_section()
-    _budget_section()
     _usage_section()
     _my_account_section()
-    _users_section()
+    if auth.can("users.manage"):
+        _users_section()
 
     with st.expander(t("st.out_lang"), expanded=False):
         st.caption(t("st.out_lang_caption"))
@@ -442,6 +479,12 @@ def render_settings():
 
 def render_data():
     st.markdown(t("dm.title"))
+
+    # 13-3: استيراد مساحة عمل أو مسحها يمسّ كل شيء دفعةً واحدة — لا يُترك لكل
+    # من يكتب قسماً. التصدير في الحزمة نفسها: نسخة كاملة تخرج من النظام.
+    if not auth.can("data.manage"):
+        st.info(t("role.data_manager_only"))
+        return
 
     with st.expander(t("dm.export"), expanded=True):
         st.markdown(t("dm.export_hint"))

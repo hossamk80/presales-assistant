@@ -26,7 +26,7 @@ from utils.state import (
     role_text,
     section_content_key,
 )
-from utils import db, submission, timeline as timeline_utils, traceability
+from utils import auth, db, submission, timeline as timeline_utils, traceability
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
@@ -163,7 +163,8 @@ def _extraction_bar(kind: str):
     with col_model:
         model = _model_picker(f"model_extract_{kind}")
     with col_btn:
-        clicked = st.button(f"🤖 {label}", key=f"btn_extract_{kind}", type="primary", width="stretch")
+        clicked = st.button(f"🤖 {label}", key=f"btn_extract_{kind}", type="primary",
+                            width="stretch", disabled=auth.blocked("tables.edit"))
 
     if not clicked:
         return
@@ -288,7 +289,8 @@ def _render_submission_docs():
             st.markdown("<br>", unsafe_allow_html=True)
             run = st.button(t("tb.sub_extract"), type="primary",
                             key="extract_submission", width="stretch",
-                            disabled=not st.session_state.get("rfp_raw_text"))
+                            disabled=not st.session_state.get("rfp_raw_text")
+                            or auth.blocked("tables.edit"))
 
         if run:
             status = st.empty()
@@ -315,6 +317,7 @@ def _render_submission_docs():
             num_rows="dynamic",
             width="stretch",
             key="de_submission",
+            disabled=auth.blocked("tables.edit"),
             column_config={
                 "المستند": st.column_config.TextColumn(t("tb.sub_col_doc"), width="large"),
                 "مرجع البند": st.column_config.TextColumn(t("tb.col_clause"), width="small"),
@@ -372,9 +375,11 @@ def _render_timeline():
         with col_btn:
             run = st.button(t("tl.extract"), type="primary", key="extract_timeline",
                             width="stretch",
-                            disabled=not st.session_state.get("rfp_raw_text"))
+                            disabled=not st.session_state.get("rfp_raw_text")
+                            or auth.blocked("tables.edit"))
         with col_reset:
-            if st.button(f"↩️ {t('common.reset')}", key="reset_timeline", width="stretch"):
+            if st.button(f"↩️ {t('common.reset')}", key="reset_timeline", width="stretch",
+                         disabled=auth.blocked("tables.edit")):
                 st.session_state["df_timeline"] = DEFAULT_TIMELINE_DF.copy()
                 st.session_state.pop("de_timeline", None)
                 st.rerun()
@@ -409,6 +414,7 @@ def _render_timeline():
             num_rows="dynamic",
             width="stretch",
             key="de_timeline",
+            disabled=auth.blocked("tables.edit"),
             column_config={
                 "رقم المرحلة": st.column_config.NumberColumn(
                     t("tl.col_number"), min_value=1, width="small"),
@@ -515,6 +521,7 @@ def _render_personnel():
 
         edited = st.data_editor(
             df, num_rows="dynamic", width="stretch", key="de_personnel",
+            disabled=auth.blocked("tables.edit"),
             column_config={
                 "الدور المطلوب": st.column_config.TextColumn(t("tb.pe_role")),
                 "مرجع البند": st.column_config.TextColumn(t("tb.col_clause"), width="small"),
@@ -622,6 +629,7 @@ def render():
             num_rows="dynamic",
             width="stretch",
             key="de_compliance",
+            disabled=auth.blocked("tables.edit"),
             column_config={
                 "المعرّف": st.column_config.TextColumn("REQ", width="small"),
                 "التصنيف": st.column_config.SelectboxColumn(
@@ -684,6 +692,7 @@ def render():
             num_rows="dynamic",
             width="stretch",
             key="de_boq",
+            disabled=auth.blocked("tables.edit"),
             column_config={
                 "رقم البند": st.column_config.TextColumn("رقم البند", width="small"),
                 "التصنيف": st.column_config.TextColumn("التصنيف"),

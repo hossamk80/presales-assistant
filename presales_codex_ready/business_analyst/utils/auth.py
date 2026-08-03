@@ -1,5 +1,5 @@
 """
-utils/auth.py — الهوية والمصادقة (13-2)
+utils/auth.py — الهوية والمصادقة والأدوار (13-2 · 13-3)
 
 طبقة واحدة بين الشاشات وجدول `users`. كل ما يمسّ كلمة السر يمر من هنا، فلا
 تعرف بقية الشيفرة كيف تُخزَّن ولا كيف تُتحقَّق.
@@ -14,9 +14,12 @@ utils/auth.py — الهوية والمصادقة (13-2)
 `app.py` قبل رسم أي شاشة. تتحقق في كل دورة من أن المستخدم لا يزال موجوداً
 وفعّالاً — فتعطيل حساب يُخرج صاحبه من جلسته القائمة بلا انتظار.
 
-**الأدوار**: العمود يُخزَّن هنا ويُفرَض في 13-3. لا شاشة تسأل عن الدور بعد.
+**الأدوار (13-3)**: خمسة أدوار ومصفوفة صلاحيات واحدة هنا — لا شرط دور مكتوب
+في شاشة. الشاشات تسأل `can("...")` ولا تعرف من يملك ماذا، فتغيير صلاحية يكون
+في سطر واحد بدل مطاردة الشروط في عشرة ملفات.
 
-Authentication layer: scrypt password hashing, session guard, first-run setup.
+Authentication layer: scrypt password hashing, session guard, first-run setup,
+and the single role → permission matrix.
 """
 import hashlib
 import hmac
@@ -38,8 +41,52 @@ _KEY_BYTES = 32
 # أقصر كلمة مقبولة. أقصر من ذلك يُخمَّن مهما قويت التجزئة.
 MIN_PASSWORD_LENGTH = 8
 
-# الدور الافتراضي حتى تصل الأدوار الخمسة في 13-3
-DEFAULT_ROLE = "admin"
+# ─── الأدوار والصلاحيات (13-3) ────────────────────────────────────────────────
+#
+# خمسة أدوار تقابل ما يفعله قسم العطاءات فعلاً:
+#   admin       مدير النظام   — المفاتيح والمستخدمون والنسخ، فوق العمل اليومي
+#   bid_manager مدير العطاءات — يملك المنافسة: يحذفها ويعتمدها ويعدّل الشركة
+#   writer      كاتب          — يكتب الأقسام ويملأ الجداول، ولا يمسّ الإعدادات
+#   reviewer    مراجع         — يشغّل لجنة المراجعة ويقرأ، ولا يكتب النص
+#   viewer      مطّلع         — قراءة فقط
+#
+# المفاتيح ثابتة لا تُترجم؛ التسميات في `i18n` تحت `role.<key>`.
+ADMIN = "admin"
+BID_MANAGER = "bid_manager"
+WRITER = "writer"
+REVIEWER = "reviewer"
+VIEWER = "viewer"
+
+ROLES = (ADMIN, BID_MANAGER, WRITER, REVIEWER, VIEWER)
+
+# الدور الافتراضي لأول حساب: بلا مدير نظام لا تُدار الحسابات ولا المفاتيح.
+DEFAULT_ROLE = ADMIN
+# الدور الافتراضي لمن يُضاف بعده — الأقل صلاحية حتى يُرفع عمداً.
+NEW_USER_ROLE = WRITER
+
+# مصفوفة الصلاحيات: صلاحية ← الأدوار التي تملكها. القراءة مكفولة للجميع؛ ما
+# هنا هو الفعل والتغيير وحدهما.
+PERMISSIONS: dict[str, tuple] = {
+    # الإعدادات والمفاتيح: المفتاح مال ووصول لبيانات المنافسة — للمدير وحده
+    "settings.manage": (ADMIN,),
+    "users.manage": (ADMIN,),
+    # تصدير مساحة العمل واستيرادها ومسحها — يمسّ كل شيء دفعةً واحدة
+    "data.manage": (ADMIN, BID_MANAGER),
+    # المنافسات
+    "projects.create": (ADMIN, BID_MANAGER, WRITER),
+    "projects.edit": (ADMIN, BID_MANAGER, WRITER),
+    "projects.delete": (ADMIN, BID_MANAGER),
+    # المحتوى
+    "tables.edit": (ADMIN, BID_MANAGER, WRITER),
+    "sections.write": (ADMIN, BID_MANAGER, WRITER),
+    # المراجعة: المراجع يشغّلها ولا يكتب، والكاتب يطبّق الثغرة على قسمه
+    "review.run": (ADMIN, BID_MANAGER, REVIEWER),
+    # سؤال المساعد لا يمسّ النص لكنه استدعاء نموذج بكلفة — يُمنع عن المطّلع
+    "assistant.ask": (ADMIN, BID_MANAGER, WRITER, REVIEWER),
+    # ملف الشركة وسجلاتها ومستودع معرفتها — مِلك المنشأة لا المنافسة
+    "company.edit": (ADMIN, BID_MANAGER),
+    "export": (ADMIN, BID_MANAGER, WRITER, REVIEWER),
+}
 
 # حدّ محاولات الدخول الفاشلة قبل تهدئة إجبارية — يوقف التخمين الآلي بلا أن
 # يقفل حساباً فعلياً (القفل الدائم سلاح بيد المهاجم ضد صاحب الحساب).
@@ -220,8 +267,14 @@ def create_first_admin(username: str, password: str, display_name: str = "") -> 
 
 
 def add_user(username: str, password: str, display_name: str = "",
-             role: str = DEFAULT_ROLE) -> Optional[str]:
-    """يضيف مستخدماً. يعيد مفتاح i18n عند الرفض و `None` عند النجاح."""
+             role: str = NEW_USER_ROLE) -> Optional[str]:
+    """
+    يضيف مستخدماً. يعيد مفتاح i18n عند الرفض و `None` عند النجاح.
+
+    الدور الافتراضي هو الأقل صلاحية: حساب جديد لا يرث صلاحيات من أنشأه.
+    """
+    if role not in ROLES:
+        return "au.err_unknown_role"
     problem = username_problem(username) or password_problem(password)
     if problem:
         return problem
@@ -254,9 +307,76 @@ def change_password(user_id: int, new_password: str,
 def can_disable(user_id: int) -> bool:
     """
     تعطيل آخر حساب فعّال يقفل النظام على الجميع بلا سبيل للدخول — يُمنع.
-    وكذلك لا يُعطّل المستخدم نفسه، فهو خروج بلا رجعة بلا قصد.
+    وكذلك لا يُعطّل المستخدم نفسه، فهو خروج بلا رجعة بلا قصد. وتعطيل آخر مدير
+    نظام يترك نظاماً يعمل بلا من يدير مفاتيحه ولا حساباته.
     """
     user = current_user()
     if user and user["id"] == user_id:
         return False
-    return db.count_users(active_only=True) > 1
+    if db.count_users(active_only=True) <= 1:
+        return False
+    return not _is_last_admin(user_id)
+
+
+# ─── الصلاحيات (13-3) ─────────────────────────────────────────────────────────
+
+
+def role_of(user: Optional[dict] = None) -> str:
+    """دور المستخدم الحالي (أو الممرَّر). دور مجهول يُعامَل أدنى الأدوار."""
+    user = current_user() if user is None else user
+    role = (user or {}).get("role", "")
+    return role if role in ROLES else VIEWER
+
+
+def can(permission: str, user: Optional[dict] = None) -> bool:
+    """
+    هل يملك المستخدم هذه الصلاحية؟
+
+    صلاحية غير معرَّفة تُرفض للجميع عدا مدير النظام — الخطأ المطبعي في اسم
+    صلاحية يجب أن يُغلق الباب لا أن يفتحه.
+    """
+    role = role_of(user)
+    allowed = PERMISSIONS.get(permission)
+    if allowed is None:
+        return role == ADMIN
+    return role in allowed
+
+
+def blocked(permission: str, user: Optional[dict] = None) -> bool:
+    """عكس `can` — تُمرَّر مباشرةً إلى `disabled=` في عناصر الواجهة."""
+    return not can(permission, user)
+
+
+def permissions_of(role: str) -> set:
+    return {p for p, roles in PERMISSIONS.items() if role in roles}
+
+
+def _is_last_admin(user_id: int) -> bool:
+    admins = [
+        u["id"] for u in db.list_users()
+        if u["active"] and u["role"] == ADMIN
+    ]
+    return admins == [user_id]
+
+
+def can_change_role(user_id: int) -> bool:
+    """
+    لا يغيّر المستخدم دور نفسه — خفض ذاتي بالخطأ يقفل الإدارة على الجميع.
+    ولا يُنزَع الدور عن آخر مدير نظام فعّال للسبب نفسه.
+    """
+    user = current_user()
+    if user and user["id"] == user_id:
+        return False
+    return not _is_last_admin(user_id)
+
+
+def set_role(user_id: int, role: str) -> Optional[str]:
+    """يغيّر دور مستخدم. يعيد مفتاح i18n عند الرفض و `None` عند النجاح."""
+    if role not in ROLES:
+        return "au.err_unknown_role"
+    if not can("users.manage"):
+        return "au.err_forbidden"
+    if not can_change_role(user_id):
+        return "au.err_last_admin"
+    db.set_user_role(user_id, role)
+    return None

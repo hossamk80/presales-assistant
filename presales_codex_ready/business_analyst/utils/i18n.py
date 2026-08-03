@@ -1341,6 +1341,83 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── الأدوار (13-3) / Roles ──
+    "role.admin": {"ar": "مدير النظام", "en": "System administrator"},
+    "role.bid_manager": {"ar": "مدير العطاءات", "en": "Bid manager"},
+    "role.writer": {"ar": "كاتب", "en": "Writer"},
+    "role.reviewer": {"ar": "مراجع", "en": "Reviewer"},
+    "role.viewer": {"ar": "مطّلع", "en": "Viewer"},
+    "role.admin_hint": {
+        "ar": "كل شيء: المفاتيح · المستخدمون · البيانات · المنافسات.",
+        "en": "Everything: API keys, users, data, and tenders.",
+    },
+    "role.bid_manager_hint": {
+        "ar": "يملك المنافسة: يحذفها ويعدّل ملف الشركة ويصدّر — بلا مفاتيح ولا مستخدمين.",
+        "en": "Owns the tender: deletes it, edits the company profile, exports — "
+              "no API keys, no user management.",
+    },
+    "role.writer_hint": {
+        "ar": "يكتب الأقسام ويملأ الجداول ويصدّر — لا يحذف منافسة ولا يرى المفاتيح.",
+        "en": "Writes sections, fills the tables, exports — cannot delete a tender "
+              "or see API keys.",
+    },
+    "role.reviewer_hint": {
+        "ar": "يشغّل لجنة المراجعة ويقرأ كل شيء — لا يكتب نص الأقسام.",
+        "en": "Runs the review committee and reads everything — does not write "
+              "section text.",
+    },
+    "role.viewer_hint": {
+        "ar": "قراءة فقط — بلا كتابة ولا تصدير ولا استدعاء نموذج.",
+        "en": "Read only — no writing, no export, no model calls.",
+    },
+    "role.help": {
+        "ar": "الدور يحدّد ما يستطيع هذا الحساب فعله. الافتراضي هو الأقل صلاحية.",
+        "en": "The role decides what this account may do. The default is the "
+              "least-privileged one.",
+    },
+    "role.forbidden": {
+        "ar": "🔒 دورك لا يسمح بهذا الإجراء.",
+        "en": "🔒 Your role does not allow this action.",
+    },
+    "role.settings_admin_only": {
+        "ar": "🔒 مفاتيح الموفّرين وإعدادات النماذج وحدّ الإنفاق لمدير النظام وحده.",
+        "en": "🔒 Provider keys, model settings, and the spend limit are for the "
+              "system administrator only.",
+    },
+    "role.data_manager_only": {
+        "ar": "🔒 تصدير مساحة العمل واستيرادها ومسحها لمدير النظام ومدير العطاءات.",
+        "en": "🔒 Exporting, importing, and clearing the workspace are for the "
+              "system administrator and the bid manager.",
+    },
+    "role.company_read_only": {
+        "ar": "🔒 ملف الشركة وسجلاتها ومستودع معرفتها للعرض فقط بدورك الحالي.",
+        "en": "🔒 With your role the company profile, registries, and knowledge "
+              "repository are read-only.",
+    },
+    "role.project_read_only": {
+        "ar": "🔒 المنافسة للعرض فقط بدورك الحالي — لا رفع مرفقات ولا تعديل.",
+        "en": "🔒 With your role this tender is read-only — no uploads, no edits.",
+    },
+    "role.export_forbidden": {
+        "ar": "🔒 دورك لا يسمح بتصدير العرض.",
+        "en": "🔒 Your role does not allow exporting the proposal.",
+    },
+    "au.err_unknown_role": {"ar": "❌ دور غير معروف.", "en": "❌ Unknown role."},
+    "au.err_forbidden": {
+        "ar": "❌ دورك لا يسمح بهذا الإجراء.",
+        "en": "❌ Your role does not allow this action.",
+    },
+    "au.err_last_admin": {
+        "ar": "❌ لا يمكن تغيير دور آخر مدير نظام فعّال ولا دورك أنت.",
+        "en": "❌ The last active administrator — and your own role — cannot be changed.",
+    },
+    "us.save_role": {"ar": "حفظ الدور", "en": "Save role"},
+    "us.role_saved": {"ar": "✅ تغيّر الدور.", "en": "✅ Role changed."},
+    "us.cannot_change_role": {
+        "ar": "لا يُغيَّر دور آخر مدير نظام فعّال ولا دورك أنت.",
+        "en": "The last active administrator's role — and your own — cannot be changed.",
+    },
+
     # ── فئات المعرفة / KB categories ──
     "kbcat.cv": {"ar": "السير الذاتية", "en": "CVs"},
     "kbcat.cert": {"ar": "الشهادات والاعتمادات", "en": "Certifications"},
