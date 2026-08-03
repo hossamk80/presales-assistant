@@ -4,9 +4,10 @@ views/company.py — ملف الشركة ومستودع المعرفة
 ملف الشركة يُحفظ على القرص ويُشارَك بين كل المنافسات.
 مستودع المعرفة يُفهرس مستندات الشركة ليستند إليها الذكاء الاصطناعي عند الصياغة.
 """
+import pandas as pd
 import streamlit as st
 
-from utils import db, knowledge, providers
+from utils import db, knowledge, local_content, providers, records, submission
 from utils.file_handler import BRAND_COLOR, BRAND_FONT_AR
 from utils.i18n import t
 from utils.state import get_company_snapshot
@@ -55,6 +56,14 @@ def render():
             t("co.address"),
             value=st.session_state.get("c_address", ""),
             placeholder="الرياض، المملكة العربية السعودية",
+        )
+        _bands = local_content.BAND_OPTIONS
+        _current = st.session_state.get("c_nitaqat_band", "غير محدد")
+        st.session_state["c_nitaqat_band"] = st.selectbox(
+            t("co.nitaqat"),
+            _bands,
+            index=_bands.index(_current) if _current in _bands else 0,
+            help=t("co.nitaqat_help"),
         )
         st.session_state["c_overview"] = st.text_area(
             t("co.overview"),
@@ -118,6 +127,9 @@ def render():
                     st.rerun()
 
     st.divider()
+    _render_records()
+
+    st.divider()
     _render_knowledge_base()
 
     # حفظ ملف الشركة على القرص عند تغيّره
@@ -125,6 +137,110 @@ def render():
     if snapshot != st.session_state.get("_company_saved"):
         db.save_company(snapshot)
         st.session_state["_company_saved"] = snapshot
+
+
+# ─── سجلات الأدلة (المرحلة 12) ───────────────────────────────────────────────
+
+
+def _column_config(registry: str) -> dict:
+    """يبني إعداد أعمدة المحرّر من تعريف السجل — نوع كل عمود يحدّد أداته."""
+    config = {}
+    for col in records.columns_of(registry):
+        label = t(col["label_key"])
+        if col["kind"] == records.INT:
+            config[col["key"]] = st.column_config.NumberColumn(
+                label, min_value=0, step=1,
+            )
+        elif col["kind"] == records.BOOL:
+            config[col["key"]] = st.column_config.CheckboxColumn(label)
+        elif col["kind"] == records.CHOICE:
+            config[col["key"]] = st.column_config.SelectboxColumn(
+                label, options=col["options"],
+            )
+        elif col["kind"] == records.DATE:
+            config[col["key"]] = st.column_config.TextColumn(
+                label, help=t("rec.date_help"),
+            )
+        elif col["kind"] == records.LONGTEXT:
+            config[col["key"]] = st.column_config.TextColumn(label, width="large")
+        else:
+            config[col["key"]] = st.column_config.TextColumn(label)
+    return config
+
+
+def _render_registry(registry: str):
+    """محرّر سجل واحد — تعريفه في `utils/records.py` لا هنا."""
+    spec = records.REGISTRIES[registry]
+    rows = db.list_records(registry)
+
+    with st.expander(f"{t(spec['label_key'])} ({len(rows)})", expanded=False):
+        st.caption(t(spec["hint_key"]))
+
+        frame = pd.DataFrame(
+            rows or [records.blank_row(registry)],
+            columns=records.column_keys(registry),
+        )
+        edited = st.data_editor(
+            frame,
+            column_config=_column_config(registry),
+            num_rows="dynamic",
+            width="stretch",
+            key=f"rec_editor_{registry}",
+        )
+
+        if st.button(t("rec.save"), key=f"rec_save_{registry}", type="primary"):
+            cleaned = [
+                records.normalize_row(registry, row)
+                for row in edited.to_dict(orient="records")
+            ]
+            dropped = records.partial_rows(registry, cleaned)
+            cleaned = [r for r in cleaned if not records.is_blank(registry, r)]
+            if dropped:
+                st.warning(t("rec.dropped_partial", n=dropped))
+            db.save_records(registry, cleaned)
+            st.success(t("rec.saved", n=len(cleaned)))
+            st.rerun()
+
+        _render_expiry_warnings(registry, rows)
+
+
+# الحقول التي يُفقد انتهاؤها المنافسة — تُفحص عند الموعد النهائي للمنافسة
+_EXPIRY_FIELDS = {
+    "certificates": "expiry",
+    "vendors": "letter_expiry",
+    "people": "cert_expiry",
+}
+
+
+def _render_expiry_warnings(registry: str, rows: list):
+    """
+    شهادة أو خطاب تفويض ينتهي قبل الموعد النهائي للمنافسة الحالية.
+
+    هي بين يديك اليوم لكنها غير مقبولة يوم الفتح — نفس منطق مستندات المظروف،
+    وهنا يُقرأ الموعد من السياق الموحّد للمنافسة المفتوحة إن وُجدت.
+    """
+    field = _EXPIRY_FIELDS.get(registry)
+    if not field or not rows:
+        return
+
+    deadline = submission.deadline_date(st.session_state.get("project_context"))
+    if deadline is not None:
+        expiring = records.expiring_before(rows, field, deadline)
+        if expiring:
+            label_col = records.columns_of(registry)[0]["key"]
+            names = " · ".join(str(r.get(label_col, "")) for r in expiring)
+            st.error(t("rec.expiring", n=len(expiring), names=names))
+
+    unreadable = records.undated(rows, field)
+    if unreadable:
+        st.warning(t("rec.undated", n=len(unreadable)))
+
+
+def _render_records():
+    st.markdown(t("rec.title"))
+    st.caption(t("rec.intro"))
+    for registry in records.COMPANY_REGISTRIES:
+        _render_registry(registry)
 
 
 # ─── مستودع المعرفة ───────────────────────────────────────────────────────────

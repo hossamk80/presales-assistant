@@ -105,6 +105,22 @@ CREATE TABLE IF NOT EXISTS ai_cache (
     model       TEXT NOT NULL,
     result      TEXT NOT NULL
 );
+
+-- سجلات الأدلة (المرحلة 12): الكوادر · سابقة الأعمال · الشهادات · الموردون ·
+-- الجهات. صفوف تُطابَق بها متطلبات الكراسة بدل نص حر لا يصمد أمام لجنة فحص.
+--
+-- جدول واحد بحمولة JSON لا خمسة جداول: الأعمدة معلنة في `utils/records.py`،
+-- وإضافة حقل هناك لا تستلزم ترحيل قاعدة. السجلات صغيرة (عشرات الصفوف) فلا
+-- حاجة إلى فهرسة داخل الحمولة.
+CREATE TABLE IF NOT EXISTS company_records (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    registry TEXT NOT NULL,
+    ordinal  INTEGER NOT NULL DEFAULT 0,
+    payload  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_company_records_registry
+    ON company_records(registry);
 """
 
 
@@ -383,6 +399,67 @@ def previous_attachment_version(project_id: int,
 def delete_attachment_version(version_id: int):
     with transaction() as conn:
         conn.execute("DELETE FROM attachment_versions WHERE id = ?", (version_id,))
+
+
+# ─── سجلات الأدلة (المرحلة 12) ───────────────────────────────────────────────
+
+
+def list_records(registry: str) -> list:
+    """صفوف السجل بترتيبها المحفوظ."""
+    rows = get_conn().execute(
+        "SELECT payload FROM company_records WHERE registry = ? "
+        "ORDER BY ordinal, id",
+        (registry,),
+    ).fetchall()
+    out = []
+    for row in rows:
+        try:
+            out.append(json.loads(row["payload"]))
+        except ValueError:
+            continue
+    return out
+
+
+def save_records(registry: str, rows: list):
+    """
+    يستبدل صفوف السجل بالكامل.
+
+    الاستبدال الكامل يطابق محرر الجداول في الواجهة: المستخدم يحرّر الجدول كله
+    ثم يحفظ، فالمزامنة صفاً صفاً تُعقّد بلا مكسب على عشرات الصفوف.
+    """
+    with transaction() as conn:
+        conn.execute("DELETE FROM company_records WHERE registry = ?", (registry,))
+        conn.executemany(
+            "INSERT INTO company_records (registry, ordinal, payload) VALUES (?, ?, ?)",
+            [(registry, i, json.dumps(row, ensure_ascii=False))
+             for i, row in enumerate(rows or [])],
+        )
+
+
+def record_counts() -> dict:
+    """عدد الصفوف في كل سجل — لمؤشرات الاكتمال."""
+    rows = get_conn().execute(
+        "SELECT registry, COUNT(*) AS n FROM company_records GROUP BY registry"
+    ).fetchall()
+    return {r["registry"]: r["n"] for r in rows}
+
+
+def find_entity(name: str) -> Optional[dict]:
+    """
+    ملف الجهة بالاسم، بمطابقة مُوحَّدة الإملاء.
+
+    «وزارة الصحة» و«وزاره الصحه» جهة واحدة — نفس التوحيد المستعمل في ذاكرة
+    العطاءات، وإلا بقي الملف غير مستدعىً لأن الاسم كُتب بصيغة أخرى.
+    """
+    from utils.history import normalize_entity
+
+    target = normalize_entity(name)
+    if not target:
+        return None
+    for row in list_records("entities"):
+        if normalize_entity(row.get("name", "")) == target:
+            return row
+    return None
 
 
 # ─── قياس الاستهلاك (11-7 / 11-8) ────────────────────────────────────────────

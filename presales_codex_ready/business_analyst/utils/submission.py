@@ -77,6 +77,19 @@ def parse_date(value) -> Optional[datetime.date]:
     return None
 
 
+def is_hijri_year(year: int) -> bool:
+    """
+    هل هذه السنة في المدى الهجري؟
+
+    يخدم الحقول التي **يكتب فيها المستخدم تاريخاً بلا وسم** (سجلات الأدلة):
+    «1448-11-14» بلا «هـ» تُقرأ هنا ميلادياً فتصير سنة 1448 — ماضياً سحيقاً —
+    فتُحسب شهادة سارية منتهيةً. المدى يفصل الحالتين بلا لبس: لا شهادة صدرت
+    سنة 1448 ميلادية.
+    """
+    low, high = _HIJRI_YEAR_RANGE
+    return low <= int(year) <= high
+
+
 def _parse_hijri(text: str) -> Optional[datetime.date]:
     """يلتقط تاريخاً هجرياً من نص موسوم ويحوّله ميلادياً."""
     numbers = re.search(r"(\d{1,4})\s*[-/]\s*(\d{1,2})\s*[-/]\s*(\d{1,4})", text)

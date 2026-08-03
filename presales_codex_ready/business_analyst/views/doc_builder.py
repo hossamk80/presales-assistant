@@ -690,7 +690,37 @@ def _collect_export_payload(sections: list) -> list:
             item["content"] = st.session_state.get(section_content_key(sec["key"]), "")
 
         payload.append(item)
+
+    payload.extend(_appendix_payload())
     return payload
+
+
+def _appendix_payload() -> list:
+    """
+    ملاحق السجلات كأقسام في نهاية المستند (12-9).
+
+    تُبنى جداول Markdown فيمرّ بها نفس مسار الأقسام النصية: تدخل الفهرس،
+    ويستمر ترقيم الصفحات عليها، وتخرج في Word و PDF بلا شيفرة بنّاء جديدة.
+    """
+    chosen = st.session_state.get("export_appendices") or []
+    if not chosen:
+        return []
+
+    from utils import appendices, db
+    from utils.state import _RECORD_LABELS
+
+    out = []
+    for appendix in appendices.build_all(db.list_records, _RECORD_LABELS, chosen):
+        header = "| " + " | ".join(appendix["headers"]) + " |"
+        divider = "|" + "---|" * len(appendix["headers"])
+        body = "\n".join("| " + " | ".join(row) + " |" for row in appendix["rows"])
+        out.append({
+            "key": f"appendix_{appendix['registry']}",
+            "title": appendix["title"],
+            "kind": "ai",
+            "content": f"{header}\n{divider}\n{body}",
+        })
+    return out
 
 
 def _render_export(sections: list):
@@ -758,6 +788,21 @@ def _render_export(sections: list):
         include_toc = st.checkbox(t("db.opt_toc"), value=True, key="exp_toc")
     with opt2:
         include_pageno = st.checkbox(t("db.opt_pageno"), value=True, key="exp_pageno")
+
+    # الملاحق المرقّمة من السجلات (12-9)
+    from utils import appendices, db as _db
+
+    _available = appendices.available(_db.list_records)
+    if _available:
+        st.multiselect(
+            t("db.appendices"),
+            _available,
+            format_func=lambda r: t(f"rec.{r}"),
+            key="export_appendices",
+            help=t("db.appendices_help"),
+        )
+    else:
+        st.caption(t("db.appendices_empty"))
 
     company_name = st.session_state.get("c_name", "")
     proposal_title = st.session_state.get("proposal_title", "")

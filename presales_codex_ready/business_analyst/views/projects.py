@@ -171,6 +171,61 @@ def _render_history(projects: list, pid):
             st.rerun()
 
 
+def _render_entities():
+    """
+    ملف الجهات (12-7): سلوك الجهة في التقييم يتكرّر، فيُسجَّل مرة ويُستدعى
+    تلقائياً عند فتح منافسة لها — المطابقة بتوحيد الإملاء لا بالحرف.
+    """
+    import pandas as pd
+
+    from utils import records
+
+    rows = db.list_records("entities")
+    with st.expander(f"{t('rec.entities')} ({len(rows)})", expanded=False):
+        st.caption(t("rec.entities_hint"))
+
+        # الجهة المفتوحة الآن: إن كان لها ملف نعرضه، وإلا نعرض زر إضافتها
+        current = str(st.session_state.get("_project_entity", "")).strip() or str(
+            (st.session_state.get("project_context") or {}).get("issuing_entity", "")
+        ).strip()
+        if current:
+            profile = db.find_entity(current)
+            if profile:
+                st.success(t("rec.entity_matched", name=current))
+            else:
+                st.info(t("rec.entity_unknown", name=current))
+
+        frame = pd.DataFrame(
+            rows or [records.blank_row("entities")],
+            columns=records.column_keys("entities"),
+        )
+        edited = st.data_editor(
+            frame,
+            column_config={
+                c["key"]: st.column_config.TextColumn(
+                    t(c["label_key"]),
+                    width="large" if c["kind"] == records.LONGTEXT else "medium",
+                )
+                for c in records.columns_of("entities")
+            },
+            num_rows="dynamic",
+            width="stretch",
+            key="rec_editor_entities",
+        )
+        if st.button(t("rec.save"), key="rec_save_entities", type="primary"):
+            cleaned = [
+                records.normalize_row("entities", row)
+                for row in edited.to_dict(orient="records")
+            ]
+            dropped = records.partial_rows("entities", cleaned)
+            cleaned = [r for r in cleaned if not records.is_blank("entities", r)]
+            if dropped:
+                st.warning(t("rec.dropped_partial", n=dropped))
+            db.save_records("entities", cleaned)
+            st.success(t("rec.saved", n=len(cleaned)))
+            st.rerun()
+
+
 def render():
     st.markdown(f"### {t('proj.title')}")
     st.caption(f"{t('proj.caption')} {t('proj.db_path')} `{db.DB_PATH}`")
@@ -193,6 +248,9 @@ def render():
 
     if st.session_state.get("_autosave_error"):
         st.warning(t("proj.autosave_failed", error=st.session_state.pop("_autosave_error")))
+
+    st.divider()
+    _render_entities()
 
     st.divider()
 
