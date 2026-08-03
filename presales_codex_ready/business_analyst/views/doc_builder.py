@@ -375,11 +375,11 @@ def _writing_context(sec: dict) -> tuple[str, str]:
 
     rfp_block = ""
     if full_rfp:
-        if knowledge.index_rfp(full_rfp):
-            query = " ".join(filter(None, [sec.get("title"), sec.get("guidance")]))
-            rfp_block = knowledge.rfp_context_block(query)
-        else:
-            # تعذّر التضمين (مفتاح أو موفّر) — النص الكامل أفضل من فقد السياق
+        query = " ".join(filter(None, [sec.get("title"), sec.get("guidance")]))
+        # بالتضمين إن توفّر، وإلا لفظياً بلا كلفة
+        rfp_block = knowledge.rfp_context_for(full_rfp, query)
+        if not rfp_block:
+            # تعذّر الاسترجاع بالمسارين — النص الكامل أفضل من فقد السياق
             return full_rfp, extra
 
     return "", extra + matrix_block() + rfp_block

@@ -237,6 +237,22 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "en": "Supports: PDF · Word · Excel · CSV · TXT · HTML",
     },
     "an.extract": {"ar": "📂 استخراج النصوص", "en": "📂 Extract text"},
+    "an.clean_saved": {
+        "ar": "🧹 نُظّف {name} — حُذف {pct}٪ (ترويسات وأرقام صفحات وفهرس) قبل أي استدعاء.",
+        "en": "🧹 Cleaned {name} — {pct}% removed (headers, page numbers, TOC) before any call.",
+    },
+    "an.clean_reverted": {
+        "ar": "ℹ️ {name}: تجاوز التنظيف السقف الآمن فأُبقي النص الأصلي كما هو.",
+        "en": "ℹ️ {name}: cleanup exceeded the safety cap, so the original text was kept.",
+    },
+    "an.dedupe_dropped": {
+        "ar": "🗂️ أُسقطت مرفقات مكرّرة حرفياً: {files}",
+        "en": "🗂️ Byte-identical duplicate attachments dropped: {files}",
+    },
+    "an.boq_local": {
+        "ar": "📊 قُرئ جدول الكميات من {name} حسابياً ({n} بنداً) — بلا استدعاء نموذج.",
+        "en": "📊 BOQ read directly from {name} ({n} items) — no model call.",
+    },
     "an.extract_failed": {
         "ar": "❌ لم يتم استخراج أي نص. تأكد من الملفات المرفوعة.",
         "en": "❌ No text extracted. Check the uploaded files.",
@@ -837,6 +853,19 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "st.usage_col_group": {"ar": "المجموعة", "en": "Group"},
     "st.usage_in": {"ar": "توكن إدخال", "en": "Input tokens"},
     "st.usage_out": {"ar": "توكن إخراج", "en": "Output tokens"},
+    "st.savings": {"ar": "ما وفّرته المعالجة المحلية", "en": "Saved by local processing"},
+    "st.savings_hint": {
+        "ar": "تقدير محلي للمقارنة قبل وبعد، لا رقم فاتورة. الجدول أعلاه هو المُنفَق الفعلي.",
+        "en": "A local before/after estimate, not a bill. The table above is actual spend.",
+    },
+    "st.savings_tokens": {"ar": "توكن موفَّر", "en": "Tokens saved"},
+    "st.savings_avoided": {"ar": "استدعاءات تُجنِّبت", "en": "Calls avoided"},
+    "st.savings_sent": {"ar": "توكن أُرسل", "en": "Tokens sent"},
+    "st.method_cleanup": {"ar": "تنظيف الكراسة", "en": "RFP cleanup"},
+    "st.method_retrieval": {"ar": "استرجاع لفظي", "en": "Lexical retrieval"},
+    "st.method_cache": {"ar": "ذاكرة النتائج", "en": "Result cache"},
+    "st.method_local_parse": {"ar": "قراءة الجدول محلياً", "en": "Local table parsing"},
+    "st.method_dedupe": {"ar": "إسقاط المرفقات المكرّرة", "en": "Duplicate attachments dropped"},
     "st.usage_empty": {
         "ar": "لا استهلاك مسجَّل بعد — يبدأ التسجيل مع أول استدعاء.",
         "en": "No usage recorded yet — logging starts with the first call.",

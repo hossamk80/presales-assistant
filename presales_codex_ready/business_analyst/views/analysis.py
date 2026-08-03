@@ -16,11 +16,14 @@ from utils.ai_engine import (
     estimate_tokens,
     language_instruction,
 )
-from utils import addenda, db, history, knowledge, submission
+from utils import (
+    addenda, boq_parser, db, history, knowledge, savings, submission, textprep,
+)
 from utils.file_handler import extract_texts_per_file
 from utils.i18n import t
 from utils.state import (
     ATTACHMENT_ROLES,
+    DEFAULT_BOQ_DF,
     boq_scope_block,
     company_block,
     guess_attachment_role,
@@ -91,6 +94,64 @@ def _rebuild_combined_text():
     st.session_state["rfp_file_names"] = list(texts)
 
 
+def _clean_attachments(per_file: dict) -> list:
+    """
+    ينظّف نصوص المرفقات ويُسقط المكرّر منها **قبل** أي استدعاء نموذج.
+
+    ترويسة تتكرّر في كل صفحة وأرقام الصفحات والفهرس تُدفع توكناً في كل
+    استدعاء بلا أن تضيف متطلباً واحداً. التنظيف حسابي بسقف أمان: تجاوزه
+    يعني أن الكشف أخطأ فيُعاد النص الأصلي كما هو.
+    """
+    notices = []
+    for name, text in list(per_file.items()):
+        cleaned, stats = textprep.clean(text)
+        per_file[name] = cleaned
+        savings.record(savings.METHOD_CLEANUP, stats["before"], stats["after"])
+        if stats["reverted"]:
+            notices.append(t("an.clean_reverted", name=name))
+        elif stats["saved"]:
+            notices.append(t("an.clean_saved", name=name,
+                             pct=round(stats["ratio"] * 100)))
+
+    kept, dropped = textprep.dedupe_attachments(per_file)
+    if dropped:
+        for name in list(per_file):
+            if name not in kept:
+                savings.record(savings.METHOD_DEDUPE,
+                               len(per_file[name]), 0, avoided_call=False)
+        per_file.clear()
+        per_file.update(kept)
+        notices.append(t("an.dedupe_dropped", files=" · ".join(dropped)))
+    return notices
+
+
+def _try_local_boq(files) -> str:
+    """
+    يقرأ جدول الكميات من ملف Excel/CSV حسابياً — فيُوفَّر استدعاء النموذج كاملاً.
+
+    لا يُطبَّق إلا على جدول لم يُحرَّر بعد: قراءة آلية تمحو تعديلات المستخدم
+    أسوأ من استدعاء يُنفق توكناً. والفشل رجوع صامت إلى مسار النموذج.
+    """
+    current = st.session_state.get("df_boq")
+    edited = current is not None and not current.equals(DEFAULT_BOQ_DF)
+    if edited:
+        return ""
+
+    for file in files or []:
+        name = getattr(file, "name", "")
+        if not name.lower().endswith((".xlsx", ".xls", ".csv")):
+            continue
+        parsed, report = boq_parser.parse_file(file)
+        if parsed is None or report.get("rows", 0) < 1:
+            continue
+        st.session_state["df_boq"] = parsed
+        st.session_state.pop("de_boq", None)
+        savings.record(savings.METHOD_LOCAL_PARSE,
+                       len(str(parsed)), 0, avoided_call=True)
+        return t("an.boq_local", name=name, n=report["rows"])
+    return ""
+
+
 def _render_upload():
     st.markdown(t("an.upload_title"))
 
@@ -115,6 +176,13 @@ def _render_upload():
             st.error(t("an.extract_failed"))
             return
 
+        # معالجة محلية قبل أي استدعاء: تنظيف · إسقاط المكرّر · قراءة الكميات
+        notices = _clean_attachments(per_file)
+        boq_notice = _try_local_boq(files)
+        if boq_notice:
+            notices.append(boq_notice)
+        st.session_state["_ingest_notices"] = notices
+
         texts = dict(st.session_state.get("attachment_texts") or {})
         roles = dict(st.session_state.get("attachment_roles") or {})
         for name, text in per_file.items():
@@ -125,6 +193,9 @@ def _render_upload():
         _rebuild_combined_text()
         _snapshot_version()
         st.rerun()
+
+    for notice in st.session_state.pop("_ingest_notices", []) or []:
+        st.caption(notice)
 
 
 def _render_attachment_roles():

@@ -27,7 +27,12 @@ When a new requirement extends an existing capability, modify it in place.
 عند إنهاء أي مهمة: نقاط مختصرة وواضحة — **ماذا تم** و**ماذا أُصلح** — بلا شرح
 مطوّل.
 
+وعند وجود Pull Request: أخبر المستخدم **دائماً** هل تمّ الدمج، وهل يمكنه حذف
+الفرع — بسطر واحد.
+
 Finish with short bullets: what was done, what was fixed. No long prose.
+When a PR is involved, always state whether it merged and whether the branch
+is safe to delete — one line.
 
 ## 4. تحديث ملف README / Keep README current
 
