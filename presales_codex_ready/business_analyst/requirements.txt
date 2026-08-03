@@ -3,6 +3,11 @@ streamlit>=1.35.0
 # Google Gen AI SDK الموحّد — يحل محل google-generativeai المهجورة
 google-genai>=1.0.0
 
+# موفّرو النص الإضافيون (المرحلة 11)
+# Anthropic Claude عبر الحزمة الرسمية، والنقاط المتوافقة مع OpenAI عبر requests
+anthropic>=0.40.0
+requests>=2.31.0
+
 # استخراج النصوص
 pypdf>=5.0.0
 docx2txt>=0.8

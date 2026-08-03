@@ -427,6 +427,37 @@ def company_block() -> str:
     return "\n\n--- ملف الشركة المقدِّمة ---\n" + "\n".join(lines)
 
 
+def matrix_block(limit: int = 80) -> str:
+    """
+    مصفوفة الامتثال كموجز مضغوط للحقن في تعليمات كتابة الأقسام (11-10).
+
+    الكتابة تستند إلى السياق الموحّد والمصفوفة لا لنص الكراسة الكامل —
+    فينخفض توكن كتابة القسم دون فقد المتطلبات التي يجب أن يغطيها.
+    """
+    df = st.session_state.get("df_compliance")
+    if df is None or getattr(df, "empty", True):
+        return ""
+
+    wanted = [c for c in ("المعرّف", "المتطلب", "الأهمية") if c in df.columns]
+    if "المتطلب" not in wanted:
+        return ""
+
+    lines = []
+    for row in df[wanted].head(limit).itertuples(index=False):
+        parts = [str(v).strip() for v in row if str(v).strip() and str(v) != "nan"]
+        if parts:
+            lines.append("- " + " · ".join(parts))
+    if not lines:
+        return ""
+
+    more = len(df) - limit
+    tail = f"\n(و {more} متطلباً آخر)" if more > 0 else ""
+    return (
+        "\n\n--- متطلبات مصفوفة الامتثال (موجز) ---\n"
+        + "\n".join(lines) + tail
+    )
+
+
 def project_context_block() -> str:
     """
     السياق الموحّد للمشروع (الجهة، الموعد، التسليمات، الغرامات، المحتوى المحلي).
@@ -473,11 +504,31 @@ STATE_SCHEMA = {
     # Navigation
     "nav_selection": "dashboard",
 
-    # API Keys
+    # AI providers (المرحلة 11): الموفّر النشط ومفاتيحه وإعداداته
+    "ai_provider": "gemini",
     "api_gemini": _env_api_key(),
     "api_openai": "",
     "api_claude": "",
+    "api_compat": "",
+    "api_local": "",
+    "base_url_openai": "",
+    "base_url_compat": "",
+    "base_url_local": "",
     "ai_model_preference": DEFAULT_MODEL,
+    "ai_temperature_enabled": False,
+    "ai_temperature": 0.3,
+    "ai_max_tokens": 0,
+    # نموذج لكل مهمة (11-5): تجاوزات المستخدم فوق مستويات المهام المعلنة
+    "task_models": {},
+    # موفّر التضمين منفصل عن موفّر النص (11-6)
+    "embed_provider": "gemini",
+    "embed_model": "gemini-embedding-001",
+    # حدّ الإنفاق الشهري بالدولار — 0 يعني بلا حدّ (11-9)
+    "ai_month_budget": 0.0,
+    # ذاكرة نتائج الاستدعاءات (11-13)
+    "ai_cache_enabled": True,
+    # الموجز المضغوط بدل الكراسة الخام عند كتابة الأقسام (11-10)
+    "compressed_context": True,
     "output_language": DEFAULT_LANGUAGE,
     "ui_language": DEFAULT_UI_LANGUAGE,
 

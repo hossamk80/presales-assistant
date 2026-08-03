@@ -289,15 +289,17 @@ def test_retry_reports_progress_through_the_callback(engine):
 
 def test_call_survives_a_transient_failure(engine, fake_streamlit):
     """المسار الكامل: `_call` يُرجع النص رغم فشل أول محاولة."""
+    from utils.providers import GenResult
+
     fake_streamlit.session_state["api_gemini"] = "test-key"
     attempts = {"n": 0}
 
-    class _Models:
-        def generate_content(self, **_):
-            attempts["n"] += 1
-            if attempts["n"] == 1:
-                raise _Boom("503 unavailable")
-            return type("R", (), {"text": "النتيجة"})()
+    def flaky_run(model_id, prompt, schema=None, task="write"):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise _Boom("503 unavailable")
+        return GenResult(text="النتيجة")
 
-    engine.get_client = lambda: type("C", (), {"models": _Models()})()
+    engine.providers.run = flaky_run
     assert engine._call("prompt", "model-id") == "النتيجة"
+    assert attempts["n"] == 2

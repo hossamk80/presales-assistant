@@ -45,16 +45,17 @@ def ai_generate_button(
     Reusable AI generation widget: model selector + generate button + result + editable summary.
     Eliminates the repeated col_mod/col_btn pattern.
     """
-    from utils.ai_engine import DEFAULT_MODEL, MODEL_NAMES
+    from utils.ai_engine import default_model_name, model_names
 
-    default_model = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
-    default_index = MODEL_NAMES.index(default_model) if default_model in MODEL_NAMES else 0
+    options = model_names()
+    default_model = default_model_name()
+    default_index = options.index(default_model) if default_model in options else 0
 
     col_mod, col_btn = st.columns([3, 1])
     with col_mod:
         model = st.selectbox(
             t("common.engine"),
-            MODEL_NAMES,
+            options,
             index=default_index,
             key=f"model_{key}",
             label_visibility="collapsed",

@@ -721,7 +721,7 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "ar": "🔐 يوجد مفتاح في متغيّرات البيئة وقد حُمِّل تلقائياً. ما تكتبه هنا يَجُبّه لهذه الجلسة.",
         "en": "🔐 A key was loaded from the environment. What you type here overrides it for this session.",
     },
-    "st.test_conn": {"ar": "✅ اختبار اتصال Gemini", "en": "✅ Test Gemini connection"},
+    "st.test_conn": {"ar": "✅ اختبار الاتصال", "en": "✅ Test connection"},
     "st.key_first": {"ar": "أدخل المفتاح أولاً.", "en": "Enter the key first."},
     "st.testing": {"ar": "جاري الاختبار...", "en": "Testing..."},
     "st.conn_ok": {"ar": "✅ الاتصال يعمل! رد النموذج: {reply}", "en": "✅ Connected. Model replied: {reply}"},
@@ -731,6 +731,115 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "st.model_help": {
         "ar": "Flash: متوازن وسريع. Pro: أدق للمهام المعقدة. Flash-Lite: الأرخص.",
         "en": "Flash: balanced. Pro: most accurate. Flash-Lite: cheapest.",
+    },
+    # المرحلة 11: الموفّرون والاقتصاد
+    "st.provider": {"ar": "🧠 الموفّر والنموذج", "en": "🧠 Provider & model"},
+    "st.provider_label": {"ar": "موفّر الذكاء الاصطناعي:", "en": "AI provider:"},
+    "st.no_key_needed": {
+        "ar": "هذا الموفّر محلي ولا يحتاج مفتاح API.",
+        "en": "This provider is local and needs no API key.",
+    },
+    "st.base_url": {"ar": "رابط الخدمة (Base URL):", "en": "Base URL:"},
+    "st.base_url_help": {
+        "ar": "اتركه فارغاً لاستخدام الرابط الافتراضي. لـ OpenRouter و Groq و Ollama ضع رابط النقطة المتوافقة مع OpenAI.",
+        "en": "Leave empty for the default. For OpenRouter, Groq, or Ollama, set the OpenAI-compatible endpoint URL.",
+    },
+    "st.model_specs": {
+        "ar": "نافذة السياق: {context} توكن · السعر لكل مليون: ‏${inp} إدخال / ${out} إخراج",
+        "en": "Context window: {context} tokens · Price per 1M: ${inp} in / ${out} out",
+    },
+    "st.temp_enable": {"ar": "ضبط الحرارة يدوياً", "en": "Set temperature manually"},
+    "st.temp": {"ar": "الحرارة", "en": "Temperature"},
+    "st.max_tokens": {"ar": "حد المخرَج (توكن)", "en": "Max output tokens"},
+    "st.max_tokens_help": {
+        "ar": "0 يعني الحد الافتراضي للموفّر.",
+        "en": "0 means the provider default.",
+    },
+    "st.conn_ok_cost": {
+        "ar": "✅ الاتصال يعمل! الرد: {reply} · الزمن: {seconds} ث · الكلفة: ${cost}",
+        "en": "✅ Connected. Reply: {reply} · time: {seconds}s · cost: ${cost}",
+    },
+    "st.catalog_hint": {
+        "ar": "سجل النماذج والأسعار قابل للتحديث بلا شيفرة عبر الملف: {path}",
+        "en": "The model/price catalog is editable without code via: {path}",
+    },
+    "st.task_models": {"ar": "🎯 نموذج لكل مهمة", "en": "🎯 Model per task"},
+    "st.task_models_hint": {
+        "ar": "الأخف للاستخراج والتصنيف، والأقوى للكتابة والمراجعة. النجمة ★ تعني الافتراضي المعلن، وأي تغيير هنا يتجاوزه.",
+        "en": "Lighter models for extraction/classification, stronger for writing/review. ★ marks the declared default; changing it overrides it.",
+    },
+    "st.task_extract": {"ar": "الاستخراج المُهيكل", "en": "Structured extraction"},
+    "st.task_classify": {"ar": "التصنيف", "en": "Classification"},
+    "st.task_write": {"ar": "كتابة الأقسام والهيكل", "en": "Section & outline writing"},
+    "st.task_review": {"ar": "لجنة المراجعة", "en": "Review panel"},
+    "st.task_chat": {"ar": "المساعد الجانبي", "en": "Side assistant"},
+    "st.embed": {"ar": "🧬 موفّر التضمين (المستودع)", "en": "🧬 Embedding provider (knowledge base)"},
+    "st.embed_provider": {"ar": "موفّر التضمين:", "en": "Embedding provider:"},
+    "st.embed_model": {"ar": "نموذج التضمين:", "en": "Embedding model:"},
+    "st.embed_warning": {
+        "ar": "⚠️ تغيير نموذج التضمين يُبطل متجهات المستودع المخزَّنة: المقاطع "
+              "المفهرسة بالنموذج القديم تُهمَل من البحث حتى تُعاد فهرستها.",
+        "en": "⚠️ Changing the embedding model invalidates stored vectors: chunks "
+              "indexed with the old model are excluded from search until re-indexed.",
+    },
+    "st.embed_stale": {
+        "ar": "‏{stale} من أصل {total} مقطعاً مفهرس بنموذج آخر — معطَّل عن البحث.",
+        "en": "{stale} of {total} chunks are indexed with another model — disabled for search.",
+    },
+    "st.embed_ok": {
+        "ar": "كل المقاطع ({total}) مفهرسة بالنموذج النشط.",
+        "en": "All chunks ({total}) are indexed with the active model.",
+    },
+    "st.reindex": {"ar": "🔄 إعادة فهرسة المستودع", "en": "🔄 Re-index knowledge base"},
+    "st.reindexing": {"ar": "جاري إعادة الفهرسة…", "en": "Re-indexing…"},
+    "st.reindex_failed": {
+        "ar": "تعذّرت إعادة الفهرسة — تحقق من مفتاح موفّر التضمين.",
+        "en": "Re-indexing failed — check the embedding provider key.",
+    },
+    "st.reindex_done": {"ar": "أُعيدت فهرسة {n} مقطعاً.", "en": "Re-indexed {n} chunks."},
+    "st.budget": {"ar": "💵 حدّ الإنفاق والذاكرة", "en": "💵 Spend limit & caching"},
+    "st.budget_label": {"ar": "حدّ الإنفاق الشهري (دولار):", "en": "Monthly spend limit (USD):"},
+    "st.budget_help": {"ar": "0 يعني بلا حدّ.", "en": "0 means no limit."},
+    "st.budget_spent": {"ar": "إنفاق شهر {month}", "en": "Spend for {month}"},
+    "st.budget_blocked": {
+        "ar": "🛑 بلغ الإنفاق حدّه — الاستدعاءات موقوفة حتى رفع الحدّ.",
+        "en": "🛑 The limit is reached — calls are blocked until you raise it.",
+    },
+    "st.budget_warn": {
+        "ar": "⚠️ تجاوز الإنفاق 80٪ من الحدّ الشهري.",
+        "en": "⚠️ Spend passed 80% of the monthly limit.",
+    },
+    "st.cache_enable": {"ar": "ذاكرة نتائج الاستدعاءات", "en": "Result cache"},
+    "st.cache_help": {
+        "ar": "إعادة نفس الطلب بلا تغيير معطيات تُخدم من الذاكرة بلا توكن.",
+        "en": "Repeating the same request with unchanged inputs is served from cache with zero tokens.",
+    },
+    "st.compressed": {"ar": "الموجز المضغوط عند كتابة الأقسام", "en": "Compressed brief for section writing"},
+    "st.compressed_help": {
+        "ar": "يمرّر السياق الموحّد وموجز المصفوفة وبنود الكراسة ذات الصلة بدل نص الكراسة الكامل.",
+        "en": "Passes the unified context, matrix summary, and relevant RFP clauses instead of the full RFP text.",
+    },
+    "st.cache_clear": {"ar": "🗑️ مسح ذاكرة النتائج", "en": "🗑️ Clear result cache"},
+    "st.cache_cleared": {"ar": "مُسحت ذاكرة النتائج.", "en": "Result cache cleared."},
+    "st.usage": {"ar": "📊 شاشة الاستهلاك", "en": "📊 Usage dashboard"},
+    "st.usage_month_only": {"ar": "الشهر الحالي فقط", "en": "Current month only"},
+    "st.usage_calls": {"ar": "الاستدعاءات", "en": "Calls"},
+    "st.usage_tokens": {"ar": "إجمالي التوكن", "en": "Total tokens"},
+    "st.usage_cached": {"ar": "توكن مخزَّن", "en": "Cached tokens"},
+    "st.usage_cost": {"ar": "الكلفة ($)", "en": "Cost ($)"},
+    "st.usage_cache_hits": {
+        "ar": "إصابات ذاكرة النتائج: {n} استدعاء خُدم بلا توكن.",
+        "en": "Result-cache hits: {n} calls served with zero tokens.",
+    },
+    "st.usage_by_project": {"ar": "حسب المنافسة", "en": "By tender"},
+    "st.usage_by_task": {"ar": "حسب المهمة (الوكيل)", "en": "By task (agent)"},
+    "st.usage_by_model": {"ar": "مقارنة النماذج والموفّرين", "en": "Models & providers compared"},
+    "st.usage_col_group": {"ar": "المجموعة", "en": "Group"},
+    "st.usage_in": {"ar": "توكن إدخال", "en": "Input tokens"},
+    "st.usage_out": {"ar": "توكن إخراج", "en": "Output tokens"},
+    "st.usage_empty": {
+        "ar": "لا استهلاك مسجَّل بعد — يبدأ التسجيل مع أول استدعاء.",
+        "en": "No usage recorded yet — logging starts with the first call.",
     },
     "st.out_lang": {"ar": "🌐 لغة المخرجات", "en": "🌐 Output language"},
     "st.out_lang_caption": {
@@ -890,8 +999,16 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     # رسائل تظهر للمستخدم من داخل `utils/`. كانت مكتوبة عربية في الشيفرة،
     # فكان مستخدم الواجهة الإنجليزية يرى خطأً بالعربية.
     "eng.key_missing": {
-        "ar": "⚠️ يرجى إدخال مفتاح Google Gemini API في **إعدادات النظام** أولاً.",
-        "en": "⚠️ Enter your Google Gemini API key in **System settings** first.",
+        "ar": "⚠️ يرجى إدخال مفتاح API للموفّر المختار في **إعدادات النظام** أولاً.",
+        "en": "⚠️ Enter the API key for the selected provider in **System settings** first.",
+    },
+    "eng.budget_stop": {
+        "ar": "بلغ الإنفاق الشهري {spent}$ وحدّه {budget}$ — أوقفنا الاستدعاءات. ارفع الحدّ من الإعدادات للمتابعة.",
+        "en": "Monthly spend reached ${spent} of the ${budget} limit — calls are blocked. Raise the limit in settings to continue.",
+    },
+    "eng.budget_warn": {
+        "ar": "⚠️ الإنفاق الشهري {spent}$ تجاوز 80٪ من الحدّ ({budget}$).",
+        "en": "⚠️ Monthly spend ${spent} passed 80% of the ${budget} limit.",
     },
     "eng.sdk_missing": {
         "ar": "❌ مكتبة google-genai غير مثبّتة. شغّل: pip install google-genai",

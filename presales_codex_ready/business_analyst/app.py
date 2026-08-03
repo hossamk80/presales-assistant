@@ -17,7 +17,7 @@ st.set_page_config(
 # ─── Imports (after page config) ──────────────────────────────────────────────
 from utils.state import init_state, load_company_snapshot
 from utils.ai_engine import estimate_tokens
-from utils import db
+from utils import db, providers
 from utils.i18n import t, ui_is_rtl
 
 # ─── Initialize Session State ─────────────────────────────────────────────────
@@ -344,12 +344,14 @@ with st.sidebar:
     )
 
     company = st.session_state.get("c_name")
-    api_ok = bool(st.session_state.get("api_gemini"))
+    # الحالة تتبع الموفّر المختار لا Gemini وحده — والموفّر المحلي جاهز بلا مفتاح
+    api_ok = providers.has_credentials()
+    provider_label = providers.active_provider_label()
     rfp_ok = bool(st.session_state.get("rfp_raw_text"))
 
     st.markdown(
         f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:8px 4px;">
-        <div style="margin-bottom:4px;">{'🟢' if api_ok else '🔴'} &nbsp; Gemini API:
+        <div style="margin-bottom:4px;">{'🟢' if api_ok else '🔴'} &nbsp; {provider_label}:
             {t("side.api_connected") if api_ok else t("side.api_missing")}</div>
         <div style="margin-bottom:4px;">{'🟢' if company else '🟡'} &nbsp; {t("side.company")}:
             {company or t("common.not_set")}</div>
@@ -380,8 +382,8 @@ if nav == "dashboard":
     # KPI Cards
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        connected = bool(st.session_state.get("api_gemini"))
-        st.metric("Gemini API",
+        connected = providers.has_credentials()
+        st.metric(providers.active_provider_label(),
                   f"✅ {t('side.api_connected')}" if connected else f"❌ {t('side.api_missing')}")
     with c2:
         st.metric(t("dash.company_name"), st.session_state.get("c_name") or t("common.none"))

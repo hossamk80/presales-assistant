@@ -10,9 +10,7 @@ import streamlit as st
 from utils import knowledge, submission, traceability
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
-    DEFAULT_MODEL,
     EXTRACT_PROMPTS,
-    MODEL_NAMES,
     MANDATORY_OUTLINE_SECTIONS,
     OUTLINE_SCHEMA,
     PROMPTS,
@@ -34,6 +32,7 @@ from utils.i18n import t
 from utils.state import (
     boq_scope_block,
     get_sections,
+    matrix_block,
     project_context_block as _project_context_block,
     reset_sections,
     section_content_key,
@@ -51,11 +50,14 @@ def _has_placeholders(*texts) -> bool:
 
 
 def _model_picker(key: str) -> str:
-    current = st.session_state.get("ai_model_preference", DEFAULT_MODEL)
+    from utils.ai_engine import default_model_name, model_names
+
+    options = model_names()
+    current = default_model_name()
     return st.selectbox(
         t("common.engine"),
-        MODEL_NAMES,
-        index=MODEL_NAMES.index(current) if current in MODEL_NAMES else 0,
+        options,
+        index=options.index(current) if current in options else 0,
         key=key,
         label_visibility="collapsed",
     )
@@ -350,10 +352,37 @@ def _steering(key: str) -> str:
 
 def _kb_context(sec: dict) -> str:
     """يسترجع من مستودع معرفة الشركة ما يخص هذا القسم تحديداً."""
-    if not knowledge.is_populated() or not st.session_state.get("api_gemini"):
+    if not knowledge.is_populated():
         return ""
     query = " ".join(filter(None, [sec.get("title"), sec.get("guidance")]))
     return knowledge.build_context(query)
+
+
+def _writing_context(sec: dict) -> tuple[str, str]:
+    """
+    سياق كتابة القسم: (نص الكراسة المُمرَّر، السياق الإضافي).
+
+    الوضع المضغوط (11-10): يستبدل نص الكراسة الكامل بالسياق الموحّد
+    وموجز المصفوفة وبنود الكراسة المسترجعة للقسم (11-11) — فينخفض توكن
+    الكتابة دون فقد المتطلبات. يعود للنص الكامل إن تعذّرت الفهرسة.
+    """
+    extra = _project_context_block() + _kb_context(sec)
+    full_rfp = st.session_state.get("rfp_raw_text", "")
+
+    if not st.session_state.get("compressed_context", True) \
+            or not st.session_state.get("project_context"):
+        return full_rfp, extra
+
+    rfp_block = ""
+    if full_rfp:
+        if knowledge.index_rfp(full_rfp):
+            query = " ".join(filter(None, [sec.get("title"), sec.get("guidance")]))
+            rfp_block = knowledge.rfp_context_block(query)
+        else:
+            # تعذّر التضمين (مفتاح أو موفّر) — النص الكامل أفضل من فقد السياق
+            return full_rfp, extra
+
+    return "", extra + matrix_block() + rfp_block
 
 
 def _render_editors(sections: list):
@@ -455,12 +484,13 @@ def _render_ai_editor(sec: dict):
         if go:
             status = st.empty()
             with st.spinner(t("common.generating")):
+                rfp_context, extra_context = _writing_context(sec)
                 out = ai_generate(
                     _section_prompt(sec),
                     model_choice=model,
-                    rfp_context=st.session_state.get("rfp_raw_text", ""),
+                    rfp_context=rfp_context,
                     on_progress=lambda m: status.caption(f"⏳ {m}"),
-                    extra_context=_project_context_block() + _kb_context(sec),
+                    extra_context=extra_context,
                     language=_language(),
                 )
             status.empty()

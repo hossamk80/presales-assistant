@@ -1,7 +1,10 @@
 """
-utils/ai_engine.py — محرك الذكاء الاصطناعي (Google Gen AI SDK الموحّد)
+utils/ai_engine.py — محرك الذكاء الاصطناعي
 
-يعتمد على حزمة `google-genai` — الحزمة القديمة `google-generativeai` مهجورة.
+منذ المرحلة 11 يمرّ كل استدعاء من طبقة الموفّرين `utils/providers/`:
+تعدد الموفّرين والنماذج، قياس الاستهلاك، حدّ الإنفاق، وذاكرة النتائج —
+كل ذلك هناك، وهذا الملف يحفظ واجهة `ai_generate` / `ai_generate_json`
+كما تعرفها الواجهات فلا يمسّها تبديل الموفّر.
 """
 import json
 import re
@@ -10,9 +13,13 @@ import streamlit as st
 from typing import Any, Callable, Optional
 
 from utils.i18n import t
+from utils import providers
+from utils.providers import BudgetExceeded, ProviderError
+from utils.providers import catalog as _catalog
 
 # ─── سجل النماذج ──────────────────────────────────────────────────────────────
-# الاسم المعروض -> معرّف النموذج في الـ API
+# أسماء Gemini المعروضة تاريخياً — محفوظة للتوافق مع منافسات مخزّنة تحمل
+# هذه الأسماء. القائمة الفعلية المعروضة تأتي من سجل الموفّر النشط.
 MODELS = {
     "Gemini 3.6 Flash": "gemini-3.6-flash",
     "Gemini 3.1 Pro": "gemini-3.1-pro",
@@ -20,6 +27,18 @@ MODELS = {
 }
 MODEL_NAMES = list(MODELS)
 DEFAULT_MODEL = "Gemini 3.6 Flash"
+
+
+def model_names() -> list[str]:
+    """نماذج الموفّر النشط للعرض في قوائم الاختيار — تتبدل مع الموفّر."""
+    options = providers.model_options()
+    return options or MODEL_NAMES
+
+
+def default_model_name() -> str:
+    preferred = st.session_state.get("ai_model_preference", "")
+    options = model_names()
+    return preferred if preferred in options else (options[0] if options else DEFAULT_MODEL)
 
 # نافذة السياق مليون توكن. نترك هامشاً للتعليمات والرد وخطأ التقدير.
 CONTEXT_TOKEN_BUDGET = 700_000
@@ -32,8 +51,27 @@ CONTEXT_CHAR_BUDGET = int(CONTEXT_TOKEN_BUDGET * CHARS_PER_TOKEN)
 
 
 def resolve_model(model_choice: str) -> str:
-    """يحوّل الاسم المعروض إلى معرّف النموذج، مع تجاهل الأسماء القديمة."""
-    return MODELS.get(model_choice, MODELS[DEFAULT_MODEL])
+    """
+    يحوّل الاسم المعروض إلى معرّف النموذج.
+
+    الترتيب: أسماء Gemini التاريخية ← سجل الموفّر النشط (اسم أو معرّف) ←
+    النموذج الافتراضي للموفّر النشط ← الافتراضي التاريخي.
+    """
+    if model_choice in MODELS:
+        return MODELS[model_choice]
+
+    active = providers.active_provider_name()
+    resolved = _catalog.resolve_label(active, model_choice or "")
+    if resolved:
+        return resolved
+    if model_choice and _catalog.find_model(model_choice):
+        return model_choice
+
+    if active != providers.DEFAULT_PROVIDER:
+        fallback = _catalog.default_model(active)
+        if fallback:
+            return fallback
+    return MODELS[DEFAULT_MODEL]
 
 
 # ─── اللغة ────────────────────────────────────────────────────────────────────
@@ -98,28 +136,13 @@ def estimate_tokens(text: str) -> int:
     return int(len(str(text)) / CHARS_PER_TOKEN)
 
 
-@st.cache_resource(show_spinner=False)
-def _get_client(api_key: str):
-    """عميل genai مُخزَّن حسب المفتاح (يُعاد استخدامه بين عمليات إعادة التشغيل)."""
-    from google import genai
-
-    return genai.Client(api_key=api_key)
+# إنشاء العميل صار مسؤولية كل موفّر في `utils/providers/` — لا عميل Gemini
+# مباشراً هنا، وإلا بقي مسار ثانٍ لا يمرّ بالقياس ولا بحدّ الإنفاق.
 
 
-def get_client():
-    """يُرجع عميلاً جاهزاً أو None مع رسالة خطأ واضحة."""
-    api_key = st.session_state.get("api_gemini")
-    if not api_key:
-        st.error(t("eng.key_missing"))
-        return None
-    try:
-        return _get_client(api_key)
-    except ImportError:
-        st.error(t("eng.sdk_missing"))
-        return None
-    except Exception as e:
-        st.error(t("eng.client_failed", error=e))
-        return None
+def has_credentials() -> bool:
+    """هل الموفّر النشط جاهز للاستدعاء؟ (الموفّر المحلي جاهز بلا مفتاح)"""
+    return providers.has_credentials()
 
 
 # ─── إعادة المحاولة عند الفشل العابر ──────────────────────────────────────────
@@ -171,37 +194,44 @@ def _with_retry(call, on_progress: Optional[Callable[[str], None]] = None):
 
 def count_tokens_exact(text: str, model_choice: str = DEFAULT_MODEL) -> Optional[int]:
     """عدد التوكنز الفعلي من الـ API. يُرجع None إذا تعذّر الاتصال."""
-    client = get_client()
-    if client is None:
-        return None
+    model_id = resolve_model(model_choice)
     try:
-        result = client.models.count_tokens(
-            model=resolve_model(model_choice), contents=text
-        )
-        return result.total_tokens
+        provider = providers.get_provider(providers.provider_for_model(model_id))
+        return provider.count_tokens(model_id, text)
     except Exception:
         return None
 
 
+def _report_provider_error(error: Exception):
+    """رسالة موحّدة لفشل الموفّر — مفتاح غائب أو ميزانية أو خطأ API."""
+    if isinstance(error, BudgetExceeded):
+        st.error(f"🛑 {error}")
+    elif isinstance(error, ProviderError) and str(error) == "missing_key":
+        st.error(t("eng.key_missing"))
+    else:
+        st.error(t("eng.api_error", error=error))
+
+
 def _call(prompt: str, model_id: str,
-          on_progress: Optional[Callable[[str], None]] = None) -> Optional[str]:
-    """استدعاء واحد للنموذج، مع إعادة محاولة على الفشل العابر."""
-    client = get_client()
-    if client is None:
-        return None
+          on_progress: Optional[Callable[[str], None]] = None,
+          task: str = "write") -> Optional[str]:
+    """استدعاء واحد للنموذج عبر طبقة الموفّرين، مع إعادة محاولة عابرة."""
     try:
-        response = _with_retry(
-            lambda: client.models.generate_content(model=model_id, contents=prompt),
+        result = _with_retry(
+            lambda: providers.run(model_id, prompt, task=task),
             on_progress,
         )
-        text = response.text
-        if not text:
-            st.warning(t("eng.empty_reply"))
-            return None
-        return text
+    except (BudgetExceeded, ProviderError) as e:
+        _report_provider_error(e)
+        return None
     except Exception as e:
         st.error(t("eng.api_error", error=e))
         return None
+
+    if not result.text:
+        st.warning(t("eng.empty_reply"))
+        return None
+    return result.text
 
 
 def _split_into_chunks(text: str, chunk_chars: int) -> list[str]:
@@ -328,34 +358,26 @@ def _strip_code_fence(text: str) -> str:
 
 
 def _call_json(prompt: str, model_id: str, schema: dict,
-               on_progress: Optional[Callable[[str], None]] = None) -> Optional[Any]:
+               on_progress: Optional[Callable[[str], None]] = None,
+               task: str = "extract") -> Optional[Any]:
     """استدعاء يُرجع JSON مطابقاً للمخطط المحدّد، مع إعادة محاولة عابرة."""
-    client = get_client()
-    if client is None:
-        return None
     try:
-        from google.genai import types
-
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=schema,
-        )
-        response = _with_retry(
-            lambda: client.models.generate_content(
-                model=model_id, contents=prompt, config=config
-            ),
+        result = _with_retry(
+            lambda: providers.run(model_id, prompt, schema=schema, task=task),
             on_progress,
         )
+    except (BudgetExceeded, ProviderError) as e:
+        _report_provider_error(e)
+        return None
     except Exception as e:
         st.error(t("eng.api_error", error=e))
         return None
 
-    # المسار المفضّل: كائن مُحلَّل جاهز من الـ SDK
-    parsed = getattr(response, "parsed", None)
-    if isinstance(parsed, (dict, list)):
-        return parsed
+    # المسار المفضّل: كائن مُحلَّل جاهز من الموفّر
+    if isinstance(result.parsed, (dict, list)):
+        return result.parsed
 
-    raw = getattr(response, "text", None)
+    raw = result.text
     if not raw:
         st.warning(t("eng.empty_reply"))
         return None
