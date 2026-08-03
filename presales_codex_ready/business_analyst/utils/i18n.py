@@ -1233,6 +1233,114 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "en": "⚠️ No text extracted from `{name}` — it was not added to the repository.",
     },
 
+    # ── الدخول والمصادقة (13-2) / Login & authentication ──
+    "au.login_title": {"ar": "تسجيل الدخول", "en": "Sign in"},
+    "au.login_subtitle": {
+        "ar": "ادخل بحسابك للوصول إلى العطاءات",
+        "en": "Sign in to reach your tenders",
+    },
+    "au.login_btn": {"ar": "دخول", "en": "Sign in"},
+    "au.logout": {"ar": "خروج", "en": "Sign out"},
+    "au.username": {"ar": "اسم المستخدم", "en": "Username"},
+    "au.display_name": {"ar": "الاسم الظاهر", "en": "Display name"},
+    "au.password": {"ar": "كلمة السر", "en": "Password"},
+    "au.password_confirm": {"ar": "تأكيد كلمة السر", "en": "Confirm password"},
+    "au.setup_title": {"ar": "تهيئة أول حساب", "en": "Create the first account"},
+    "au.setup_subtitle": {
+        "ar": "لا حساب في هذا النظام بعد",
+        "en": "This system has no account yet",
+    },
+    "au.setup_hint": {
+        "ar": "أول حساب هو مدير النظام، ومنه تُضاف بقية حسابات الفريق من الإعدادات.",
+        "en": "The first account is the system administrator; the rest of the team is "
+              "added from Settings.",
+    },
+    "au.setup_btn": {"ar": "إنشاء الحساب والدخول", "en": "Create account and sign in"},
+    "au.cooldown_wait": {
+        "ar": "⏳ محاولات كثيرة فاشلة — انتظر {seconds} ثانية.",
+        "en": "⏳ Too many failed attempts — wait {seconds} seconds.",
+    },
+    "au.err_bad_credentials": {
+        "ar": "❌ اسم المستخدم أو كلمة السر غير صحيحة.",
+        "en": "❌ Incorrect username or password.",
+    },
+    "au.err_cooldown": {
+        "ar": "❌ محاولات كثيرة فاشلة — أعد المحاولة بعد قليل.",
+        "en": "❌ Too many failed attempts — try again shortly.",
+    },
+    "au.err_disabled": {
+        "ar": "❌ هذا الحساب معطَّل. راجع مدير النظام.",
+        "en": "❌ This account is disabled. Contact your administrator.",
+    },
+    "au.err_username_required": {
+        "ar": "❌ اسم المستخدم مطلوب.",
+        "en": "❌ A username is required.",
+    },
+    "au.err_username_taken": {
+        "ar": "❌ اسم المستخدم مستعمل.",
+        "en": "❌ That username is already taken.",
+    },
+    "au.err_password_short": {
+        "ar": "❌ كلمة السر أقصر من ثمانية أحرف.",
+        "en": "❌ The password is shorter than eight characters.",
+    },
+    "au.err_password_mismatch": {
+        "ar": "❌ الكلمتان غير متطابقتين.",
+        "en": "❌ The two passwords do not match.",
+    },
+    "au.err_current_password": {
+        "ar": "❌ كلمة السر الحالية غير صحيحة.",
+        "en": "❌ The current password is incorrect.",
+    },
+    "au.err_user_missing": {
+        "ar": "❌ هذا المستخدم لم يعد موجوداً.",
+        "en": "❌ That user no longer exists.",
+    },
+    "au.err_setup_done": {
+        "ar": "❌ النظام مهيّأ أصلاً — ادخل بحسابك.",
+        "en": "❌ The system is already set up — please sign in.",
+    },
+
+    # ── إدارة المستخدمين (13-2) / User management ──
+    "us.title": {"ar": "👥 المستخدمون", "en": "👥 Users"},
+    "us.hint": {
+        "ar": "حساب لكل شخص في قسم العطاءات — لا حساب مشترك.",
+        "en": "One account per person in the tender team — no shared accounts.",
+    },
+    "us.my_account": {"ar": "🙍 حسابي", "en": "🙍 My account"},
+    "us.signed_in_as": {"ar": "داخل باسم: {username}", "en": "Signed in as: {username}"},
+    "us.save_profile": {"ar": "حفظ الاسم الظاهر", "en": "Save display name"},
+    "us.profile_saved": {"ar": "✅ حُفظ.", "en": "✅ Saved."},
+    "us.change_password": {"ar": "تغيير كلمة السر", "en": "Change password"},
+    "us.change_password_btn": {"ar": "تغيير الكلمة", "en": "Change password"},
+    "us.current_password": {"ar": "كلمة السر الحالية", "en": "Current password"},
+    "us.new_password": {"ar": "كلمة السر الجديدة", "en": "New password"},
+    "us.password_changed": {"ar": "✅ تغيّرت كلمة السر.", "en": "✅ Password changed."},
+    "us.add": {"ar": "إضافة مستخدم", "en": "Add a user"},
+    "us.add_btn": {"ar": "إضافة", "en": "Add"},
+    "us.added": {"ar": "✅ أُضيف المستخدم «{username}».", "en": "✅ User “{username}” added."},
+    "us.manage": {"ar": "إدارة حساب قائم", "en": "Manage an existing account"},
+    "us.pick_user": {"ar": "المستخدم", "en": "User"},
+    "us.reset_password": {"ar": "كلمة سر جديدة", "en": "New password"},
+    "us.reset_password_help": {
+        "ar": "تصفير كلمة سر مستخدم لا يتطلّب معرفة كلمته القديمة.",
+        "en": "Resetting a user's password does not require their old one.",
+    },
+    "us.reset_btn": {"ar": "تصفير الكلمة", "en": "Reset password"},
+    "us.enable_btn": {"ar": "تفعيل", "en": "Enable"},
+    "us.disable_btn": {"ar": "تعطيل", "en": "Disable"},
+    "us.cannot_disable": {
+        "ar": "لا يمكن تعطيل آخر حساب فعّال ولا حسابك أنت.",
+        "en": "The last active account — and your own — cannot be disabled.",
+    },
+    "us.delete_confirm": {"ar": "أؤكّد الحذف", "en": "Confirm deletion"},
+    "us.delete_btn": {"ar": "حذف", "en": "Delete"},
+    "us.col_username": {"ar": "المستخدم", "en": "Username"},
+    "us.col_display_name": {"ar": "الاسم الظاهر", "en": "Display name"},
+    "us.col_role": {"ar": "الدور", "en": "Role"},
+    "us.col_active": {"ar": "فعّال", "en": "Active"},
+    "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
+
     # ── فئات المعرفة / KB categories ──
     "kbcat.cv": {"ar": "السير الذاتية", "en": "CVs"},
     "kbcat.cert": {"ar": "الشهادات والاعتمادات", "en": "Certifications"},

@@ -29,10 +29,34 @@ def real_streamlit(monkeypatch, tmp_path):
     yield
 
 
-def _run(page: str | None = None):
+def _nav_radio(at):
+    """
+    عنصر التنقّل وحده — شاشة الدخول تعرض مبدّل لغة الواجهة، فوجود `radio`
+    ليس دليلاً على الوصول إلى الشاشات.
+    """
+    return [r for r in at.radio if r.key == "nav_radio"]
+
+
+def _signed_in_user() -> int:
+    """
+    حساب فعّال في قاعدة الاختبار — بعد 13-2 لا شاشة تُرسم بلا دخول، فبقية
+    اختبارات الإقلاع تحتاج جلسة قائمة كي تصل إلى الصفحات أصلاً.
+    """
+    from utils import auth, db
+
+    return db.create_user("tester", auth.hash_password("test-password"), "Tester")
+
+
+def _run(page: str | None = None, user_id: int | None = -1):
+    """`user_id=None` يشغّل التطبيق بلا دخول — لاختبار الحارس نفسه."""
     from streamlit.testing.v1 import AppTest
 
+    if user_id == -1:
+        user_id = _signed_in_user()
+
     at = AppTest.from_file(str(APP_FILE), default_timeout=90)
+    if user_id is not None:
+        at.session_state["auth_user_id"] = user_id
     at.run()
     if page is not None:
         at.session_state["nav_selection"] = page
@@ -71,6 +95,40 @@ def test_no_api_key_does_not_crash_workspace():
     """مساحة العمل يجب أن تُرسم وترشد المستخدم بدل الانهيار بلا مفتاح."""
     at = _run("🚀 مساحة العمل")
     assert not at.exception
+
+
+def test_no_screen_renders_before_sign_in():
+    """
+    شرط قبول 13-2: لا وصول لأي شاشة قبل الدخول. بلا جلسة يجب ألا يظهر تنقّل
+    ولا محتوى صفحة — شاشة الدخول وحدها.
+    """
+    _signed_in_user()                       # النظام مهيّأ، لكن لا جلسة
+    at = _run(user_id=None)
+    assert not at.exception
+    assert not _nav_radio(at), "عنصر التنقّل ظهر لمستخدم غير مسجَّل دخوله"
+    assert at.text_input, "شاشة الدخول لم تُرسم"
+
+
+def test_first_run_offers_account_setup():
+    """قاعدة بلا مستخدم لا تُقفل على نفسها: تعرض تهيئة أول حساب."""
+    at = _run(user_id=None)
+    assert not at.exception
+    assert not _nav_radio(at)
+    assert at.text_input, "شاشة التهيئة بلا حقول"
+
+
+def test_disabled_account_loses_its_open_session():
+    """تعطيل حساب يُخرج صاحبه من جلسته القائمة لا عند دخوله التالي."""
+    from utils import db
+
+    user_id = _signed_in_user()
+    at = _run(page=None, user_id=user_id)
+    assert _nav_radio(at), "المستخدم الفعّال لم يصل إلى الشاشات"
+
+    db.set_user_active(user_id, False)
+    at.run()
+    assert not at.exception
+    assert not _nav_radio(at), "حساب معطَّل ظلّ يرى الشاشات"
 
 
 def test_default_outline_is_available():

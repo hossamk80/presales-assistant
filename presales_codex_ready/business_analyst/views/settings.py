@@ -11,7 +11,7 @@ import time
 import pandas as pd
 import streamlit as st
 
-from utils import db, knowledge, providers, savings
+from utils import auth, db, knowledge, providers, savings
 from utils.i18n import UI_LANGUAGES, t
 from utils.providers import catalog
 from utils.state import get_state_snapshot, load_state_snapshot
@@ -287,6 +287,122 @@ def _usage_section():
                 )
 
 
+def _my_account_section():
+    """حساب المستخدم نفسه: اسمه الظاهر وتغيير كلمته بمعرفة القديمة."""
+    user = auth.current_user()
+    if user is None:
+        return
+
+    with st.expander(t("us.my_account")):
+        st.caption(t("us.signed_in_as", username=user["username"]))
+
+        display_name = st.text_input(
+            t("au.display_name"), value=user.get("display_name", ""),
+            key="me_display_name",
+        )
+        if st.button(t("us.save_profile"), key="me_save_profile"):
+            db.update_user_profile(user["id"], display_name)
+            st.success(t("us.profile_saved"))
+            st.rerun()
+
+        st.divider()
+        st.markdown(f"**{t('us.change_password')}**")
+        current = st.text_input(t("us.current_password"), type="password",
+                                key="me_current_password")
+        new = st.text_input(t("us.new_password"), type="password",
+                            key="me_new_password")
+        confirm = st.text_input(t("au.password_confirm"), type="password",
+                                key="me_confirm_password")
+        if st.button(t("us.change_password_btn"), key="me_change_password"):
+            problem = auth.change_password(user["id"], new, confirm, current)
+            if problem:
+                st.error(t(problem))
+            else:
+                st.success(t("us.password_changed"))
+
+
+def _users_section():
+    """
+    إدارة المستخدمين (13-2): إضافة · تصفير كلمة · تعطيل · حذف.
+
+    التمييز بين من يملك هذه الشاشة ومن لا يملكها يأتي مع الأدوار في 13-3.
+    """
+    with st.expander(t("us.title")):
+        st.caption(t("us.hint"))
+
+        rows = db.list_users()
+        if rows:
+            st.dataframe(
+                pd.DataFrame([{
+                    t("us.col_username"): r["username"],
+                    t("us.col_display_name"): r["display_name"],
+                    t("us.col_role"): r["role"],
+                    t("us.col_active"): "✅" if r["active"] else "⛔",
+                    t("us.col_last_login"): r["last_login"] or t("common.none"),
+                } for r in rows]),
+                hide_index=True, width="stretch",
+            )
+
+        st.markdown(f"**{t('us.add')}**")
+        c1, c2 = st.columns(2)
+        with c1:
+            username = st.text_input(t("au.username"), key="new_user_username")
+        with c2:
+            display_name = st.text_input(t("au.display_name"),
+                                         key="new_user_display_name")
+        password = st.text_input(t("au.password"), type="password",
+                                 key="new_user_password")
+        if st.button(t("us.add_btn"), type="primary", key="new_user_add"):
+            problem = auth.add_user(username, password, display_name)
+            if problem:
+                st.error(t(problem))
+            else:
+                st.success(t("us.added", username=username.strip()))
+                st.rerun()
+
+        if len(rows) <= 1:
+            return
+
+        st.divider()
+        st.markdown(f"**{t('us.manage')}**")
+        labels = {r["id"]: f'{r["username"]} — {r["display_name"] or "—"}' for r in rows}
+        target_id = st.selectbox(
+            t("us.pick_user"), list(labels),
+            format_func=lambda i: labels[i], key="manage_user_pick",
+        )
+        target = db.get_user_by_id(target_id)
+        if target is None:
+            return
+
+        reset = st.text_input(t("us.reset_password"), type="password",
+                              key="manage_user_password",
+                              help=t("us.reset_password_help"))
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            if st.button(t("us.reset_btn"), key="manage_user_reset"):
+                problem = auth.change_password(target_id, reset)
+                if problem:
+                    st.error(t(problem))
+                else:
+                    st.success(t("us.password_changed"))
+        with m2:
+            allowed = auth.can_disable(target_id)
+            toggle_key = "us.enable_btn" if not target["active"] else "us.disable_btn"
+            if st.button(t(toggle_key), key="manage_user_toggle",
+                         disabled=target["active"] and not allowed):
+                db.set_user_active(target_id, not target["active"])
+                st.rerun()
+            if target["active"] and not allowed:
+                st.caption(t("us.cannot_disable"))
+        with m3:
+            confirm_delete = st.checkbox(t("us.delete_confirm"),
+                                         key="manage_user_delete_confirm")
+            if st.button(t("us.delete_btn"), key="manage_user_delete",
+                         disabled=not (confirm_delete and auth.can_disable(target_id))):
+                db.delete_user(target_id)
+                st.rerun()
+
+
 def render_settings():
     st.markdown(t("st.title"))
 
@@ -302,6 +418,8 @@ def render_settings():
     _embedding_section()
     _budget_section()
     _usage_section()
+    _my_account_section()
+    _users_section()
 
     with st.expander(t("st.out_lang"), expanded=False):
         st.caption(t("st.out_lang_caption"))
