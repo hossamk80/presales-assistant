@@ -128,6 +128,26 @@ CREATE TABLE IF NOT EXISTS company_records (
 
 CREATE INDEX IF NOT EXISTS idx_company_records_registry
     ON company_records(registry);
+
+-- المستخدمون (13-2): النظام كان بلا هوية — من يفتح المتصفح يملك كل شيء. قسم
+-- عطاءات فيه أكثر من شخص يحتاج حساباً لكل واحد قبل أي شاشة.
+--
+-- الكلمة لا تُخزَّن ولا تُشفَّر تشفيراً عكسياً: يُخزَّن ناتج اشتقاق بطيء
+-- (scrypt) مع ملحه، والتحقق في `utils/auth.py`. القاعدة هنا لا تعرف كلمة سر.
+-- `username` بلا حساسية لحالة الأحرف — «Ahmed» و «ahmed» شخص واحد لا اثنان.
+--
+-- `role` يُخزَّن الآن ويُفرَض في 13-3 (الأدوار الخمسة)؛ وجود العمود من الآن
+-- يوفّر ترحيلاً لاحقاً على قواعد صارت تحمل مستخدمين.
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    display_name  TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'admin',
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    last_login    TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -291,6 +311,92 @@ def duplicate_project(project_id: int, new_name: str) -> Optional[int]:
     if src is None:
         return None
     return create_project(new_name, src["payload"], src["reference"], src["entity"])
+
+
+# ─── المستخدمون (13-2) ────────────────────────────────────────────────────────
+# هذه الطبقة تخزّن وتقرأ فقط. التجزئة والتحقق ومنطق الجلسة في `utils/auth.py`.
+
+
+def count_users(active_only: bool = False) -> int:
+    sql = "SELECT COUNT(*) AS n FROM users"
+    if active_only:
+        sql += " WHERE active = 1"
+    return get_conn().execute(sql).fetchone()["n"]
+
+
+def list_users() -> list:
+    rows = get_conn().execute(
+        "SELECT id, username, display_name, role, active, created_at, last_login "
+        "FROM users ORDER BY username"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_user(username: str) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM users WHERE username = ?", (username.strip(),)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: int) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def create_user(username: str, password_hash: str, display_name: str = "",
+                role: str = "admin", active: bool = True) -> Optional[int]:
+    """يعيد معرّف المستخدم، أو `None` إن كان الاسم مستعملاً."""
+    try:
+        with transaction() as conn:
+            cur = conn.execute(
+                "INSERT INTO users (username, display_name, password_hash, role, "
+                "active, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (username.strip(), display_name.strip(), password_hash, role,
+                 1 if active else 0, _now()),
+            )
+            return cur.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+
+
+def set_user_password(user_id: int, password_hash: str):
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id)
+        )
+
+
+def set_user_role(user_id: int, role: str):
+    with transaction() as conn:
+        conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+
+
+def set_user_active(user_id: int, active: bool):
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE users SET active = ? WHERE id = ?", (1 if active else 0, user_id)
+        )
+
+
+def update_user_profile(user_id: int, display_name: str):
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE users SET display_name = ? WHERE id = ?",
+            (display_name.strip(), user_id),
+        )
+
+
+def touch_user_login(user_id: int):
+    with transaction() as conn:
+        conn.execute("UPDATE users SET last_login = ? WHERE id = ?", (_now(), user_id))
+
+
+def delete_user(user_id: int):
+    with transaction() as conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
 # ─── ملف الشركة ───────────────────────────────────────────────────────────────

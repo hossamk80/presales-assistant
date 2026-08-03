@@ -17,7 +17,7 @@ st.set_page_config(
 # ─── Imports (after page config) ──────────────────────────────────────────────
 from utils.state import init_state, load_company_snapshot
 from utils.ai_engine import estimate_tokens
-from utils import db, providers
+from utils import auth, db, providers
 from utils.i18n import t, ui_is_rtl
 
 # ─── Initialize Session State ─────────────────────────────────────────────────
@@ -291,6 +291,16 @@ st.markdown(
 )
 
 
+# ─── حارس الدخول (13-2) ───────────────────────────────────────────────────────
+# لا شاشة قبل الدخول. الشرط هنا لا في كل صفحة: نقطة واحدة تُفحص فيُغلق الباب
+# كله، ولا تُنسى شاشة عند إضافة صفحة جديدة. الحارس يعيد القراءة من القاعدة كل
+# دورة، فحساب عُطِّل يخرج من جلسته فوراً.
+if not auth.is_authenticated():
+    from views import login
+    login.render()
+    st.stop()
+
+
 # ─── سجل الصفحات ──────────────────────────────────────────────────────────────
 # المفتاح ثابت لا يتغيّر مع اللغة؛ التسمية تأتي من i18n وقت الرسم.
 NAV_PAGES = {
@@ -367,6 +377,21 @@ with st.sidebar:
             f'<div class="token-badge">{t("side.tokens")} <span>{tokens:,}</span></div>',
             unsafe_allow_html=True,
         )
+
+    # ── هوية المستخدم والخروج (13-2) ──
+    # ظاهرة في كل شاشة: من يعمل الآن على هذا الجهاز سؤال يتكرّر في قسم عطاءات
+    # يتشارك أجهزته، والخروج يجب أن يكون في متناول اليد لا في صفحة إعدادات.
+    st.divider()
+    _user = auth.current_user()
+    st.markdown(
+        f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:4px;">
+        <div>👤 &nbsp; {_user.get("display_name") or _user["username"]}</div>
+    </div>""",
+        unsafe_allow_html=True,
+    )
+    if st.button(f"🚪 {t('au.logout')}", width="stretch", key="logout_btn"):
+        auth.logout()
+        st.rerun()
 
 
 # ─── Page Routing ─────────────────────────────────────────────────────────────
