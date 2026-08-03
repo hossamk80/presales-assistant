@@ -26,8 +26,10 @@ from utils.state import (
     DEFAULT_BOQ_DF,
     boq_scope_block,
     company_block,
+    entity_block,
     guess_attachment_role,
     project_context_block,
+    records_block,
     role_text,
 )
 from components.ui import ai_generate_button
@@ -51,6 +53,10 @@ def _qualification_context() -> str:
     """
     parts = [
         company_block(),
+        # 12-6: الصفوف الموثّقة تسبق مستودع المعرفة — «نعم + المستند» يخرج من
+        # صفٍّ لا من نص حر، وما لا صف له يبقى «غير معلوم».
+        records_block(),
+        entity_block(),
         knowledge.build_context(_QUALIFICATION_QUERY),
         project_context_block(),
         boq_scope_block(),

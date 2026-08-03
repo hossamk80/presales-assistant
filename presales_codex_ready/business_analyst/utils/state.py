@@ -287,6 +287,72 @@ def _as_float(value, default: float) -> float:
         return default
 
 
+# ─── مصفوفة الكوادر الرئيسية (12-2) ────────────────────────────────────────────
+# دور تشترطه الكراسة ← المرشّح من سجل الكوادر ← دليل المطابقة ← الفجوة.
+PERSONNEL_COLUMNS = [
+    "الدور المطلوب",
+    "مرجع البند",
+    "اشتراطات الكراسة",
+    "المرشّح",
+    "دليل المطابقة",
+    "الفجوة",
+]
+
+DEFAULT_PERSONNEL_DF = pd.DataFrame({
+    "الدور المطلوب": [""],
+    "مرجع البند": [""],
+    "اشتراطات الكراسة": [""],
+    "المرشّح": [""],
+    "دليل المطابقة": [""],
+    "الفجوة": [""],
+})
+
+
+def migrate_personnel_df(df) -> "pd.DataFrame":
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_PERSONNEL_DF.copy()
+    if list(df.columns) == PERSONNEL_COLUMNS:
+        return df
+    out = df.copy()
+    for col in PERSONNEL_COLUMNS:
+        if col not in out.columns:
+            out[col] = ""
+    return out[PERSONNEL_COLUMNS]
+
+
+def personnel_to_df(payload: dict) -> "pd.DataFrame":
+    """تحويل مصفوفة الكوادر المستخرجة إلى جدول قابل للتحرير."""
+    rows = []
+    for item in (payload or {}).get("roles") or []:
+        role = str(item.get("required_role", "")).strip()
+        if not role:
+            continue
+        rows.append({
+            "الدور المطلوب": role,
+            "مرجع البند": str(item.get("clause_reference", "")).strip(),
+            "اشتراطات الكراسة": str(item.get("requirements", "")).strip(),
+            "المرشّح": str(item.get("candidate", "")).strip(),
+            "دليل المطابقة": str(item.get("evidence", "")).strip(),
+            "الفجوة": str(item.get("gap", "")).strip(),
+        })
+    return pd.DataFrame(rows)[PERSONNEL_COLUMNS] if rows \
+        else DEFAULT_PERSONNEL_DF.copy()
+
+
+def personnel_gaps(df) -> list:
+    """الأدوار بلا مرشّح أو بفجوة معلنة — تُعرض قبل التسليم."""
+    if df is None or getattr(df, "empty", True):
+        return []
+    gaps = []
+    for row in df.to_dict(orient="records"):
+        role = str(row.get("الدور المطلوب", "")).strip()
+        if not role:
+            continue
+        if not str(row.get("المرشّح", "")).strip() or str(row.get("الفجوة", "")).strip():
+            gaps.append(role)
+    return gaps
+
+
 # ─── هيكل العرض الفني ──────────────────────────────────────────────────────────
 # كل قسم: key فريد · title العنوان · include هل يُدرج · kind نوع المحتوى
 #   kind = "cover" خطاب التقديم · "docinfo" إشعار السرية
@@ -458,6 +524,105 @@ def matrix_block(limit: int = 80) -> str:
     )
 
 
+def records_block(limit: int = 25) -> str:
+    """
+    سجلات الأدلة كنص جاهز للحقن في قرار Go/No-Go (12-6).
+
+    نبذة الشركة وحدها نص حر: «خبرة واسعة» لا تُطابَق بمتطلب تأهيل. هنا تُمرَّر
+    الصفوف نفسها — الكوادر وسابقة الأعمال والشهادات والموردون — فيخرج الجدول
+    «نعم + المستند» حيث يوجد صف، و«غير معلوم» حيث لا يوجد.
+
+    ما لا صف له يبقى ناقصاً: غياب الدليل ليس دليل غياب، لكنه ليس إثباتاً.
+    """
+    from utils import db, records as rec
+
+    parts = []
+    for registry in rec.COMPANY_REGISTRIES:
+        rows = db.list_records(registry)
+        if not rows:
+            continue
+        columns = rec.columns_of(registry)
+        lines = []
+        for row in rows[:limit]:
+            fields = []
+            for col in columns:
+                value = row.get(col["key"], "")
+                if col["kind"] == rec.BOOL:
+                    if value:
+                        fields.append(_RECORD_LABELS[col["label_key"]])
+                    continue
+                text = str(value).strip()
+                if text and text != "0":
+                    fields.append(f"{_RECORD_LABELS[col['label_key']]}: {text}")
+            if fields:
+                lines.append("- " + " · ".join(fields))
+        if lines:
+            more = len(rows) - limit
+            tail = f"\n(و {more} صفاً آخر)" if more > 0 else ""
+            parts.append(
+                f"\n[{_RECORD_LABELS[rec.REGISTRIES[registry]['label_key']]}]\n"
+                + "\n".join(lines) + tail
+            )
+
+    if not parts:
+        return ""
+    return (
+        "\n\n--- سجلات أدلة الشركة (صفوف موثّقة — استند إليها ولا تفترض ما "
+        "لا صف له) ---" + "".join(parts)
+    )
+
+
+def entity_block() -> str:
+    """ملف الجهة المصدِرة إن كان مسجَّلاً — سلوكها في التقييم يتكرّر (12-7)."""
+    from utils import db, records as rec
+
+    ctx = st.session_state.get("project_context") or {}
+    name = str(ctx.get("issuing_entity", "")).strip() \
+        or str(st.session_state.get("_project_entity", "")).strip()
+    if not name:
+        return ""
+
+    profile = db.find_entity(name)
+    if not profile:
+        return ""
+
+    lines = []
+    for col in rec.columns_of("entities"):
+        value = str(profile.get(col["key"], "")).strip()
+        if value:
+            lines.append(f"{_RECORD_LABELS[col['label_key']]}: {value}")
+    if not lines:
+        return ""
+    return "\n\n--- ملف الجهة المصدِرة (من عطاءات سابقة) ---\n" + "\n".join(lines)
+
+
+# تسميات الحقول للحقن في التعليمات. **عربية دائماً** بصرف النظر عن لغة
+# الواجهة: هذه تُقرأ من النموذج لا من المستخدم، ولغة المخرَج يحكمها
+# `language_instruction` وحده.
+_RECORD_LABELS = {
+    "rec.people": "الكوادر", "rec.references": "سابقة الأعمال",
+    "rec.certificates": "الشهادات والتصنيفات", "rec.vendors": "الموردون",
+    "rec.entities": "ملف الجهة",
+    "rec.p_name": "الاسم", "rec.p_role": "الدور", "rec.p_years": "سنوات الخبرة",
+    "rec.p_certs": "الشهادات", "rec.p_cert_expiry": "انتهاء الشهادة",
+    "rec.p_languages": "اللغات", "rec.p_availability": "الإتاحة",
+    "rec.p_cv": "ملف السيرة",
+    "rec.r_client": "العميل", "rec.r_sector": "القطاع", "rec.r_scope": "النطاق",
+    "rec.r_value": "نطاق القيمة", "rec.r_duration": "المدة",
+    "rec.r_our_role": "دورنا", "rec.r_completion": "شهادة إنجاز",
+    "rec.r_contact": "جهة مرجعية",
+    "rec.c_kind": "النوع", "rec.c_number": "الرقم", "rec.c_issuer": "جهة الإصدار",
+    "rec.c_issued": "الإصدار", "rec.c_expiry": "الانتهاء", "rec.c_document": "الملف",
+    "rec.v_vendor": "المورّد", "rec.v_line": "خط المنتجات",
+    "rec.v_partnership": "مستوى الشراكة", "rec.v_letter": "خطاب تفويض",
+    "rec.v_letter_expiry": "انتهاء الخطاب", "rec.v_support": "دعم محلي",
+    "rec.v_eol": "EOL/EOS", "rec.v_alt": "البديل",
+    "rec.e_name": "الجهة", "rec.e_sector": "القطاع",
+    "rec.e_contacts": "جهات الاتصال", "rec.e_pattern": "أنماط التقييم",
+    "rec.e_recurring": "متطلبات متكررة",
+}
+
+
 def project_context_block() -> str:
     """
     السياق الموحّد للمشروع (الجهة، الموعد، التسليمات، الغرامات، المحتوى المحلي).
@@ -546,6 +711,8 @@ STATE_SCHEMA = {
     # الهوية البصرية للمستندات المصدَّرة (لون العناوين وخط النص).
     "c_brand_color": "",
     "c_doc_font": "",
+    # نطاق السعودة — مدخل درجة المحتوى المحلي (12-8)
+    "c_nitaqat_band": "غير محدد",
 
     # RFP Analysis
     # rfp_raw_text يظل النص المدموج لكل المرفقات (يستهلكه كل التحليل).
@@ -590,6 +757,7 @@ STATE_SCHEMA = {
     "df_boq": DEFAULT_BOQ_DF,
     "df_submission": DEFAULT_SUBMISSION_DF,
     "df_timeline": DEFAULT_TIMELINE_DF,
+    "df_personnel": DEFAULT_PERSONNEL_DF,
     # مدة العقد بالأسابيع كما استخرجها النموذج — سقف يُقاس عليه الجدول
     "timeline_contract_weeks": 0,
 
@@ -641,6 +809,7 @@ def reset_analysis():
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
     st.session_state["df_submission"] = DEFAULT_SUBMISSION_DF.copy()
     st.session_state["df_timeline"] = DEFAULT_TIMELINE_DF.copy()
+    st.session_state["df_personnel"] = DEFAULT_PERSONNEL_DF.copy()
     st.session_state["timeline_contract_weeks"] = 0
     st.session_state["review_findings"] = []
     st.session_state["review_scores"] = {}
@@ -688,6 +857,8 @@ def load_state_snapshot(data: dict):
                         st.session_state[key] = migrate_submission_df(loaded)
                     elif key == "df_timeline":
                         st.session_state[key] = migrate_timeline_df(loaded)
+                    elif key == "df_personnel":
+                        st.session_state[key] = migrate_personnel_df(loaded)
                     else:
                         st.session_state[key] = loaded
                 except Exception:
@@ -711,7 +882,7 @@ def load_state_snapshot(data: dict):
 COMPANY_KEYS = [
     "c_name", "c_cr", "c_vat", "c_phone", "c_email", "c_web",
     "c_address", "c_overview", "c_cover_template",
-    "c_brand_color", "c_doc_font",
+    "c_brand_color", "c_doc_font", "c_nitaqat_band",
 ]
 
 

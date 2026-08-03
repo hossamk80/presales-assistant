@@ -30,6 +30,16 @@ When a new requirement extends an existing capability, modify it in place.
 وعند وجود Pull Request: أخبر المستخدم **دائماً** هل تمّ الدمج، وهل يمكنه حذف
 الفرع — بسطر واحد.
 
+## 3.1 لا مراقبة دائمة بلا طلب / No standing PR watch
+
+مراقبة الـ PR والتذكيرات المجدولة تستهلك توكناً في كل استيقاظ. **لا تبدأها من
+تلقائك**: افحص الحالة مرة وأبلغ، واسأل قبل تشغيل أي مراقبة أو جدولة. وأوقفها
+فور انتهاء الحاجة.
+
+PR watching and scheduled check-ins burn tokens on every wake. Never start them
+unprompted — check once, report, and ask before subscribing or scheduling.
+Stop them as soon as the need ends.
+
 Finish with short bullets: what was done, what was fixed. No long prose.
 When a PR is involved, always state whether it merged and whether the branch
 is safe to delete — one line.

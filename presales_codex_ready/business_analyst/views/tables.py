@@ -26,12 +26,13 @@ from utils.state import (
     role_text,
     section_content_key,
 )
-from utils import submission, timeline as timeline_utils, traceability
+from utils import db, submission, timeline as timeline_utils, traceability
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
     DEFAULT_LANGUAGE,
     EXTRACT_PROMPTS,
+    KEY_PERSONNEL_SCHEMA,
     SUBMISSION_SCHEMA,
     TIMELINE_SCHEMA,
     ai_generate_json,
@@ -445,8 +446,145 @@ def _gantt_preview(grid: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _render_personnel():
+    """
+    مصفوفة الكوادر الرئيسية (12-2): دور تشترطه الكراسة ← مرشّح من السجل ←
+    دليل ← فجوة. الدور بلا مرشّح يظهر فجوةً لا يُحذف.
+    """
+    from utils import records
+    from utils.state import (
+        DEFAULT_PERSONNEL_DF, migrate_personnel_df, personnel_gaps,
+        personnel_to_df,
+    )
+
+    with st.expander(t("tb.personnel"), expanded=False):
+        st.caption(t("tb.personnel_hint"))
+
+        people = db.list_records("people")
+        rfp = st.session_state.get("rfp_raw_text", "")
+        if not people:
+            st.warning(t("tb.personnel_no_registry"))
+        if not rfp:
+            st.info(t("tb.upload_first"))
+
+        col_model, col_btn = st.columns([3, 2])
+        with col_model:
+            model = _model_picker("model_personnel")
+        with col_btn:
+            run = st.button(
+                t("tb.personnel_run"), type="primary", width="stretch",
+                disabled=not rfp or not people,
+            )
+
+        if run:
+            labels = {c["key"]: c["label_key"] for c in records.columns_of("people")}
+            from utils.state import _RECORD_LABELS
+
+            listing = "\n".join(
+                "- " + " · ".join(
+                    f"{_RECORD_LABELS[labels[k]]}: {v}"
+                    for k, v in row.items() if str(v).strip() and str(v) != "0"
+                )
+                for row in people
+            )
+            status = st.empty()
+            with st.spinner(t("common.extracting")):
+                result = ai_generate_json(
+                    EXTRACT_PROMPTS["key_personnel"].format(people=listing)
+                    + f"\n{language_instruction(_output_language())}",
+                    schema=KEY_PERSONNEL_SCHEMA,
+                    model_choice=model,
+                    rfp_context=rfp,
+                    merge_key="roles",
+                    on_progress=lambda m: status.caption(f"⏳ {m}"),
+                )
+            status.empty()
+            if result:
+                df = personnel_to_df(result)
+                st.session_state["df_personnel"] = df
+                st.session_state.pop("de_personnel", None)
+                st.success(t("tb.personnel_done", n=len(df)))
+                st.rerun()
+
+        df = migrate_personnel_df(st.session_state.get("df_personnel"))
+        st.session_state["df_personnel"] = df
+
+        gaps = personnel_gaps(df)
+        if gaps:
+            st.error(t("tb.personnel_gaps", n=len(gaps), roles=" · ".join(gaps)))
+
+        edited = st.data_editor(
+            df, num_rows="dynamic", width="stretch", key="de_personnel",
+            column_config={
+                "الدور المطلوب": st.column_config.TextColumn(t("tb.pe_role")),
+                "مرجع البند": st.column_config.TextColumn(t("tb.col_clause"), width="small"),
+                "اشتراطات الكراسة": st.column_config.TextColumn(
+                    t("tb.pe_requirements"), width="large"),
+                "المرشّح": st.column_config.TextColumn(t("tb.pe_candidate")),
+                "دليل المطابقة": st.column_config.TextColumn(
+                    t("tb.pe_evidence"), width="large"),
+                "الفجوة": st.column_config.TextColumn(t("tb.pe_gap"), width="large"),
+            },
+        )
+        st.session_state["df_personnel"] = edited
+
+        if st.button(f"↩️ {t('common.reset')}", key="reset_personnel"):
+            st.session_state["df_personnel"] = DEFAULT_PERSONNEL_DF.copy()
+            st.session_state.pop("de_personnel", None)
+            st.rerun()
+
+
+def _render_local_content():
+    """درجة المحتوى المحلي والسعودة (12-8) — رقم صريح يراجعه بشر."""
+    from utils import local_content
+
+    with st.expander(t("tb.local_content"), expanded=False):
+        st.caption(t("tb.local_content_hint"))
+
+        boq = st.session_state.get("df_boq")
+        boq_rows = boq.to_dict(orient="records") if boq is not None else []
+        ctx = st.session_state.get("project_context") or {}
+        result = local_content.score(
+            band=st.session_state.get("c_nitaqat_band", ""),
+            boq_rows=boq_rows,
+            vendors=db.list_records("vendors"),
+            requirement_text=str(ctx.get("local_content_requirements", "")),
+        )
+
+        c1, c2, c3 = st.columns(3)
+        estimate = result["estimate"]
+        c1.metric(t("tb.lc_estimate"),
+                  f"{estimate:.0f}%" if estimate is not None else t("common.none"))
+        c2.metric(t("tb.lc_required"),
+                  f"{result['required']:.0f}%" if result["required"] is not None
+                  else t("tb.lc_not_declared"))
+        c3.metric(t("tb.lc_gap"),
+                  f"{result['gap']:.0f}%" if result["gap"] is not None
+                  else t("common.none"))
+
+        if result["meets"] is False:
+            st.error(t("tb.lc_below"))
+        elif result["meets"] is True:
+            st.success(t("tb.lc_meets"))
+
+        rows = [
+            {t("tb.lc_component"): t(f"tb.lc_{key}"),
+             t("tb.lc_value"): f"{value:.0f}%" if value is not None else "—",
+             t("tb.lc_weight"): f"{local_content.WEIGHTS[key] * 100:.0f}%"}
+            for key, value in result["components"].items()
+        ]
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+
+        if result["missing"]:
+            st.warning(t("tb.lc_missing", fields=" · ".join(
+                t(f"tb.lc_{k}") for k in result["missing"])))
+        st.info(t("tb.lc_disclaimer"))
+
+
 def render():
     st.markdown(t("tb.title"))
+    _render_personnel()
+    _render_local_content()
 
     # ── Compliance Matrix ──────────────────────────────────────────────────────
     with st.expander(t("tb.compliance"), expanded=True):

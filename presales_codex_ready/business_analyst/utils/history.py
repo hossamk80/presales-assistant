@@ -56,6 +56,11 @@ def _normalise_entity(name: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+# ملف الجهة (12-7) يطابق بالتوحيد نفسه، وإلا بقي غير مستدعىً لأن الاسم كُتب
+# بصيغة أخرى. اسم عام لأنه صار مستعملاً خارج هذه الوحدة.
+normalize_entity = _normalise_entity
+
+
 def similar_projects(projects: list, name: str, entity: str = "",
                      exclude_id: Optional[int] = None, limit: int = 5) -> list:
     """
