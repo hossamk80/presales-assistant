@@ -17,6 +17,7 @@ from utils.ai_engine import (
     language_instruction,
 )
 from utils import (
+    auth,
     addenda, boq_parser, db, history, knowledge, savings, submission, textprep,
 )
 from utils.file_handler import extract_texts_per_file
@@ -161,20 +162,29 @@ def _try_local_boq(files) -> str:
 def _render_upload():
     st.markdown(t("an.upload_title"))
 
+    # 13-3: المراجع والمطّلع يقرآن المنافسة ولا يرفعان لها مرفقات
+    if auth.blocked("projects.edit"):
+        st.info(t("role.project_read_only"))
+
     col_upload, col_clear = st.columns([4, 1])
     with col_upload:
         files = st.file_uploader(
             t("an.formats"),
             accept_multiple_files=True,
             label_visibility="collapsed",
+            disabled=auth.blocked("projects.edit"),
         )
     with col_clear:
-        if st.session_state.get("rfp_raw_text") and st.button(f"🗑️ {t('common.clear')}", width="stretch"):
+        if st.session_state.get("rfp_raw_text") and st.button(
+            f"🗑️ {t('common.clear')}", width="stretch",
+            disabled=auth.blocked("projects.edit"),
+        ):
             from utils.state import reset_analysis
             reset_analysis()
             st.rerun()
 
-    if st.button(t("an.extract"), type="primary", disabled=not files):
+    if st.button(t("an.extract"), type="primary",
+                 disabled=not files or auth.blocked("projects.edit")):
         with st.spinner(t("common.extracting")):
             per_file = extract_texts_per_file(files)
         per_file = {name: text for name, text in per_file.items() if text.strip()}
@@ -243,7 +253,8 @@ def _render_attachment_roles():
                     roles[name] = picked
                     changed = True
             with c_del:
-                if st.button("🗑️", key=f"delatt_{name}", width="stretch"):
+                if st.button("🗑️", key=f"delatt_{name}", width="stretch",
+                             disabled=auth.blocked("projects.edit")):
                     texts.pop(name, None)
                     roles.pop(name, None)
                     st.session_state["attachment_texts"] = texts
@@ -276,7 +287,8 @@ def _render_project_context():
                 label_visibility="collapsed",
             )
         with c_btn:
-            run = st.button(t("an.context_run"), type="primary", width="stretch")
+            run = st.button(t("an.context_run"), type="primary", width="stretch",
+                            disabled=auth.blocked("projects.edit"))
 
         if run:
             status = st.empty()
@@ -381,7 +393,8 @@ def _render_addenda():
             st.info(t("ad.need_two"))
             return
 
-        if st.button(t("ad.compare"), type="primary", key="compare_versions"):
+        if st.button(t("ad.compare"), type="primary", key="compare_versions",
+                     disabled=auth.blocked("projects.edit")):
             st.session_state["_addenda_diff"] = _compute_diff(versions)
             st.rerun()
 
@@ -427,7 +440,8 @@ def _render_addenda():
             for a in affected[:12]
         ))
 
-        if st.button(t("ad.mark"), type="primary", key="mark_affected"):
+        if st.button(t("ad.mark"), type="primary", key="mark_affected",
+                     disabled=auth.blocked("projects.edit")):
             st.session_state["df_compliance"] = addenda.mark_unchecked(
                 st.session_state.get("df_compliance"), affected
             )

@@ -386,6 +386,7 @@ with st.sidebar:
     st.markdown(
         f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:4px;">
         <div>👤 &nbsp; {_user.get("display_name") or _user["username"]}</div>
+        <div style="color:#64748B;">🎫 &nbsp; {t("role." + auth.role_of(_user))}</div>
     </div>""",
         unsafe_allow_html=True,
     )

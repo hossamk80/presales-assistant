@@ -7,7 +7,7 @@ views/projects.py — إدارة المنافسات المحفوظة
 import json
 import streamlit as st
 
-from utils import db, history
+from utils import auth, db, history
 from utils.i18n import t
 from utils.state import (
     STATE_SCHEMA,
@@ -28,9 +28,9 @@ def current_project_name() -> str:
 
 
 def save_current(show_toast: bool = False) -> bool:
-    """يحفظ المنافسة المفتوحة. يُرجع False إن لم تكن هناك واحدة."""
+    """يحفظ المنافسة المفتوحة. يُرجع False إن لم تكن هناك واحدة أو لم يُصرَّح."""
     pid = current_project_id()
-    if pid is None:
+    if pid is None or not auth.can("projects.edit"):
         return False
     snapshot = get_project_snapshot()
     db.save_project(pid, snapshot)
@@ -50,6 +50,10 @@ def autosave():
     محفوظاً دون أن يتذكّر المستخدم الضغط على زر.
     """
     if current_project_id() is None:
+        return
+    # 13-3: المطّلع والمراجع يقرآن ولا يكتبان — الحفظ التلقائي لا يجوز أن
+    # يكتب باسمهما ما تغيّر في جلستهما (فتح موسّع أو ترتيب جدول).
+    if not auth.can("projects.edit"):
         return
     try:
         snapshot = get_project_snapshot()
@@ -165,7 +169,8 @@ def _render_history(projects: list, pid):
                 placeholder=t("proj.outcome_note_ph"),
                 key=f"outcome_note_{pid}",
             )
-        if st.button(t("proj.save_outcome"), type="primary", key=f"save_outcome_{pid}"):
+        if st.button(t("proj.save_outcome"), type="primary", key=f"save_outcome_{pid}",
+                     disabled=auth.blocked("projects.edit")):
             db.set_outcome(pid, outcome, note.strip())
             st.success(t("proj.outcome_saved"))
             st.rerun()
@@ -212,7 +217,8 @@ def _render_entities():
             width="stretch",
             key="rec_editor_entities",
         )
-        if st.button(t("rec.save"), key="rec_save_entities", type="primary"):
+        if st.button(t("rec.save"), key="rec_save_entities", type="primary",
+                     disabled=auth.blocked("company.edit")):
             cleaned = [
                 records.normalize_row("entities", row)
                 for row in edited.to_dict(orient="records")
@@ -266,7 +272,8 @@ def render():
                 carry = st.checkbox(
                     t("proj.carry"), value=False,
                 )
-            if st.form_submit_button(t("proj.create"), type="primary"):
+            if st.form_submit_button(t("proj.create"), type="primary",
+                                     disabled=auth.blocked("projects.create")):
                 if not name.strip():
                     st.error(t("proj.name_required"))
                 else:
@@ -309,19 +316,29 @@ def render():
                     open_project(proj["id"])
                     st.rerun()
             with c_dup:
-                if st.button(t("common.copy"), key=f"dup_{proj['id']}", width="stretch"):
+                if st.button(t("common.copy"), key=f"dup_{proj['id']}", width="stretch",
+                             disabled=auth.blocked("projects.create")):
                     db.duplicate_project(proj["id"], f"{proj['name']} {t('proj.copy_suffix')}")
                     st.rerun()
             with c_del:
+                # 13-3: الحذف لمدير العطاءات ومدير النظام. الزر معطَّل، والفحص
+                # مُعاد عند التنفيذ — الحارس في المنطق لا في مظهر الزر.
                 confirm_key = f"confirm_del_{proj['id']}"
+                may_delete = auth.can("projects.delete")
                 if st.session_state.get(confirm_key):
-                    if st.button(t("common.confirm"), key=f"del2_{proj['id']}", width="stretch", type="primary"):
-                        if is_open:
-                            close_project()
-                        db.delete_project(proj["id"])
-                        st.session_state.pop(confirm_key, None)
-                        st.rerun()
+                    if st.button(t("common.confirm"), key=f"del2_{proj['id']}",
+                                 width="stretch", type="primary", disabled=not may_delete):
+                        if not may_delete:
+                            st.error(t("role.forbidden"))
+                        else:
+                            if is_open:
+                                close_project()
+                            db.delete_project(proj["id"])
+                            st.session_state.pop(confirm_key, None)
+                            st.rerun()
                 else:
-                    if st.button(t("common.delete"), key=f"del_{proj['id']}", width="stretch"):
+                    if st.button(t("common.delete"), key=f"del_{proj['id']}",
+                                 width="stretch", disabled=not may_delete,
+                                 help=None if may_delete else t("role.forbidden")):
                         st.session_state[confirm_key] = True
                         st.rerun()

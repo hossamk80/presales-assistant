@@ -7,7 +7,7 @@ views/company.py — ملف الشركة ومستودع المعرفة
 import pandas as pd
 import streamlit as st
 
-from utils import db, knowledge, local_content, providers, records, submission
+from utils import auth, db, knowledge, local_content, providers, records, submission
 from utils.file_handler import BRAND_COLOR, BRAND_FONT_AR
 from utils.i18n import t
 from utils.state import get_company_snapshot
@@ -15,6 +15,11 @@ from utils.state import get_company_snapshot
 
 def render():
     st.markdown(t("co.title"))
+
+    # 13-3: ملف الشركة وسجلاتها ومستودع معرفتها مِلك المنشأة لا المنافسة —
+    # يعدّلها مدير النظام ومدير العطاءات. الباقون يقرأون.
+    if not auth.can("company.edit"):
+        st.info(t("role.company_read_only"))
 
     # ── Legal Info ─────────────────────────────────────────────────────────────
     with st.expander(t("co.legal"), expanded=True):
@@ -108,8 +113,9 @@ def render():
         st.markdown(t("co.word_template_hint"))
         uploaded_template = st.file_uploader(
             t("co.template_upload"), type=["docx"], key="template_upload",
+            disabled=auth.blocked("company.edit"),
         )
-        if uploaded_template:
+        if uploaded_template and auth.can("company.edit"):
             data = uploaded_template.getvalue()
             if data != st.session_state.get("c_word_template_bytes"):
                 st.session_state["c_word_template_bytes"] = data
@@ -121,7 +127,8 @@ def render():
             with col_info:
                 st.info(t("co.template_active"))
             with col_remove:
-                if st.button(t("co.template_delete"), width="stretch"):
+                if st.button(t("co.template_delete"), width="stretch",
+                             disabled=auth.blocked("company.edit")):
                     st.session_state["c_word_template_bytes"] = None
                     db.clear_company_template()
                     st.rerun()
@@ -132,9 +139,9 @@ def render():
     st.divider()
     _render_knowledge_base()
 
-    # حفظ ملف الشركة على القرص عند تغيّره
+    # حفظ ملف الشركة على القرص عند تغيّره — لمن يملك تعديله وحده (13-3)
     snapshot = get_company_snapshot()
-    if snapshot != st.session_state.get("_company_saved"):
+    if auth.can("company.edit") and snapshot != st.session_state.get("_company_saved"):
         db.save_company(snapshot)
         st.session_state["_company_saved"] = snapshot
 
@@ -188,7 +195,8 @@ def _render_registry(registry: str):
             key=f"rec_editor_{registry}",
         )
 
-        if st.button(t("rec.save"), key=f"rec_save_{registry}", type="primary"):
+        if st.button(t("rec.save"), key=f"rec_save_{registry}", type="primary",
+                     disabled=auth.blocked("company.edit")):
             cleaned = [
                 records.normalize_row(registry, row)
                 for row in edited.to_dict(orient="records")
@@ -271,7 +279,8 @@ def _render_knowledge_base():
             accept_multiple_files=True,
             key="kb_upload",
         )
-        if st.button(t("co.kb_index"), type="primary", disabled=not files or not has_key):
+        if st.button(t("co.kb_index"), type="primary",
+                     disabled=not files or not has_key or auth.blocked("company.edit")):
             progress = st.progress(0.0)
             added = 0
             for i, f in enumerate(files, start=1):
@@ -302,7 +311,8 @@ def _render_knowledge_base():
                     unsafe_allow_html=True,
                 )
             with c_del:
-                if st.button("🗑️", key=f"kbdel_{doc['id']}", width="stretch"):
+                if st.button("🗑️", key=f"kbdel_{doc['id']}", width="stretch",
+                             disabled=auth.blocked("company.edit")):
                     db.delete_kb_document(doc["id"])
                     st.rerun()
 

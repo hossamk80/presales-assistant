@@ -15,7 +15,7 @@ from utils.ai_engine import (
     ai_generate_json,
     build_prompt,
 )
-from utils import consistency
+from utils import auth, consistency
 from utils.file_handler import resolve_document_tokens
 from utils.i18n import t
 from utils.state import get_sections, project_context_block, section_content_key
@@ -190,7 +190,8 @@ def _render_finding(finding: dict, sections: list, model: str):
         with st.expander(t("rv.suggestion")):
             st.write(finding["suggested_text"])
 
-    can_apply = bool(finding["section"]) and not finding["applied"]
+    can_apply = (bool(finding["section"]) and not finding["applied"]
+                 and auth.can("sections.write"))
     c1, c2 = st.columns([1, 4])
     with c1:
         if st.button(
@@ -207,7 +208,10 @@ def _render_finding(finding: dict, sections: list, model: str):
             sec = next((s for s in sections if s["title"] == finding["section"]), None)
             if sec:
                 ukey = f"_undo_{section_content_key(sec['key'])}"
-                if st.session_state.get(ukey) and st.button(f"↩️ {t('common.undo')}", key=f"undo_{finding['id']}"):
+                if st.session_state.get(ukey) and st.button(
+                    f"↩️ {t('common.undo')}", key=f"undo_{finding['id']}",
+                    disabled=auth.blocked("sections.write"),
+                ):
                     st.session_state[section_content_key(sec["key"])] = st.session_state.pop(ukey)
                     st.session_state.pop(f"ta_{sec['key']}", None)
                     for f in st.session_state.get("review_findings", []):
@@ -328,7 +332,8 @@ def render():
         )
     with c_btn:
         run = st.button(
-            t("rv.run"), type="primary", width="stretch", disabled=not chosen
+            t("rv.run"), type="primary", width="stretch",
+            disabled=not chosen or auth.blocked("review.run"),
         )
 
     if run:

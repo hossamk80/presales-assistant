@@ -28,6 +28,7 @@ from utils.file_handler import (
     confidentiality_notice,
     resolve_document_tokens,
 )
+from utils import auth
 from utils.i18n import t
 from utils.state import (
     boq_scope_block,
@@ -104,11 +105,12 @@ def _render_outline_designer():
                 t("db.propose"),
                 type="primary",
                 width="stretch",
-                disabled=not rfp,
+                disabled=not rfp or auth.blocked("sections.write"),
                 help=None if rfp else t("db.propose_hint"),
             )
         with col_reset:
-            if st.button(f"↩️ {t('common.default')}", width="stretch"):
+            if st.button(f"↩️ {t('common.default')}", width="stretch",
+                         disabled=auth.blocked("sections.write")):
                 reset_sections()
                 st.rerun()
 
@@ -254,17 +256,20 @@ def _render_section_list(sections: list):
             )
 
         with c_up:
-            if st.button("⬆️", key=f"up_{sec['key']}", disabled=i == 0):
+            if st.button("⬆️", key=f"up_{sec['key']}",
+                         disabled=i == 0 or auth.blocked("sections.write")):
                 sections[i - 1], sections[i] = sections[i], sections[i - 1]
                 set_sections(sections)
                 st.rerun()
         with c_down:
-            if st.button("⬇️", key=f"dn_{sec['key']}", disabled=i == len(sections) - 1):
+            if st.button("⬇️", key=f"dn_{sec['key']}",
+                         disabled=i == len(sections) - 1 or auth.blocked("sections.write")):
                 sections[i + 1], sections[i] = sections[i], sections[i + 1]
                 set_sections(sections)
                 st.rerun()
         with c_del:
-            if st.button("🗑️", key=f"del_{sec['key']}", disabled=sec["kind"] != "ai"):
+            if st.button("🗑️", key=f"del_{sec['key']}",
+                         disabled=sec["kind"] != "ai" or auth.blocked("sections.write")):
                 st.session_state.pop(section_content_key(sec["key"]), None)
                 set_sections([s for s in sections if s["key"] != sec["key"]])
                 st.rerun()
@@ -437,7 +442,8 @@ def _render_cover_editor(sec: dict):
         with col_m:
             model = _model_picker("model_cover")
         with col_b:
-            go = st.button(t("db.cover_generate"), key="btn_cover", type="primary", width="stretch")
+            go = st.button(t("db.cover_generate"), key="btn_cover", type="primary",
+                           width="stretch", disabled=auth.blocked("sections.write"))
         if go:
             with st.spinner(t("common.generating")):
                 out = ai_generate(
@@ -457,6 +463,7 @@ def _render_cover_editor(sec: dict):
             value=st.session_state.get("sec_cover", ""),
             height=220,
             key="ta_cover",
+            disabled=auth.blocked("sections.write"),
         )
 
 
@@ -479,7 +486,8 @@ def _render_ai_editor(sec: dict):
         with col_m:
             model = _model_picker(f"model_{key}")
         with col_b:
-            go = st.button(f"⚡ {t('common.generate')}", key=f"btn_{key}", type="primary", width="stretch")
+            go = st.button(f"⚡ {t('common.generate')}", key=f"btn_{key}", type="primary",
+                           width="stretch", disabled=auth.blocked("sections.write"))
 
         if go:
             status = st.empty()
@@ -506,13 +514,16 @@ def _render_ai_editor(sec: dict):
             height=80,
             placeholder=t("db.steering_ph"),
             key=_steering_key(key),
+            disabled=auth.blocked("sections.write"),
         )
 
+        # 13-3: المراجع والمطّلع يقرآن النص ولا يكتبانه
         st.session_state[ckey] = st.text_area(
             t("db.section_text"),
             value=content,
             height=300,
             key=f"ta_{key}",
+            disabled=auth.blocked("sections.write"),
         )
 
         if _has_placeholders(st.session_state[ckey]):
@@ -546,7 +557,8 @@ def _render_side_assistant(sec: dict, model: str):
         cols = st.columns(len(quick))
         for col, (qkey, label) in zip(cols, quick.items()):
             with col:
-                if st.button(label, key=f"quick_{qkey}_{key}", width="stretch"):
+                if st.button(label, key=f"quick_{qkey}_{key}", width="stretch",
+                             disabled=auth.blocked("sections.write")):
                     _apply_refinement(sec, label, model)
                     st.rerun()
 
@@ -560,12 +572,14 @@ def _render_side_assistant(sec: dict, model: str):
             )
         with c_apply:
             go = st.button(t("db.refine"), key=f"refine_{key}",
-                           type="primary", width="stretch")
+                           type="primary", width="stretch",
+                           disabled=auth.blocked("sections.write"))
         with c_ask:
             # السؤال والتعديل زرّان منفصلان عمداً: السؤال لا يمسّ نص القسم،
             # وخلطهما كان يجعل "هل غطّينا شرط السعودة؟" يُعيد كتابة القسم.
             ask = st.button(t("db.ask"), key=f"ask_{key}", width="stretch",
-                            help=t("db.ask_help"))
+                            help=t("db.ask_help"),
+                            disabled=auth.blocked("assistant.ask"))
 
         if go and request.strip():
             _apply_refinement(sec, request.strip(), model)
@@ -579,7 +593,8 @@ def _render_side_assistant(sec: dict, model: str):
 
         undo_key = f"_undo_{ckey}"
         if st.session_state.get(undo_key):
-            if st.button(f"↩️ {t('common.undo')}", key=f"undo_refine_{key}"):
+            if st.button(f"↩️ {t('common.undo')}", key=f"undo_refine_{key}",
+                         disabled=auth.blocked("sections.write")):
                 st.session_state[ckey] = st.session_state.pop(undo_key)
                 st.session_state.pop(f"ta_{key}", None)
                 st.rerun()
@@ -820,7 +835,13 @@ def _render_export(sections: list):
     if entity_name:
         st.caption(f"{t('db.submitted_to')} **{entity_name}**")
     slug = (company_name or "Proposal").replace(" ", "_")[:20]
-    blocked = has_placeholders or not payload or bool(coverage["blocking"])
+    # 13-3: التصدير يُخرج المستند من النظام — ممنوع على المطّلع. يُضاف إلى
+    # موانع التصدير القائمة (نص ناقص · متطلب حرج بلا تغطية) لا بديلاً عنها.
+    may_export = auth.can("export")
+    if not may_export:
+        st.info(t("role.export_forbidden"))
+    blocked = (has_placeholders or not payload or bool(coverage["blocking"])
+               or not may_export)
 
     col_w, col_p = st.columns(2)
 

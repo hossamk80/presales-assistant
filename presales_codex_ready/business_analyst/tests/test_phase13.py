@@ -335,3 +335,149 @@ def test_duplicate_username_is_refused_at_the_database(temp_db, auth):
     temp_db.create_user("sara", auth.hash_password("strong-pass-1"))
     assert temp_db.create_user("sara", auth.hash_password("strong-pass-2")) is None
     assert temp_db.count_users() == 1
+
+
+# ─── 13-3: الأدوار الخمسة ─────────────────────────────────────────────────────
+
+
+def _as(auth, role):
+    """يدخل بحساب بهذا الدور ويعيد معرّفه."""
+    from utils import db
+
+    username = f"user_{role}"
+    assert auth.add_user(username, "strong-pass-1", role=role) is None
+    user_id = db.get_user(username)["id"]
+    auth.start_session(user_id)
+    return user_id
+
+
+def test_writer_neither_sees_keys_nor_deletes_a_tender(auth):
+    """شرط قبول 13-3 في طبقة الصلاحيات نفسها."""
+    _as(auth, auth.WRITER)
+
+    assert auth.can("sections.write")
+    assert auth.can("tables.edit")
+    assert auth.can("projects.create")
+    assert not auth.can("settings.manage")     # المفاتيح
+    assert not auth.can("users.manage")
+    assert not auth.can("projects.delete")     # حذف منافسة
+    assert not auth.can("company.edit")
+
+
+def test_each_role_gets_exactly_its_matrix_row(auth):
+    expected = {
+        auth.ADMIN: set(auth.PERMISSIONS),
+        auth.BID_MANAGER: {
+            "data.manage", "projects.create", "projects.edit", "projects.delete",
+            "tables.edit", "sections.write", "review.run", "assistant.ask",
+            "company.edit", "export",
+        },
+        auth.WRITER: {
+            "projects.create", "projects.edit", "tables.edit", "sections.write",
+            "assistant.ask", "export",
+        },
+        auth.REVIEWER: {"review.run", "assistant.ask", "export"},
+        auth.VIEWER: set(),
+    }
+    for role, permissions in expected.items():
+        assert auth.permissions_of(role) == permissions, role
+
+
+def test_viewer_may_do_nothing_but_read(auth):
+    _as(auth, auth.VIEWER)
+    assert auth.permissions_of(auth.VIEWER) == set()
+    for permission in auth.PERMISSIONS:
+        assert auth.blocked(permission), permission
+
+
+def test_reviewer_runs_the_committee_but_writes_no_text(auth):
+    """المراجع يفحص ولا يكتب — وإلا اختلط الفحص بالتحرير."""
+    _as(auth, auth.REVIEWER)
+    assert auth.can("review.run")
+    assert not auth.can("sections.write")
+    assert not auth.can("tables.edit")
+
+
+def test_unknown_permission_is_denied_to_everyone_but_the_admin(auth):
+    """خطأ مطبعي في اسم صلاحية يجب أن يُغلق الباب لا أن يفتحه."""
+    _as(auth, auth.WRITER)
+    assert not auth.can("does.not.exist")
+
+    _as(auth, auth.ADMIN)
+    assert auth.can("does.not.exist")
+
+
+def test_unknown_role_is_treated_as_the_least_privileged(auth, temp_db):
+    """دور غريب في القاعدة (ترقية أو تلف) لا يُمنح صلاحيات."""
+    user_id = _as(auth, auth.ADMIN)
+    temp_db.set_user_role(user_id, "superuser")
+
+    assert auth.role_of() == auth.VIEWER
+    assert not auth.can("settings.manage")
+
+
+def test_new_users_get_the_least_privileged_role(auth, temp_db):
+    """حساب جديد لا يرث صلاحيات من أنشأه."""
+    assert auth.add_user("sara", "strong-pass-1") is None
+    assert temp_db.get_user("sara")["role"] == auth.WRITER
+    assert auth.NEW_USER_ROLE != auth.ADMIN
+
+
+def test_first_account_is_an_admin(auth, temp_db):
+    """وإلا لم يوجد من يدير المفاتيح ولا الحسابات في نظام جديد."""
+    assert auth.create_first_admin("boss", "strong-pass-1") is None
+    assert temp_db.get_user("boss")["role"] == auth.ADMIN
+
+
+def test_unknown_role_is_refused_on_write(auth, temp_db):
+    assert auth.add_user("sara", "strong-pass-1", role="superuser") \
+        == "au.err_unknown_role"
+    assert temp_db.get_user("sara") is None
+
+    admin = _as(auth, auth.ADMIN)
+    other = auth.add_user("omar", "strong-pass-2", role=auth.WRITER)
+    assert other is None
+    assert auth.set_role(temp_db.get_user("omar")["id"], "superuser") \
+        == "au.err_unknown_role"
+    assert admin
+
+
+def test_only_a_user_manager_changes_roles(auth, temp_db):
+    """الكاتب لا يرقّي نفسه ولا غيره."""
+    auth.add_user("omar", "strong-pass-2", role=auth.REVIEWER)
+    target = temp_db.get_user("omar")["id"]
+
+    _as(auth, auth.WRITER)
+    assert auth.set_role(target, auth.ADMIN) == "au.err_forbidden"
+    assert temp_db.get_user_by_id(target)["role"] == auth.REVIEWER
+
+
+def test_nobody_changes_their_own_role(auth, temp_db):
+    """خفض ذاتي بالخطأ يقفل الإدارة على الجميع."""
+    admin = _as(auth, auth.ADMIN)
+    auth.add_user("second", "strong-pass-2", role=auth.ADMIN)
+
+    assert auth.can_change_role(admin) is False
+    assert auth.set_role(admin, auth.VIEWER) == "au.err_last_admin"
+    assert temp_db.get_user_by_id(admin)["role"] == auth.ADMIN
+
+
+def test_the_last_admin_keeps_role_and_account(auth, temp_db):
+    """نظام يعمل بلا مدير نظام لا تُدار مفاتيحه ولا حساباته."""
+    boss = _as(auth, auth.ADMIN)
+    auth.add_user("omar", "strong-pass-2", role=auth.WRITER)
+    writer_id = temp_db.get_user("omar")["id"]
+
+    # مدير آخر يحاول تنزيل المدير الوحيد
+    auth.start_session(writer_id)
+    temp_db.set_user_role(writer_id, auth.ADMIN)
+    assert auth.can_change_role(boss) is True     # لم يعد الوحيد
+
+    temp_db.set_user_role(writer_id, auth.WRITER)
+    assert auth.can_change_role(boss) is False    # عاد وحيداً
+    assert auth.can_disable(boss) is False
+
+
+def test_role_of_falls_back_for_a_signed_out_visitor(auth):
+    assert auth.role_of() == auth.VIEWER
+    assert auth.blocked("projects.edit")
