@@ -15,6 +15,7 @@ from utils.ai_engine import (
     ai_generate_json,
     build_prompt,
 )
+from components import theme
 from utils import auth, consistency
 from utils.file_handler import resolve_document_tokens
 from utils.i18n import t
@@ -25,11 +26,11 @@ def _language() -> str:
 
 
 SEVERITY_ORDER = {"حرجة": 0, "متوسطة": 1, "طفيفة": 2}
-SEVERITY_STYLE = {
-    "حرجة": ("🔴", "#FEE2E2", "#991B1B"),
-    "متوسطة": ("🟡", "#FEF3C7", "#92400E"),
-    "طفيفة": ("🔵", "#DBEAFE", "#1E40AF"),
-}
+# النغمة من نظام التصميم لا ألوان مكتوبة هنا — الهوية تتغيّر من مكان واحد.
+SEVERITY_TONE = {"حرجة": "error", "متوسطة": "warn", "طفيفة": "info"}
+SEVERITY_ICON = {"حرجة": "exclamation-triangle-fill",
+                 "متوسطة": "exclamation-circle-fill",
+                 "طفيفة": "info-circle-fill"}
 
 
 def _written_sections() -> list:
@@ -170,21 +171,21 @@ def _apply_finding(finding: dict, sections: list, model: str) -> bool:
 
 
 def _render_finding(finding: dict, sections: list, model: str):
-    icon, bg, fg = SEVERITY_STYLE.get(finding["severity"], SEVERITY_STYLE["متوسطة"])
-    lens_icon = REVIEW_LENSES[finding["lens"]]["icon"]
+    tone = SEVERITY_TONE.get(finding["severity"], "warn")
+    glyph = SEVERITY_ICON.get(finding["severity"], SEVERITY_ICON["متوسطة"])
+    esc = theme.escape
 
-    st.markdown(
-        f"""<div style="background:{bg};border-radius:8px;padding:10px 14px;margin-top:10px;
-                    font-family:Tajawal,sans-serif;">
-            <span style="color:{fg};font-weight:700;">{icon} {finding['severity']}</span>
-            <span style="color:#475569;"> · {lens_icon} {t("rv.review_of")} {finding['lens_label']}</span>
-            <span style="color:#475569;"> · 📄 {finding['section'] or t("rv.section_unknown")}</span>
-            {f'<span style="color:#065F46;font-weight:700;"> · {t("rv.applied")}</span>' if finding['applied'] else ''}
-        </div>""",
-        unsafe_allow_html=True,
+    applied = (
+        f'<br>{theme.pill_html(t("rv.applied"), "ok")}' if finding["applied"] else ""
     )
-    st.markdown(f"{t('rv.issue')} {finding['issue']}")
-    st.caption(f"{t('rv.impact')} {finding['impact']}")
+    theme.finding_card(
+        f'{finding["severity"]} · {finding["lens_label"]} · '
+        f'{finding["section"] or t("rv.section_unknown")}',
+        f'<b>{esc(t("rv.issue"))}</b> {esc(finding["issue"])}<br>'
+        f'<b>{esc(t("rv.impact"))}</b> {esc(finding["impact"])}{applied}',
+        tone=tone,
+        bi_icon=glyph,
+    )
 
     if finding["suggested_text"]:
         with st.expander(t("rv.suggestion")):
@@ -236,13 +237,24 @@ def _render_agent_scores(findings: list):
     if not scores:
         return
 
-    st.markdown(f"### {t('rv.agents')}")
+    theme.block_title(t("rv.agents"), bi_icon="clipboard-check")
     overall = _overall_readiness(scores)
 
-    cols = st.columns(len(scores) + 1)
-    for col, data in zip(cols, scores.values()):
-        col.metric(f"{data['icon']} {data['label']}", f"{data['score']} / 100")
-    cols[-1].metric(t("rv.overall_readiness"), f"{overall} / 100")
+    # الحلقة تحمل الرقم الحاكم: أضعف زاوية لا المتوسط.
+    theme.readiness_ring(
+        overall,
+        title=t("rv.overall_readiness"),
+        description=t("rv.readiness_hint"),
+        label=t("rv.readiness_label"),
+        tone="ok" if overall >= 80 else "warn" if overall >= 60 else "error",
+    )
+    theme.stat_tiles(
+        [(f"{data['score']} / 100", data["label"]) for data in scores.values()],
+        tones=[
+            "ok" if data["score"] >= 80 else "warn" if data["score"] >= 60 else "error"
+            for data in scores.values()
+        ],
+    )
 
     if overall < 60:
         st.error(t("rv.not_ready"))

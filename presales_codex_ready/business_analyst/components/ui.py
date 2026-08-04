@@ -5,6 +5,7 @@ import inspect
 import streamlit as st
 from typing import Optional, Callable
 
+from components import theme
 from utils.i18n import t
 
 
@@ -21,11 +22,10 @@ def _accepts_two_args(fn: Callable) -> bool:
 
 
 def section_card(title: str, icon: str = ""):
-    """Context manager for a visually grouped card section."""
+    """ترويسة قسم مُجمَّعة بصرياً / A visually grouped card section header."""
     st.markdown(
-        f"""<div class="app-card">
-            <div class="app-card-title">{icon} {title}</div>
-        </div>""",
+        f'<div class="app-card"><div class="app-card-title">'
+        f'{theme.escape(icon)} {theme.escape(title)}</div></div>',
         unsafe_allow_html=True,
     )
 
@@ -107,32 +107,22 @@ def placeholder_warning(text: str) -> bool:
 
 def status_badge(label: str, status: str):
     """
-    Render a small inline badge.
-    status: 'ok' | 'warn' | 'error' | 'info'
+    شارة حالة صغيرة / A small inline status badge.
+    status: 'ok' | 'warn' | 'error' | 'info' | 'neutral'
     """
-    colors = {
-        "ok": ("#D1FAE5", "#065F46"),
-        "warn": ("#FEF3C7", "#92400E"),
-        "error": ("#FEE2E2", "#991B1B"),
-        "info": ("#DBEAFE", "#1E40AF"),
-    }
-    bg, fg = colors.get(status, colors["info"])
-    st.markdown(
-        f'<span style="background:{bg};color:{fg};padding:3px 10px;border-radius:20px;'
-        f'font-size:12px;font-weight:600;font-family:Tajawal,sans-serif;">{label}</span>',
-        unsafe_allow_html=True,
-    )
+    theme.pill(label, status)
 
 
-def metric_card(title: str, value: str, subtitle: str = "", color: str = "#0F172A"):
+def metric_card(title: str, value: str, subtitle: str = "", tone: str = "info"):
+    """بطاقة رقم واحد بلون النغمة / A single-figure card tinted by tone."""
+    fg, _ = theme.tone_colors(tone)
+    esc = theme.escape
+    note = (f'<div style="font-size:12px;color:{theme.TOKENS["muted_2"]};">'
+            f'{esc(subtitle)}</div>') if subtitle else ""
     st.markdown(
-        f"""
-        <div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;
-                    padding:18px 20px;margin-bottom:8px;border-top:3px solid {color};">
-            <div style="font-size:12px;color:#64748B;font-family:Tajawal,sans-serif;">{title}</div>
-            <div style="font-size:26px;font-weight:700;color:{color};font-family:Tajawal,sans-serif;margin:4px 0;">{value}</div>
-            <div style="font-size:12px;color:#94A3B8;font-family:Tajawal,sans-serif;">{subtitle}</div>
-        </div>
-        """,
+        f'<div class="app-card" style="border-top:3px solid {fg};">'
+        f'<div style="font-size:12px;color:{theme.TOKENS["muted"]};">{esc(title)}</div>'
+        f'<div style="font-size:24px;font-weight:700;color:{fg};margin:4px 0;">'
+        f'{esc(value)}</div>{note}</div>',
         unsafe_allow_html=True,
     )

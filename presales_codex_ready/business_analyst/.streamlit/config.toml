@@ -1,0 +1,15 @@
+# سمة Streamlit الأساسية / Streamlit base theme.
+#
+# الألوان هنا هي نفسها في `components/theme.py`. سببها أن عناصر Streamlit
+# الداخلية (تحديد التبويب، مربّع الاختيار، المنزلق، أزرار النماذج) تُلوَّن من
+# السمة لا من CSS المحقون — فلو تُركت افتراضية ظهر الأحمر وسط هوية زرقاء.
+[theme]
+base = "light"
+primaryColor = "#2270c1"
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#111827"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"

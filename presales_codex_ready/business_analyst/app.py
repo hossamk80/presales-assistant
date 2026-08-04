@@ -11,10 +11,11 @@ st.set_page_config(
     page_title="محلل متطلبات الأعمال الذكي",
     page_icon="🏢",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ─── Imports (after page config) ──────────────────────────────────────────────
+from components import theme
 from utils.state import init_state, load_company_snapshot
 from utils.ai_engine import estimate_tokens
 from utils import auth, db, providers
@@ -32,263 +33,10 @@ if not st.session_state.get("_company_loaded"):
         st.session_state["c_word_template_bytes"] = _template
     st.session_state["_company_loaded"] = True
 
-# ─── Global Styles ────────────────────────────────────────────────────────────
-# الاتجاه يتبع لغة الواجهة: عربي/كليهما من اليمين، إنجليزي من اليسار.
-_DIR = "rtl" if ui_is_rtl() else "ltr"
-_SIDE = "right" if ui_is_rtl() else "left"
-
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap');
-
-/* ── Base & Typography ── */
-*, .stApp, .main, .block-container,
-[data-testid="stSidebar"], [data-testid="stHeader"] {
-    font-family: 'Tajawal', 'Segoe UI', sans-serif !important;
-}
-
-/* ── أيقونات Material ──
-   القاعدة أعلاه تستهدف كل العناصر (*) وكانت تفرض Tajawal على أيقونات
-   Streamlit أيضاً. الأيقونة هناك محرف ارتباط (ligature) في خط Material،
-   فإذا فُرض عليها خط بلا ارتباطات ظهر اسمها نصاً خاماً متداخلاً مع العنوان
-   (keyboard_arrow_down فوق ترويسة الموسّع). نعيد لها خطها هنا.
-   مُحدِّد السمة أعلى أولوية من * فيغلبها رغم !important. */
-span[data-testid="stIconMaterial"],
-[data-testid="stIconMaterial"],
-.material-icons, .material-icons-outlined,
-.material-symbols-rounded, .material-symbols-outlined,
-span[class*="material-symbols"] {
-    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
-                 'Material Icons' !important;
-    font-weight: normal !important;
-    font-style: normal !important;
-    letter-spacing: normal !important;
-    text-transform: none !important;
-    direction: ltr !important;
-    white-space: nowrap !important;
-    word-wrap: normal !important;
-    font-feature-settings: 'liga' !important;
-    -webkit-font-feature-settings: 'liga' !important;
-    font-variant-ligatures: common-ligatures !important;
-    -webkit-font-smoothing: antialiased;
-}
-
-.stApp, body {
-    background-color: #F1F5F9 !important;
-    color: #1E293B !important;
-}
-
-.block-container {
-    padding-top: 1.5rem !important;
-    padding-bottom: 2rem !important;
-    max-width: 1200px;
-}
-
-/* ── RTL Global ── */
-.stApp, .main, .block-container,
-[data-testid="stSidebar"],
-.stTextInput, .stTextArea, .stSelectbox,
-.stRadio, .stCheckbox, .stExpander,
-.stDataFrame, .stMarkdown {
-    direction: rtl;
-    text-align: right;
-}
-
-/* ── Sidebar ── */
-[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0F172A 0%, #1E293B 100%) !important;
-    border-left: none !important;
-}
-
-[data-testid="stSidebar"] * {
-    color: #CBD5E1 !important;
-}
-
-[data-testid="stSidebar"] .stRadio label {
-    color: #E2E8F0 !important;
-    font-size: 14px !important;
-}
-
-[data-testid="stSidebar"] hr {
-    border-color: #334155 !important;
-}
-
-/* ── Inputs ── */
-.stTextInput input,
-.stTextArea textarea {
-    direction: rtl;
-    text-align: right;
-    background: #FFFFFF !important;
-    border: 1.5px solid #CBD5E1 !important;
-    border-radius: 8px !important;
-    font-family: 'Tajawal', sans-serif !important;
-    font-size: 14px !important;
-    color: #1E293B !important;
-    transition: border-color 0.2s;
-}
-.stTextInput input:focus,
-.stTextArea textarea:focus {
-    border-color: #3B82F6 !important;
-    box-shadow: 0 0 0 3px rgba(59,130,246,0.15) !important;
-}
-
-/* ── Buttons ── */
-.stButton > button {
-    font-family: 'Tajawal', sans-serif !important;
-    font-weight: 600 !important;
-    border-radius: 8px !important;
-    transition: all 0.2s ease !important;
-}
-
-.stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, #1D4ED8, #2563EB) !important;
-    color: #FFFFFF !important;
-    border: none !important;
-    box-shadow: 0 2px 8px rgba(37,99,235,0.3) !important;
-}
-
-.stButton > button[kind="primary"]:hover {
-    background: linear-gradient(135deg, #1E40AF, #1D4ED8) !important;
-    box-shadow: 0 4px 12px rgba(37,99,235,0.4) !important;
-    transform: translateY(-1px);
-}
-
-.stButton > button[kind="secondary"] {
-    background: #FFFFFF !important;
-    color: #1E293B !important;
-    border: 1.5px solid #CBD5E1 !important;
-}
-
-/* ── Cards & Containers ── */
-div[data-testid="stContainer"],
-div[data-testid="stVerticalBlock"] > div[data-testid="stContainer"] {
-    background: #FFFFFF;
-    border-radius: 12px;
-    border: 1px solid #E2E8F0;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    padding: 20px 24px;
-    margin-bottom: 16px;
-}
-
-/* ── Expanders ── */
-.streamlit-expanderHeader {
-    font-weight: 700 !important;
-    font-size: 15px !important;
-    color: #1E293B !important;
-    background: #F8FAFC !important;
-    border-radius: 8px !important;
-}
-
-/* ── Tabs ── */
-.stTabs [data-baseweb="tab-list"] {
-    gap: 4px;
-    background: #F1F5F9;
-    padding: 4px;
-    border-radius: 10px;
-}
-
-.stTabs [data-baseweb="tab"] {
-    font-family: 'Tajawal', sans-serif !important;
-    font-weight: 600 !important;
-    border-radius: 8px !important;
-    padding: 8px 16px !important;
-    color: #64748B !important;
-}
-
-.stTabs [aria-selected="true"] {
-    background: #FFFFFF !important;
-    color: #1D4ED8 !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.1) !important;
-}
-
-/* ── Metrics ── */
-div[data-testid="metric-container"] {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 10px;
-    padding: 12px 16px;
-}
-
-/* ── Data Editor ── */
-.stDataFrame, [data-testid="stDataFrame"] {
-    direction: rtl;
-}
-
-/* ── Alerts ── */
-.stAlert {
-    border-radius: 8px !important;
-    font-family: 'Tajawal', sans-serif !important;
-}
-
-/* ── Sidebar Nav Radio ── */
-[data-testid="stSidebar"] .stRadio > div {
-    gap: 4px;
-}
-[data-testid="stSidebar"] .stRadio label {
-    padding: 8px 12px !important;
-    border-radius: 6px !important;
-    transition: background 0.15s;
-}
-[data-testid="stSidebar"] .stRadio label:hover {
-    background: rgba(255,255,255,0.08) !important;
-}
-
-/* ── Token Badge ── */
-.token-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: #1E293B;
-    color: #94A3B8;
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-family: 'Tajawal', sans-serif;
-}
-.token-badge span {
-    color: #60A5FA;
-    font-weight: 700;
-}
-
-/* ── Page Title ── */
-h1 { 
-    color: #0F172A !important;
-    font-size: 24px !important;
-    font-weight: 800 !important;
-}
-h2, h3 { 
-    color: #1E293B !important;
-    font-weight: 700 !important;
-}
-
-/* ── Dividers ── */
-hr { border-color: #E2E8F0 !important; }
-
-/* ── Select boxes ── */
-.stSelectbox [data-baseweb="select"] {
-    direction: rtl;
-    font-family: 'Tajawal', sans-serif !important;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-# ─── اتجاه الواجهة ───────────────────────────────────────────────────────────
-# يُلحق بعد الأنماط الثابتة فيغلبها بترتيب الورود. عربي/كليهما من اليمين،
-# إنجليزي خالص من اليسار.
-st.markdown(
-    f"""<style>
-    .stApp, .main, .block-container, [data-testid="stSidebar"],
-    .stTextInput, .stTextArea, .stSelectbox, .stRadio, .stCheckbox,
-    .stExpander, .stDataFrame, .stMarkdown,
-    .stTextInput input, .stTextArea textarea,
-    .stSelectbox [data-baseweb="select"] {{
-        direction: {_DIR} !important;
-        text-align: {_SIDE} !important;
-    }}
-    </style>""",
-    unsafe_allow_html=True,
-)
+# ─── الهوية البصرية ───────────────────────────────────────────────────────────
+# كل الأنماط في `components/theme.py`. الاتجاه يتبع لغة الواجهة: عربي/كليهما
+# من اليمين، إنجليزي من اليسار.
+theme.inject(rtl=ui_is_rtl())
 
 
 # ─── حارس الدخول (13-2) ───────────────────────────────────────────────────────
@@ -303,96 +51,56 @@ if not auth.is_authenticated():
 
 # ─── سجل الصفحات ──────────────────────────────────────────────────────────────
 # المفتاح ثابت لا يتغيّر مع اللغة؛ التسمية تأتي من i18n وقت الرسم.
-NAV_PAGES = {
-    "dashboard": "🏠",
-    "tenders": "📁",
-    "workspace": "🚀",
-    "company": "🏢",
-    "settings": "⚙️",
-    "data": "💾",
-}
+NAV_PAGES = ["dashboard", "tenders", "workspace", "company", "settings", "data"]
 
 
-# ─── Sidebar ──────────────────────────────────────────────────────────────────
-with st.sidebar:
-    # Logo & Brand
-    st.markdown(
-        f"""<div style="text-align:center; padding: 16px 0 8px 0;">
-        <div style="font-size: 36px;">🏢</div>
-        <div style="font-size: 20px; font-weight: 800; color: #F1F5F9;
-                    font-family: Tajawal, sans-serif; letter-spacing: -0.5px;">
-            {t("side.brand")}
-        </div>
-        <div style="font-size: 11px; color: #64748B; font-family: Tajawal, sans-serif;">
-            {t("side.tagline")}
-        </div>
-    </div>""",
-        unsafe_allow_html=True,
+# ─── الشريط العلوي ────────────────────────────────────────────────────────────
+# حلّ محلّ الشريط الجانبي: التنقّل والهوية والخروج في سطر واحد، والمساحة
+# الكاملة للعمل نفسه.
+_user = auth.current_user()
+_current = st.session_state.get("nav_selection", "dashboard")
+
+_logout = theme.nav_bar(
+    items=[(key, t(f"nav.{key}")) for key in NAV_PAGES],
+    current=_current,
+    brand=t("side.brand"),
+    tagline=t("side.tagline"),
+    user_name=_user.get("display_name") or _user["username"],
+    user_role=t("role." + auth.role_of(_user)),
+    logout_label=t("au.logout"),
+)
+
+if _logout:
+    auth.logout()
+    st.rerun()
+
+# ─── شريط الحالة ──────────────────────────────────────────────────────────────
+# ما كان في الشريط الجانبي: الموفّر والشركة والكراسة والمنافسة المفتوحة.
+# الحالة تتبع الموفّر المختار لا Gemini وحده — والموفّر المحلي جاهز بلا مفتاح.
+_api_ok = providers.has_credentials()
+_company = st.session_state.get("c_name")
+_rfp_text = st.session_state.get("rfp_raw_text", "")
+_project_name = st.session_state.get("_project_name")
+
+_status = [
+    ("folder2-open", f'{t("side.tender")}: {_project_name or t("side.tender_none")}',
+     "info" if _project_name else "neutral"),
+    ("shield-check",
+     f'{providers.active_provider_label()}: '
+     f'{t("side.api_connected") if _api_ok else t("side.api_missing")}',
+     "ok" if _api_ok else "error"),
+    ("building", f'{t("side.company")}: {_company or t("common.not_set")}',
+     "ok" if _company else "warn"),
+    ("file-earmark-text",
+     f'{t("side.rfp")}: '
+     f'{t("side.rfp_loaded") if _rfp_text else t("side.rfp_missing")}',
+     "ok" if _rfp_text else "neutral"),
+]
+if _rfp_text:
+    _status.append(
+        ("cpu", f'{t("side.tokens")} {estimate_tokens(_rfp_text):,}', "info")
     )
-
-    st.divider()
-
-    nav = st.radio(
-        "nav",
-        options=list(NAV_PAGES),
-        format_func=lambda k: f"{NAV_PAGES[k]} {t('nav.' + k)}",
-        label_visibility="collapsed",
-        key="nav_radio",
-    )
-    st.session_state["nav_selection"] = nav
-
-    st.divider()
-
-    # Status Panel
-    project_name = st.session_state.get("_project_name")
-    st.markdown(
-        f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:4px;">
-            <div>{'📂' if project_name else '📁'} &nbsp; {t("side.tender")}:
-            {project_name or t("side.tender_none")}</div>
-        </div>""",
-        unsafe_allow_html=True,
-    )
-
-    company = st.session_state.get("c_name")
-    # الحالة تتبع الموفّر المختار لا Gemini وحده — والموفّر المحلي جاهز بلا مفتاح
-    api_ok = providers.has_credentials()
-    provider_label = providers.active_provider_label()
-    rfp_ok = bool(st.session_state.get("rfp_raw_text"))
-
-    st.markdown(
-        f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:8px 4px;">
-        <div style="margin-bottom:4px;">{'🟢' if api_ok else '🔴'} &nbsp; {provider_label}:
-            {t("side.api_connected") if api_ok else t("side.api_missing")}</div>
-        <div style="margin-bottom:4px;">{'🟢' if company else '🟡'} &nbsp; {t("side.company")}:
-            {company or t("common.not_set")}</div>
-        <div>{'🟢' if rfp_ok else '⚪'} &nbsp; {t("side.rfp")}:
-            {t("side.rfp_loaded") if rfp_ok else t("side.rfp_missing")}</div>
-    </div>""",
-        unsafe_allow_html=True,
-    )
-
-    if rfp_ok:
-        tokens = estimate_tokens(st.session_state["rfp_raw_text"])
-        st.markdown(
-            f'<div class="token-badge">{t("side.tokens")} <span>{tokens:,}</span></div>',
-            unsafe_allow_html=True,
-        )
-
-    # ── هوية المستخدم والخروج (13-2) ──
-    # ظاهرة في كل شاشة: من يعمل الآن على هذا الجهاز سؤال يتكرّر في قسم عطاءات
-    # يتشارك أجهزته، والخروج يجب أن يكون في متناول اليد لا في صفحة إعدادات.
-    st.divider()
-    _user = auth.current_user()
-    st.markdown(
-        f"""<div style="font-family:Tajawal,sans-serif;font-size:12px;padding:4px;">
-        <div>👤 &nbsp; {_user.get("display_name") or _user["username"]}</div>
-        <div style="color:#64748B;">🎫 &nbsp; {t("role." + auth.role_of(_user))}</div>
-    </div>""",
-        unsafe_allow_html=True,
-    )
-    if st.button(f"🚪 {t('au.logout')}", width="stretch", key="logout_btn"):
-        auth.logout()
-        st.rerun()
+theme.status_strip(_status)
 
 
 # ─── Page Routing ─────────────────────────────────────────────────────────────
@@ -400,92 +108,75 @@ nav = st.session_state.get("nav_selection", "dashboard")
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 if nav == "dashboard":
-    st.title(t("dash.title"))
-    st.markdown(t("dash.welcome"))
+    theme.page_header(t("dash.title"), t("dash.welcome"), bi_icon="grid")
 
-    st.divider()
+    # ── مؤشّرات الحالة ──
+    from utils.state import get_sections, section_content_key
 
-    # KPI Cards
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        connected = providers.has_credentials()
-        st.metric(providers.active_provider_label(),
-                  f"✅ {t('side.api_connected')}" if connected else f"❌ {t('side.api_missing')}")
-    with c2:
-        st.metric(t("dash.company_name"), st.session_state.get("c_name") or t("common.none"))
-    with c3:
-        rfp_text = st.session_state.get("rfp_raw_text", "")
-        st.metric(
-            t("side.rfp"),
-            f"{estimate_tokens(rfp_text):,} {t('dash.tokens_unit')}" if rfp_text
-            else t("dash.not_loaded"),
-        )
-    with c4:
-        from utils.state import get_sections, section_content_key
-        included = [s for s in get_sections() if s.get("include") and s["kind"] == "ai"]
-        done = sum(
-            1 for s in included
-            if str(st.session_state.get(section_content_key(s["key"]), "")).strip()
-        )
-        st.metric(t("dash.sections_done"), f"{done} / {len(included)}")
+    _included = [s for s in get_sections() if s.get("include") and s["kind"] == "ai"]
+    _done = sum(
+        1 for s in _included
+        if str(st.session_state.get(section_content_key(s["key"]), "")).strip()
+    )
+    _ready_pct = round(100 * _done / len(_included)) if _included else 0
 
-    st.divider()
+    theme.kpi_row(
+        [
+            ("shield-check", providers.active_provider_label(),
+             t("side.api_connected") if _api_ok else t("side.api_missing")),
+            ("building", t("dash.company_name"), _company or t("common.none")),
+            ("file-earmark-text", t("side.rfp"),
+             f"{estimate_tokens(_rfp_text):,} {t('dash.tokens_unit')}" if _rfp_text
+             else t("dash.not_loaded")),
+            ("list-check", t("dash.sections_done"),
+             f"{_ready_pct}% ({_done} / {len(_included)})"),
+        ],
+        tones=["ok" if _api_ok else "error", None, None, None],
+    )
 
-    # Quick Workflow Guide
-    st.markdown(f"### {t('dash.workflow')}")
-    steps = [
-        (str(i), t(f"dash.step{i}"), t(f"dash.step{i}d"), color)
-        for i, color in enumerate(
-            ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444"], start=1
-        )
-    ]
-    cols = st.columns(5)
-    for col, (num, title, desc, color) in zip(cols, steps):
-        with col:
-            st.markdown(f"""
-            <div style="background:#fff;border:1px solid #E2E8F0;border-radius:12px;
-                        padding:16px;text-align:center;border-top:3px solid {color};
-                        font-family:Tajawal,sans-serif;">
-                <div style="font-size:28px;font-weight:800;color:{color};">{num}</div>
-                <div style="font-size:14px;font-weight:700;color:#1E293B;margin:6px 0;">{title}</div>
-                <div style="font-size:12px;color:#64748B;">{desc}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    # ── مسار العمل ──
+    st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+    theme.block_title(t("dash.workflow"), bi_icon="signpost-split")
+    theme.step_cards([
+        ("gear", t("dash.step1"), t("dash.step1d")),
+        ("cloud-arrow-up", t("dash.step2"), t("dash.step2d")),
+        ("cpu", t("dash.step3"), t("dash.step3d")),
+        ("file-earmark-plus", t("dash.step4"), t("dash.step4d")),
+        ("check2-all", t("dash.step5"), t("dash.step5d")),
+    ])
 
-    st.divider()
-
-    # Feature Highlights
-    st.markdown(f"### {t('dash.capabilities')}")
-    f1, f2, f3 = st.columns(3)
-    features = [(t(f"dash.cap{i}"), t(f"dash.cap{i}d")) for i in (1, 2, 3)]
-    for col, (title, desc) in zip([f1, f2, f3], features):
-        with col:
-            st.markdown(f"""
-            <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;
-                        padding:16px;font-family:Tajawal,sans-serif;">
-                <div style="font-size:15px;font-weight:700;color:#1E293B;">{title}</div>
-                <div style="font-size:13px;color:#64748B;margin-top:4px;">{desc}</div>
-            </div>
-            """, unsafe_allow_html=True)
+    # ── القدرات ──
+    st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+    theme.block_title(t("dash.capabilities"), bi_icon="stars")
+    theme.capability_cards([
+        ("lightning-charge", t("dash.cap1"), t("dash.cap1d")),
+        ("bullseye", t("dash.cap2"), t("dash.cap2d")),
+        ("magic", t("dash.cap3"), t("dash.cap3d")),
+    ])
 
 
 # ── Projects ──────────────────────────────────────────────────────────────────
 elif nav == "tenders":
+    theme.page_header(t("proj.title"), bi_icon="folder2-open")
     from views import projects
     projects.render()
 
 
 # ── Workspace ─────────────────────────────────────────────────────────────────
 elif nav == "workspace":
-    st.title(f"🚀 {t('nav.workspace')}")
+    theme.page_header(
+        f"{t('nav.workspace')}"
+        + (f" — {_project_name}" if _project_name else ""),
+        bi_icon="layout-text-sidebar-reverse",
+    )
 
     from views import analysis, tables, doc_builder, review
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        f"📥 1. {t('an.tab')}",
-        f"📊 2. {t('tb.tab')}",
-        f"📄 3. {t('db.tab')}",
-        f"🔍 4. {t('rv.tab')}",
+        f"1. {t('an.tab')}",
+        f"2. {t('tb.tab')}",
+        f"3. {t('db.tab')}",
+        f"4. {t('rv.tab')}",
     ])
     with tab1:
         analysis.render()
@@ -499,21 +190,21 @@ elif nav == "workspace":
 
 # ── Company Profile ───────────────────────────────────────────────────────────
 elif nav == "company":
-    st.title(f"🏢 {t('nav.company')}")
+    theme.page_header(t("nav.company"), t("co.subtitle"), bi_icon="buildings")
     from views import company
     company.render()
 
 
 # ── Settings ─────────────────────────────────────────────────────────────────
 elif nav == "settings":
-    st.title(f"⚙️ {t('nav.settings')}")
+    theme.page_header(t("st.title"), bi_icon="gear")
     from views import settings
     settings.render_settings()
 
 
 # ── Data Management ───────────────────────────────────────────────────────────
 elif nav == "data":
-    st.title(f"💾 {t('nav.data')}")
+    theme.page_header(t("dm.title"), bi_icon="hdd-stack")
     from views import settings
     settings.render_data()
 
