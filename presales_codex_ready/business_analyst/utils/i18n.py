@@ -109,58 +109,58 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     # ── لوحة التحكم / Dashboard ──
     "dash.title": {"ar": "لوحة التحكم", "en": "Dashboard"},
     "dash.welcome": {
-        "ar": "مرحباً بك في **محلل متطلبات الأعمال الذكي** لتحليل كراسات الشروط وبناء العروض الفنية.",
-        "en": "Welcome to the **Smart Business Requirements Analyst** — tender analysis and technical proposal drafting.",
+        "ar": "نظرة سريعة على حالة عملك الحالي: تحليل كراسات الشروط وبناء العروض الفنية.",
+        "en": "A quick view of where your work stands: tender analysis and technical proposal drafting.",
     },
     "dash.company_name": {"ar": "اسم الشركة", "en": "Company"},
     "dash.sections_done": {"ar": "الأقسام المكتملة", "en": "Sections drafted"},
-    "dash.workflow": {"ar": "🗺️ خطوات سير العمل", "en": "🗺️ Workflow"},
-    "dash.capabilities": {"ar": "✨ قدرات المنصة", "en": "✨ Capabilities"},
+    "dash.workflow": {"ar": "خطوات سير العمل", "en": "Workflow"},
+    "dash.capabilities": {"ar": "قدرات المنصة", "en": "Capabilities"},
     "dash.tokens_unit": {"ar": "توكن", "en": "tokens"},
     "dash.not_loaded": {"ar": "لم تُحمَّل", "en": "Not loaded"},
-    "dash.step1": {"ar": "⚙️ الإعدادات", "en": "⚙️ Settings"},
+    "dash.step1": {"ar": "١. الإعداد الأولي", "en": "1. Initial setup"},
     "dash.step1d": {
         "ar": "أدخل مفتاح Gemini API وبيانات الشركة.",
         "en": "Add your Gemini API key and company details.",
     },
-    "dash.step2": {"ar": "📥 رفع المرفقات", "en": "📥 Upload attachments"},
+    "dash.step2": {"ar": "٢. رفع المرفقات", "en": "2. Upload attachments"},
     "dash.step2d": {
         "ar": "ارفع مرفقات المنافسة وصنّفها (مع OCR).",
         "en": "Upload and classify tender attachments (with OCR).",
     },
-    "dash.step3": {"ar": "🤖 التحليل الذكي", "en": "🤖 AI analysis"},
+    "dash.step3": {"ar": "٣. التحليل الذكي", "en": "3. AI analysis"},
     "dash.step3d": {
         "ar": "سياق المشروع · Go/No-Go · الأوزان · الكميات.",
         "en": "Project context · Go/No-Go · weights · BOQ.",
     },
-    "dash.step4": {"ar": "📄 بناء العرض", "en": "📄 Draft proposal"},
+    "dash.step4": {"ar": "٤. بناء العرض", "en": "4. Draft proposal"},
     "dash.step4d": {
         "ar": "اقترح الهيكل وصُغ كل قسم من الكراسة.",
         "en": "Propose the outline and draft each section.",
     },
-    "dash.step5": {"ar": "🔍 المراجعة والتسليم", "en": "🔍 Review & deliver"},
+    "dash.step5": {"ar": "٥. المراجعة النهائية", "en": "5. Final review"},
     "dash.step5d": {
         "ar": "راجع من ثلاث زوايا وصدّر Word أو PDF.",
         "en": "Three-lens review, then export Word or PDF.",
     },
-    "dash.cap1": {"ar": "🤖 تحليل ذكي شامل", "en": "🤖 Full AI analysis"},
+    "dash.cap1": {"ar": "تحليل ذكي شامل", "en": "Full AI analysis"},
     "dash.cap1d": {
         "ar": "Go/No-Go · مصفوفة التقييم · فجوات الامتثال",
         "en": "Go/No-Go · evaluation matrix · compliance gaps",
     },
-    "dash.cap2": {"ar": "📄 منشئ الوثائق", "en": "📄 Document builder"},
+    "dash.cap2": {"ar": "منشئ الوثائق", "en": "Document builder"},
     "dash.cap2d": {
         "ar": "هيكل مقترح · حقن القوالب · تصدير Word و PDF",
         "en": "Proposed outline · template injection · Word & PDF",
     },
-    "dash.cap3": {"ar": "🔍 مراجعة ثلاثية", "en": "🔍 Three-lens review"},
+    "dash.cap3": {"ar": "مراجعة ثلاثية", "en": "Three-lens review"},
     "dash.cap3d": {
         "ar": "فنية · تجارية · قانونية · تطبيق بنقرة",
         "en": "Technical · commercial · legal · one-click apply",
     },
 
     # ── المنافسات / Tenders ──
-    "proj.title": {"ar": "📁 المنافسات المحفوظة", "en": "📁 Saved tenders"},
+    "proj.title": {"ar": "المنافسات المحفوظة", "en": "Saved tenders"},
     "proj.caption": {
         "ar": "كل منافسة تُحفظ على القرص محلياً مع تحليلاتها وأقسامها وجداولها.",
         "en": "Each tender is stored locally with its analyses, sections and tables.",
@@ -625,6 +625,13 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "rv.running": {"ar": "⏳ جاري المراجعة {lens}…", "en": "⏳ Reviewing — {lens}…"},
     "rv.clean": {"ar": "✅ لم تُرصد ملاحظات في آخر مراجعة.", "en": "✅ No findings in the last review."},
     "rv.readiness": {"ar": "درجة الجاهزية", "en": "Readiness"},
+    "rv.readiness_hint": {
+        "ar": "الجاهزية الإجمالية هي أضعف زاوية لا متوسط الزوايا — زاوية "
+              "واحدة ساقطة تكفي لرفض العرض.",
+        "en": "Overall readiness is the weakest lens, not the average — one "
+              "failing lens is enough to sink the bid.",
+    },
+    "rv.readiness_label": {"ar": "الجاهزية", "en": "Readiness"},
     "rv.overall_readiness": {"ar": "🎯 الجاهزية الإجمالية", "en": "🎯 Overall readiness"},
     "rv.assessment": {"ar": "التقييم", "en": "Assessment"},
     "rv.recommendations": {"ar": "توصيات قابلة للتنفيذ", "en": "Actionable recommendations"},
@@ -655,7 +662,11 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "rv.review_of": {"ar": "مراجعة", "en": "review"},
 
     # ── ملف الشركة / Company ──
-    "co.title": {"ar": "### 🏢 ملف الشركة", "en": "### 🏢 Company profile"},
+    "co.title": {"ar": "ملف الشركة", "en": "Company profile"},
+    "co.subtitle": {
+        "ar": "البيانات ومستودع المعرفة الذي يعتمد عليه النموذج في صياغة عروضك.",
+        "en": "The data and knowledge base the model draws on when drafting your proposals.",
+    },
     "co.legal": {"ar": "📋 البيانات الأساسية والقانونية", "en": "📋 Core & legal details"},
     "co.name": {"ar": "اسم الشركة *", "en": "Company name *"},
     "co.cr": {"ar": "رقم السجل التجاري", "en": "Commercial registration"},
@@ -885,12 +896,12 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
 
     # ── الإعدادات / Settings ──
-    "st.title": {"ar": "### ⚙️ إعدادات الذكاء الاصطناعي", "en": "### ⚙️ AI settings"},
+    "st.title": {"ar": "إعدادات الذكاء الاصطناعي", "en": "AI settings"},
     "st.keys": {"ar": "🔑 مفاتيح API", "en": "🔑 API keys"},
     "st.key_warning": {
-        "ar": "⚠️ <strong>تنبيه أمني:</strong> مفاتيح API محفوظة في الذاكرة المؤقتة فقط "
+        "ar": "**تنبيه أمني:** مفاتيح API محفوظة في الذاكرة المؤقتة فقط "
               "وتُمسح عند إغلاق المتصفح.",
-        "en": "⚠️ <strong>Security note:</strong> API keys live in session memory only and "
+        "en": "**Security note:** API keys live in session memory only and "
               "are cleared when the browser closes.",
     },
     "st.key_from_env": {
@@ -1043,7 +1054,7 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
 
     # ── إدارة البيانات / Data ──
-    "dm.title": {"ar": "### 💾 إدارة البيانات والنسخ الاحتياطي", "en": "### 💾 Data & backup"},
+    "dm.title": {"ar": "إدارة البيانات والنسخ الاحتياطي", "en": "Data & backup"},
     "dm.export": {"ar": "📤 تصدير مساحة العمل", "en": "📤 Export workspace"},
     "dm.export_hint": {
         "ar": "احفظ العمل الحالي كملف JSON لاستئنافه لاحقاً.",

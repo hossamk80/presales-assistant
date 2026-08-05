@@ -9,18 +9,21 @@ views/login.py — شاشة الدخول وتهيئة أول حساب (13-2)
 """
 import streamlit as st
 
+from components import theme
 from utils import auth
 from utils.i18n import UI_LANGUAGES, t
 
 
 def _shell(title: str, subtitle: str):
+    esc = theme.escape
     st.markdown(
-        f"""<div style="text-align:center;padding:24px 0 8px 0;
-                    font-family:Tajawal,sans-serif;">
-            <div style="font-size:44px;">🏢</div>
-            <div style="font-size:22px;font-weight:800;color:#0F172A;">{title}</div>
-            <div style="font-size:13px;color:#64748B;margin-top:4px;">{subtitle}</div>
-        </div>""",
+        f'<div style="text-align:center;padding:32px 0 8px 0;">'
+        f'<div class="tn-mark" style="margin:0 auto 14px;width:56px;height:56px;">'
+        f'<i class="bi bi-briefcase-fill" style="font-size:28px;"></i></div>'
+        f'<div style="font-size:22px;font-weight:700;'
+        f'color:{theme.TOKENS["primary"]};">{esc(title)}</div>'
+        f'<div style="font-size:13px;color:{theme.TOKENS["muted"]};margin-top:4px;">'
+        f'{esc(subtitle)}</div></div>',
         unsafe_allow_html=True,
     )
 

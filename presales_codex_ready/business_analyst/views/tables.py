@@ -39,6 +39,7 @@ from utils.ai_engine import (
     language_instruction,
 )
 from components.ui import status_badge
+from components import theme
 from utils.i18n import t
 
 
@@ -225,11 +226,21 @@ def _render_coverage():
         df = st.session_state.get("df_compliance")
         summary = traceability.coverage_summary(df)
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric(t("tb.cov_covered"), f"{summary['covered']} / {summary['total']}")
-        c2.metric(t("tb.cov_partial"), summary["partial"])
-        c3.metric(t("tb.cov_missing"), summary["missing"])
-        c4.metric(t("tb.cov_unchecked"), summary["unchecked"])
+        # لوحات ملوّنة بالنغمة: الفجوة تُقرأ من لونها قبل رقمها.
+        theme.stat_tiles(
+            [
+                (f"{summary['covered']} / {summary['total']}", t("tb.cov_covered")),
+                (str(summary["partial"]), t("tb.cov_partial")),
+                (str(summary["missing"]), t("tb.cov_missing")),
+                (str(summary["unchecked"]), t("tb.cov_unchecked")),
+            ],
+            tones=[
+                "ok",
+                "warn" if summary["partial"] else "neutral",
+                "error" if summary["missing"] else "neutral",
+                "neutral",
+            ],
+        )
 
         if summary["blocking"]:
             st.error(t("tb.cov_blocking") + "\n\n"

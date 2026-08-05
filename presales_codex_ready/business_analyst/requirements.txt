@@ -1,4 +1,4 @@
-streamlit>=1.35.0
+streamlit>=1.41.0
 
 # Google Gen AI SDK الموحّد — يحل محل google-generativeai المهجورة
 google-genai>=1.0.0
