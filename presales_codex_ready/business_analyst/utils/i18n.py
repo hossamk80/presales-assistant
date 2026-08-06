@@ -1352,6 +1352,62 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── إدارة البرومبتات (14-1) / Prompt management ──
+    "pm.title": {"ar": "🧠 تعليمات النموذج", "en": "🧠 Model prompts"},
+    "pm.hint": {
+        "ar": "تعديل التعليمات يسري فوراً بلا إعادة تشغيل. الافتراضي محفوظ في الشيفرة "
+              "ويُستعاد بنقرة.",
+        "en": "Edits apply immediately, with no restart. The default lives in the code "
+              "and is restored with one click.",
+    },
+    "pm.prompt": {"ar": "التعليمات", "en": "Prompt"},
+    "pm.text": {"ar": "النص", "en": "Text"},
+    "pm.sector": {"ar": "القطاع", "en": "Sector"},
+    "pm.sector_ph": {"ar": "اتركه فارغاً لكل القطاعات", "en": "Leave empty for all sectors"},
+    "pm.sector_help": {
+        "ar": "نصّ لقطاع بعينه يغلب النص العام عند العمل على منافسة من ذلك القطاع.",
+        "en": "A sector-specific text overrides the general one when working on a "
+              "tender in that sector.",
+    },
+    "pm.all_sectors": {"ar": "كل القطاعات", "en": "All sectors"},
+    "pm.agent_write": {"ar": "كتابة", "en": "Writing"},
+    "pm.agent_extract": {"ar": "استخراج", "en": "Extraction"},
+    "pm.agent_review": {"ar": "مراجعة", "en": "Review"},
+    "pm.default_in_use": {
+        "ar": "النص الافتراضي ساري — لم يُعدَّل.",
+        "en": "The default text is in use — not edited.",
+    },
+    "pm.overridden": {
+        "ar": "✏️ نص معدَّل (الإصدار {version}) — {who} · {when}",
+        "en": "✏️ Edited text (version {version}) — {who} · {when}",
+    },
+    "pm.save": {"ar": "حفظ التعديل", "en": "Save edit"},
+    "pm.saved": {"ar": "✅ حُفظ — الإصدار {version}.", "en": "✅ Saved — version {version}."},
+    "pm.reset": {"ar": "استعادة الافتراضي", "en": "Restore default"},
+    "pm.reset_done": {"ar": "✅ عاد النص الافتراضي.", "en": "✅ The default text is back."},
+    "pm.version": {"ar": "الإصدار", "en": "Version"},
+    "pm.overrides": {"ar": "التعليمات المعدَّلة ({n})", "en": "Edited prompts ({n})"},
+    "pm.fixed_rules": {"ar": "القواعد الثابتة — للعرض فقط", "en": "Fixed rules — read-only"},
+    "pm.fixed_rules_hint": {
+        "ar": "تُلحق بكل استدعاء بعد التعليمات أعلاه، ولا يمكن تعديلها ولا إزالتها "
+              "بأي نص تكتبه هنا.",
+        "en": "Appended to every call after the prompt above. No text you write here "
+              "can change or remove them.",
+    },
+    "pm.missing_fields": {
+        "ar": "⚠️ حقول غابت عن نصّك: {fields} — ما تحمله من سياق لن يصل النموذج.",
+        "en": "⚠️ Fields missing from your text: {fields} — the context they carry "
+              "will not reach the model.",
+    },
+    "pm.err_empty": {"ar": "❌ النص فارغ.", "en": "❌ The text is empty."},
+    "pm.err_unknown_fields": {
+        "ar": "❌ حقول لا يعرفها النظام: {fields} — ستُسقط التوليد وقت التشغيل.",
+        "en": "❌ Fields the system does not know: {fields} — they would break "
+              "generation at run time.",
+    },
+    "audit.act_prompt.edit": {"ar": "تعديل تعليمات", "en": "Prompt edited"},
+    "audit.act_prompt.reset": {"ar": "استعادة تعليمات افتراضية", "en": "Prompt reset"},
+
     # ── سياسة البيانات الشخصية (13-10) / Personal-data policy ──
     "pd.title": {"ar": "🧑 سياسة البيانات الشخصية", "en": "🧑 Personal-data policy"},
     "pd.hint": {

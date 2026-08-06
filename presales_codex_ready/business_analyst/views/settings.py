@@ -455,6 +455,8 @@ def render_settings():
         st.info(t("role.settings_admin_only"))
 
     _usage_section()
+    if auth.can("prompts.manage"):
+        _prompts_section()
     _my_account_section()
     if auth.can("users.manage"):
         _users_section()
@@ -476,6 +478,98 @@ def render_settings():
             format_func=lambda c: UI_LANGUAGES[c],
             key="ui_language",
         )
+
+
+def _prompts_section():
+    """
+    إدارة البرومبتات (14-1): تحرير تعليمات النموذج بلا إعادة تشغيل.
+
+    الافتراضي يبقى في الشيفرة، والجدول يحمل التجاوزات وحدها — فاستعادة
+    الافتراضي حذفُ تجاوز لا نسخُ نصّ.
+    """
+    from utils import ai_engine
+
+    catalog = ai_engine.editable_prompts()
+    with st.expander(t("pm.title")):
+        st.caption(t("pm.hint"))
+
+        c_key, c_sector = st.columns([3, 2])
+        with c_key:
+            key = st.selectbox(
+                t("pm.prompt"), sorted(catalog),
+                format_func=lambda k: f"{t('pm.agent_' + catalog[k][0])} · {k}",
+                key="pm_key",
+            )
+        with c_sector:
+            sector = st.text_input(
+                t("pm.sector"), key="pm_sector", placeholder=t("pm.sector_ph"),
+                help=t("pm.sector_help"),
+            ).strip()
+
+        agent, default_text = catalog[key]
+        override = db.prompt_override(key, sector)
+        current = (override or {}).get("text") or default_text
+
+        if override:
+            st.caption(t("pm.overridden",
+                         version=override["version"], who=override["updated_by"] or "—",
+                         when=override["updated_at"]))
+        else:
+            st.caption(t("pm.default_in_use"))
+
+        edited = st.text_area(t("pm.text"), value=current, height=320,
+                              key=f"pm_text_{key}_{sector}")
+
+        problem = ai_engine.prompt_problem(key, edited)
+        missing = ai_engine.missing_prompt_fields(key, edited)
+        if problem:
+            st.error(t(problem, fields=" · ".join(
+                sorted(ai_engine.prompt_fields(edited)
+                       - ai_engine.prompt_fields(default_text)))))
+        elif missing:
+            # حقل غاب يعني سياقاً لن يصل النموذج — تنبيه لا منع
+            st.warning(t("pm.missing_fields", fields=" · ".join(sorted(missing))))
+
+        c_save, c_reset = st.columns(2)
+        with c_save:
+            if st.button(t("pm.save"), type="primary", key="pm_save",
+                         disabled=bool(problem) or edited.strip() == current.strip()):
+                user = auth.current_user() or {}
+                version = db.save_prompt(
+                    key, edited, agent=agent, sector=sector,
+                    updated_by=user.get("display_name") or user.get("username", ""),
+                )
+                audit.record(audit.PROMPT_EDIT, target=key,
+                             detail=f"{sector or 'all'}:v{version}")
+                st.success(t("pm.saved", version=version))
+                st.rerun()
+        with c_reset:
+            if st.button(t("pm.reset"), key="pm_reset", disabled=override is None):
+                db.delete_prompt(key, sector)
+                audit.record(audit.PROMPT_RESET, target=key, detail=sector or "all")
+                st.success(t("pm.reset_done"))
+                st.rerun()
+
+        # القواعد الثابتة: تُعرض ولا تُحرَّر (14-2)
+        st.divider()
+        st.markdown(f"**{t('pm.fixed_rules')}**")
+        st.caption(t("pm.fixed_rules_hint"))
+        st.code(ai_engine.FIXED_RULES.strip(), language="markdown")
+
+        overrides = db.list_prompts()
+        if overrides:
+            st.divider()
+            st.markdown(f"**{t('pm.overrides', n=len(overrides))}**")
+            st.dataframe(
+                pd.DataFrame([{
+                    t("pm.prompt"): row["key"],
+                    t("pm.sector"): row["sector"] or t("pm.all_sectors"),
+                    t("pm.version"): row["version"],
+                    t("ad2.col_who"): row["updated_by"] or "—",
+                    t("ad2.col_when"): row["updated_at"],
+                } for row in overrides]),
+                hide_index=True, width="stretch",
+            )
 
 
 def _audit_section():

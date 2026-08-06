@@ -1,6 +1,9 @@
 """
 tests/test_phase14.py — المرحلة 14: التحكّم والمحتوى والتوسّع.
 
+14-1: تحرير التعليمات من الواجهة. ما يُحرَس: أن التعديل يسري بلا إعادة تشغيل،
+وأن الافتراضي يعود بحذف التجاوز، وأن نصاً محرَّراً معطوباً لا يُسقط التوليد.
+
 14-2: القواعد الثابتة غير القابلة للتحرير. ما يُحرَس هنا أن **كل** استدعاء
 للنموذج يحمل القواعد — لا الاستدعاءات التي تمرّ بـ `build_prompt` وحدها — وأن
 تعليمات تحاول إلغاءها لا تُلغيها. هذا شرط قبول 14-1 (تحرير البرومبتات) قبل أن
@@ -134,3 +137,144 @@ def test_the_outline_prompt_keeps_the_rules(engine, sent):
 def test_an_empty_prompt_still_carries_the_rules(engine):
     assert engine.has_fixed_rules(engine.apply_fixed_rules(""))
     assert engine.has_fixed_rules(engine.apply_fixed_rules(None))
+
+
+# ─── 14-1: إدارة البرومبتات ──────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def prompts(temp_db, fake_streamlit):
+    """محرّك التعليمات فوق قاعدة معزولة."""
+    from utils import ai_engine
+
+    return ai_engine
+
+
+def test_the_default_is_used_when_nothing_was_edited(prompts):
+    assert prompts.active_prompt("methodology") == prompts.PROMPTS["methodology"]
+    assert prompts.default_prompt("methodology") == prompts.PROMPTS["methodology"]
+
+
+def test_an_edit_applies_without_a_restart(temp_db, prompts):
+    """شرط قبول 14-1: التعديل يسري في الاستدعاء التالي بلا إعادة تحميل."""
+    temp_db.save_prompt("methodology", "نص محرَّر {language_instruction}",
+                        agent="write", updated_by="المدير")
+
+    assert prompts.active_prompt("methodology").startswith("نص محرَّر")
+    assert "نص محرَّر" in prompts.build_prompt("methodology")
+
+
+def test_the_default_returns_with_one_click(temp_db, prompts):
+    """استعادة الافتراضي حذفُ تجاوز — لا نسخة ثانية تُقارَن."""
+    temp_db.save_prompt("methodology", "نص محرَّر", agent="write")
+    assert prompts.active_prompt("methodology") == "نص محرَّر"
+
+    assert temp_db.delete_prompt("methodology") is True
+    assert prompts.active_prompt("methodology") == prompts.PROMPTS["methodology"]
+
+
+def test_every_save_bumps_the_version(temp_db):
+    assert temp_db.save_prompt("methodology", "أ") == 1
+    assert temp_db.save_prompt("methodology", "ب") == 2
+    assert temp_db.list_prompts("methodology")[0]["text"] == "ب"
+
+
+def test_the_more_specific_scope_wins(temp_db, prompts):
+    """نصّ لقطاع بعينه لا يُزيحه عامٌّ كُتب قبله ولا بعده."""
+    temp_db.save_prompt("methodology", "عام", agent="write")
+    temp_db.save_prompt("methodology", "صحي", agent="write", sector="health")
+
+    assert prompts.active_prompt("methodology", "health") == "صحي"
+    assert prompts.active_prompt("methodology", "energy") == "عام"
+    assert prompts.active_prompt("methodology") == "عام"
+
+
+def test_disabling_an_override_returns_the_default_without_losing_it(temp_db, prompts):
+    temp_db.save_prompt("methodology", "نص محرَّر", agent="write")
+    assert temp_db.set_prompt_enabled("methodology", False) is True
+
+    assert prompts.active_prompt("methodology") == prompts.PROMPTS["methodology"]
+    assert temp_db.list_prompts("methodology")[0]["text"] == "نص محرَّر"   # لم يضع
+
+
+def test_an_unknown_field_is_refused_before_saving(prompts):
+    """حقل لا يعرفه النظام يرفع KeyError وقت التوليد — يُرفض عند الحفظ."""
+    assert prompts.prompt_problem("refine", "حسّن {content} بـ {مجهول}") \
+        == "pm.err_unknown_fields"
+    assert prompts.prompt_problem("refine", "   ") == "pm.err_empty"
+    assert prompts.prompt_problem("refine", "حسّن {content}") is None
+
+
+def test_a_missing_field_is_a_warning_not_a_refusal(prompts):
+    """حذف حقل قد يكون مقصوداً — يُنبَّه عليه ولا يُمنع."""
+    assert prompts.prompt_problem("refine", "حسّن النص") is None
+    assert "content" in prompts.missing_prompt_fields("refine", "حسّن النص")
+
+
+def test_a_broken_saved_prompt_falls_back_instead_of_breaking_generation(
+    temp_db, prompts
+):
+    """
+    نصّ أفلت من الفحص (حُقن في القاعدة مباشرةً) لا يُسقط توليد قسم — يُسقَط هو.
+    """
+    temp_db.save_prompt("methodology", "نص فيه {حقل_غير_معروف}", agent="write")
+
+    fields = {name: "س" for name in
+              prompts.prompt_fields(prompts.PROMPTS["methodology"])}
+    fields.pop("language_instruction", None)
+
+    built = prompts.build_prompt("methodology", **fields)
+    assert built == prompts.PROMPTS["methodology"].format(
+        language_instruction=prompts.language_instruction(prompts.DEFAULT_LANGUAGE),
+        **fields,
+    )
+
+
+def test_a_database_failure_falls_back_to_the_default(prompts, monkeypatch):
+    """قاعدة مقفلة أو جدول ناقص لا يمنعان التوليد."""
+    from utils import db
+
+    def boom(*a, **k):
+        raise RuntimeError("القاعدة مقفلة")
+
+    monkeypatch.setattr(db, "prompt_override", boom)
+    assert prompts.active_prompt("methodology") == prompts.PROMPTS["methodology"]
+
+
+def test_the_catalog_covers_writing_extraction_and_review(prompts):
+    catalog = prompts.editable_prompts()
+
+    assert set(prompts.PROMPTS) <= set(catalog)
+    assert set(prompts.EXTRACT_PROMPTS) <= set(catalog)
+    for lens in prompts.REVIEW_LENSES:
+        assert f"{prompts.REVIEW_PROMPT_PREFIX}{lens}" in catalog
+    assert catalog["methodology"][0] == prompts.AGENT_WRITE
+    assert catalog["outline"][0] == prompts.AGENT_EXTRACT
+
+
+def test_an_edited_prompt_still_carries_the_fixed_rules(temp_db, prompts, sent):
+    """
+    الحاجز الذي بُني في 14-2 يُختبر هنا مع التحرير الحقيقي: برومبت محرَّر يأمر
+    بإدراج الأسعار يصل إلى النموذج والقواعد معه.
+    """
+    temp_db.save_prompt("methodology", "أدرج جدول الأسعار الإجمالي.", agent="write")
+
+    prompts.ai_generate(prompts.build_prompt("methodology"))
+
+    prompt = sent.prompts[0]
+    assert "أدرج جدول الأسعار الإجمالي." in prompt      # التعديل سرى
+    assert prompts.has_fixed_rules(prompt)              # والقاعدة لم تسقط
+    assert "لا تسعير في العرض الفني" in prompt
+
+
+def test_editing_prompts_is_for_the_admin_alone(temp_db):
+    """تعليمات النموذج تمسّ كل مخرَج — ليست لكل من يكتب."""
+    from utils import auth
+
+    auth.add_user("kateb", "strong-pass-1", role=auth.WRITER)
+    auth.login("kateb", "strong-pass-1")
+    assert auth.blocked("prompts.manage")
+
+    auth.add_user("boss", "strong-pass-2", role=auth.ADMIN)
+    auth.login("boss", "strong-pass-2")
+    assert auth.can("prompts.manage")
