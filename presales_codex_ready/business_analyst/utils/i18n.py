@@ -1352,6 +1352,69 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── النسخ الاحتياطي (13-9) / Backup & restore ──
+    "bk.title": {"ar": "🗄️ نسخة احتياطية واسترجاع", "en": "🗄️ Backup & restore"},
+    "bk.hint": {
+        "ar": "نسخة من القاعدة كاملةً: المنافسات وملف الشركة والمعرفة والمستخدمون "
+              "والسجل والاعتمادات.",
+        "en": "A copy of the whole database: tenders, company profile, knowledge "
+              "repository, users, audit trail, and approvals.",
+    },
+    "bk.password": {"ar": "كلمة تشفير النسخة (اختيارية)", "en": "Backup password (optional)"},
+    "bk.password_help": {
+        "ar": "بكلمة تُشفَّر النسخة ولا تُفتح بدونها — ولا سبيل لاستعادتها إن نُسيت. "
+              "بلا كلمة تخرج ملف SQLite يفتحه أي عميل.",
+        "en": "With a password the backup is encrypted and cannot be opened without it "
+              "— and it cannot be recovered if forgotten. Without one it is a plain "
+              "SQLite file any client can open.",
+    },
+    "bk.build": {"ar": "إنشاء النسخة", "en": "Create backup"},
+    "bk.download": {"ar": "تنزيل النسخة", "en": "Download backup"},
+    "bk.size": {"ar": "حجم النسخة: {kb} كيلوبايت", "en": "Backup size: {kb} KB"},
+    "bk.no_crypto": {
+        "ar": "مكتبة التشفير غير مركَّبة — النسخ والاسترجاع يعملان بلا تشفير. "
+              "للتشفير: pip install cryptography",
+        "en": "The encryption library is not installed — backup and restore work "
+              "unencrypted. For encryption: pip install cryptography",
+    },
+    "bk.restore": {"ar": "استرجاع نسخة", "en": "Restore a backup"},
+    "bk.restore_warn": {
+        "ar": "⚠️ الاسترجاع يستبدل كل ما في النظام الآن بما في النسخة، ويُخرجك من جلستك.",
+        "en": "⚠️ Restoring replaces everything currently in the system with the "
+              "backup's contents, and signs you out.",
+    },
+    "bk.restore_upload": {"ar": "ملف النسخة", "en": "Backup file"},
+    "bk.restore_password": {"ar": "كلمة فكّ التشفير", "en": "Decryption password"},
+    "bk.restore_confirm": {"ar": "أؤكّد الاستبدال", "en": "Confirm replacement"},
+    "bk.restore_btn": {"ar": "استرجاع", "en": "Restore"},
+    "bk.restored": {"ar": "✅ استُرجعت النسخة — سجّل الدخول من جديد.", "en": "✅ Backup restored — please sign in again."},
+    "bk.file_info": {"ar": "الملف: {kb} كيلوبايت · {state}", "en": "File: {kb} KB · {state}"},
+    "bk.encrypted": {"ar": "مشفَّر", "en": "encrypted"},
+    "bk.plain": {"ar": "غير مشفَّر", "en": "not encrypted"},
+    "bk.err_password_short": {
+        "ar": "❌ كلمة التشفير أقصر من ثمانية أحرف.",
+        "en": "❌ The backup password is shorter than eight characters.",
+    },
+    "bk.err_password_needed": {
+        "ar": "❌ النسخة مشفَّرة — أدخل كلمة فكّ التشفير.",
+        "en": "❌ This backup is encrypted — enter its password.",
+    },
+    "bk.err_bad_password": {
+        "ar": "❌ الكلمة خاطئة أو النسخة عُبث بها.",
+        "en": "❌ Wrong password, or the backup was tampered with.",
+    },
+    "bk.err_not_backup": {
+        "ar": "❌ هذا الملف ليس نسخة صالحة من قاعدة النظام.",
+        "en": "❌ This file is not a valid backup of the system database.",
+    },
+    "bk.err_empty": {"ar": "❌ الملف فارغ.", "en": "❌ The file is empty."},
+    "bk.err_no_crypto": {
+        "ar": "❌ التشفير يتطلّب مكتبة cryptography.",
+        "en": "❌ Encryption requires the cryptography library.",
+    },
+    "audit.act_backup.create": {"ar": "إنشاء نسخة احتياطية", "en": "Backup created"},
+    "audit.act_backup.restore": {"ar": "استرجاع نسخة احتياطية", "en": "Backup restored"},
+
     # ── سير الاعتماد (13-8) / Approval workflow ──
     "ap.title": {"ar": "✅ اعتماد التسليم", "en": "✅ Delivery approval"},
     "ap.hint": {

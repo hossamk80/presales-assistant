@@ -11,7 +11,7 @@ import time
 import pandas as pd
 import streamlit as st
 
-from utils import audit, auth, db, knowledge, providers, savings
+from utils import audit, auth, backup, db, knowledge, providers, savings
 from utils.i18n import UI_LANGUAGES, t
 from utils.providers import catalog
 from utils.state import get_state_snapshot, load_state_snapshot
@@ -523,6 +523,78 @@ def _audit_section():
         st.caption(t("ad2.total", n=db.count_audit_entries()))
 
 
+def _backup_section():
+    """
+    نسخة احتياطية كاملة واسترجاعها (13-9).
+
+    النسخة ملف القاعدة كله لا تصدير حقول: تصدير مساحة العمل أعلاه يخدم نقل
+    منافسة، وهذه تخدم فقد الجهاز.
+    """
+    with st.expander(t("bk.title")):
+        st.caption(t("bk.hint"))
+
+        crypto = backup.encryption_available()
+        if not crypto:
+            st.info(t("bk.no_crypto"))
+
+        password = st.text_input(
+            t("bk.password"), type="password", key="backup_password",
+            help=t("bk.password_help"), disabled=not crypto,
+        )
+        problem = backup.password_problem(password)
+        if problem:
+            st.error(t(problem))
+        elif st.button(t("bk.build"), type="primary", key="backup_build"):
+            data = backup.create(password)
+            st.session_state["_backup_bytes"] = data
+            st.session_state["_backup_encrypted"] = bool(password)
+            audit.record(audit.BACKUP_CREATE,
+                         detail="encrypted" if password else "plain")
+
+        blob = st.session_state.get("_backup_bytes")
+        if blob:
+            suffix = "enc" if st.session_state.get("_backup_encrypted") else "db"
+            st.download_button(
+                t("bk.download"), data=blob,
+                file_name=f"analyst_backup.{suffix}",
+                mime="application/octet-stream", key="backup_download",
+            )
+            st.caption(t("bk.size", kb=len(blob) // 1024))
+
+        st.divider()
+        st.markdown(f"**{t('bk.restore')}**")
+        st.warning(t("bk.restore_warn"))
+
+        uploaded = st.file_uploader(t("bk.restore_upload"), type=["db", "enc"],
+                                    key="backup_upload")
+        if not uploaded:
+            return
+
+        data = uploaded.getvalue()
+        info = backup.summary(data)
+        st.caption(t("bk.file_info", kb=info["size_kb"],
+                     state=t("bk.encrypted") if info["encrypted"]
+                     else t("bk.plain")))
+
+        restore_password = st.text_input(
+            t("bk.restore_password"), type="password", key="restore_password",
+            disabled=not info["encrypted"],
+        )
+        confirm = st.checkbox(t("bk.restore_confirm"), key="restore_confirm")
+        if st.button(t("bk.restore_btn"), type="primary", key="restore_btn",
+                     disabled=not confirm):
+            failure = backup.restore(data, restore_password)
+            if failure:
+                st.error(t(failure))
+            else:
+                audit.record(audit.BACKUP_RESTORE, detail=str(info["size_kb"]))
+                # الحالة كلها صارت من قاعدة أخرى — الجلسة تُمسح ويُعاد الدخول
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                st.success(t("bk.restored"))
+                st.rerun()
+
+
 def render_data():
 
     if auth.can("audit.view"):
@@ -561,6 +633,8 @@ def render_data():
                     st.rerun()
             except Exception as e:
                 st.error(t("dm.import_failed", error=e))
+
+    _backup_section()
 
     with st.expander(t("dm.clear")):
         st.warning(t("dm.clear_warn"))

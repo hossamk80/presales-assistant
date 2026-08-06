@@ -1120,3 +1120,153 @@ def test_a_writer_approves_nothing(auth):
     auth.login("kateb", "strong-pass-1")
     for stage in ("bid_manager", "finance", "final"):
         assert auth.blocked(f"approve.{stage}")
+
+
+# ─── 13-9: النسخ الاحتياطي والتشفير ──────────────────────────────────────────
+
+
+@pytest.fixture()
+def bk(temp_db):
+    from utils import backup as backup_module
+    return backup_module
+
+
+def _seed(db):
+    """منافسة + ملف شركة + مستند معرفة + مستخدم — ما يجب أن تحمله أي نسخة."""
+    import struct
+
+    db.create_project("منافسة", {"sec_exec": "نص العرض"}, "REF-9", "جهة")
+    db.save_company({"c_name": "شركتي"}, template=b"DOCX", logo=b"PNG")
+    doc_id = db.add_kb_document("سيرة.pdf", "cv", 1200)
+    db.add_kb_chunks(doc_id, [(0, "مقطع معرفي", 3, struct.pack("3f", 1.0, 2.0, 3.0))])
+    db.create_user("sara", "scrypt$x", "سارة")
+
+
+def test_a_backup_carries_everything_and_restores(bk, temp_db):
+    """شرط قبول 13-9: نسخة كاملة تشمل المعرفة وملف الشركة، تُستعاد بنجاح."""
+    _seed(temp_db)
+    data = bk.create()
+
+    # كارثة: القاعدة تُمحى بالكامل
+    temp_db.delete_project(temp_db.list_projects()[0]["id"])
+    for doc in temp_db.list_kb_documents():
+        temp_db.delete_kb_document(doc["id"])
+    temp_db.save_company({})
+    assert temp_db.list_projects() == []
+
+    assert bk.restore(data) is None
+
+    assert [p["name"] for p in temp_db.list_projects()] == ["منافسة"]
+    payload, template, logo = temp_db.load_company()
+    assert payload["c_name"] == "شركتي"
+    assert (template, logo) == (b"DOCX", b"PNG")          # ملف الشركة كاملاً
+    assert len(temp_db.list_kb_documents()) == 1          # والمعرفة
+    assert temp_db.kb_stats()["chunks"] == 1
+    assert temp_db.get_user("sara") is not None           # والمستخدمون
+
+
+def test_an_unencrypted_backup_is_a_plain_sqlite_file(bk, temp_db):
+    """نسخة يفتحها أي عميل SQLite — البيانات ليست رهينة هذا البرنامج."""
+    _seed(temp_db)
+    data = bk.create()
+
+    assert data.startswith(temp_db.SQLITE_MAGIC)
+    assert bk.is_encrypted(data) is False
+    assert temp_db.validate_snapshot(data) is True
+
+
+def test_an_encrypted_backup_hides_its_content_and_comes_back(bk, temp_db):
+    if not bk.encryption_available():
+        pytest.skip("مكتبة التشفير غير مركَّبة")
+    _seed(temp_db)
+    data = bk.create("backup-pass-1")
+
+    assert bk.is_encrypted(data) is True
+    assert not data.startswith(temp_db.SQLITE_MAGIC)
+    assert "شركتي".encode("utf-8") not in data      # اسم الشركة لا يظهر خاماً
+
+    temp_db.save_company({})
+    assert bk.restore(data, "backup-pass-1") is None
+    assert temp_db.load_company()[0]["c_name"] == "شركتي"
+
+
+def test_the_wrong_password_is_refused_and_changes_nothing(bk, temp_db):
+    if not bk.encryption_available():
+        pytest.skip("مكتبة التشفير غير مركَّبة")
+    _seed(temp_db)
+    data = bk.create("backup-pass-1")
+    temp_db.save_company({"c_name": "الحالي"})
+
+    assert bk.restore(data, "backup-pass-2") == "bk.err_bad_password"
+    assert bk.restore(data) == "bk.err_password_needed"
+    assert temp_db.load_company()[0]["c_name"] == "الحالي"     # لم تُمسّ
+
+
+def test_a_tampered_backup_is_rejected(bk, temp_db):
+    """التوقيع يكشف العبث — النسخة لا تُفكّ إلى قمامة تُكتب فوق القاعدة."""
+    if not bk.encryption_available():
+        pytest.skip("مكتبة التشفير غير مركَّبة")
+    _seed(temp_db)
+    data = bytearray(bk.create("backup-pass-1"))
+    data[-5] ^= 0xFF
+
+    assert bk.restore(bytes(data), "backup-pass-1") == "bk.err_bad_password"
+
+
+def test_a_file_that_is_not_a_backup_is_refused(bk, temp_db):
+    _seed(temp_db)
+    before = temp_db.list_projects()
+
+    assert bk.restore(b"") == "bk.err_empty"
+    assert bk.restore("ما هذا الملف؟".encode("utf-8")) == "bk.err_not_backup"
+    assert temp_db.list_projects() == before
+
+
+def test_a_sqlite_file_without_our_tables_is_refused(bk, temp_db, tmp_path):
+    """ملف SQLite صالح لكنه ليس قاعدتنا — الترويسة وحدها لا تكفي."""
+    other = tmp_path / "other.db"
+    conn = sqlite3.connect(other)
+    conn.execute("CREATE TABLE shopping (id INTEGER)")
+    conn.commit()
+    conn.close()
+
+    assert bk.restore(other.read_bytes()) == "bk.err_not_backup"
+
+
+def test_a_weak_backup_password_is_refused_before_encrypting(bk):
+    assert bk.password_problem("short") == "bk.err_password_short"
+    assert bk.password_problem("") is None            # بلا تشفير مقبول
+    assert bk.password_problem("backup-pass-1") is None
+
+
+def test_the_summary_describes_the_file_before_restoring(bk, temp_db):
+    if not bk.encryption_available():
+        pytest.skip("مكتبة التشفير غير مركَّبة")
+    _seed(temp_db)
+    plain = bk.summary(bk.create())
+    secret = bk.summary(bk.create("backup-pass-1"))
+
+    assert plain["encrypted"] is False
+    assert secret["encrypted"] is True
+    assert plain["size_kb"] >= 0
+
+
+def test_a_snapshot_is_taken_while_the_connection_is_open(bk, temp_db):
+    """النسخ عبر واجهة SQLite لا بنسخ الملف خاماً — لا نسخة ممزّقة."""
+    _seed(temp_db)
+    temp_db.create_project("أثناء النسخ", {})
+
+    data = temp_db.snapshot_bytes()
+    assert temp_db.validate_snapshot(data)
+    assert len(temp_db.list_projects()) == 2
+
+
+def test_restoring_swaps_the_live_connection(bk, temp_db):
+    """بعد الاسترجاع تقرأ القاعدة من الملف الجديد لا من اتصال قديم."""
+    _seed(temp_db)
+    data = bk.create()
+    temp_db.create_project("بعد النسخة", {})
+    assert len(temp_db.list_projects()) == 2
+
+    assert bk.restore(data) is None
+    assert [p["name"] for p in temp_db.list_projects()] == ["منافسة"]
