@@ -837,3 +837,158 @@ def test_a_failing_version_write_never_breaks_the_work(trail, monkeypatch, temp_
 
     monkeypatch.setattr(temp_db, "add_section_version", boom)
     assert trail.snapshot_section("exec", "نص") is None
+
+
+# ─── 13-7: تعارض الحفظ التلقائي ──────────────────────────────────────────────
+
+
+@pytest.fixture()
+def projects_view(trail, fake_streamlit):
+    """شاشة المنافسات فوق قاعدة معزولة بمستخدم داخل (لا يزال يملك التعديل)."""
+    from utils import state
+    from views import projects as projects_module
+
+    state.init_state()
+    return projects_module
+
+
+def _open(projects, project_id):
+    """يفتح منافسة في هذه الجلسة كما يفعل زر «فتح»."""
+    projects.open_project(project_id)
+
+
+def test_a_save_bumps_the_revision(temp_db):
+    pid = temp_db.create_project("منافسة", {"a": 1})
+    assert temp_db.project_revision(pid) == 0
+
+    assert temp_db.save_project(pid, {"a": 2}) == 1
+    assert temp_db.save_project(pid, {"a": 3}) == 2
+
+
+def test_a_stale_conditional_save_is_refused(temp_db):
+    """شرط الحفظ والكتابة في جملة واحدة — لا فجوة بينهما."""
+    pid = temp_db.create_project("منافسة", {"a": 1})
+    temp_db.save_project(pid, {"a": 2})                  # جلسة أخرى كتبت
+
+    assert temp_db.save_project(pid, {"a": 99}, expected_revision=0) is None
+    assert temp_db.load_project(pid)["payload"] == {"a": 2}   # لم تُدهس
+
+    assert temp_db.save_project(pid, {"a": 3}, expected_revision=1) == 2
+
+
+def test_two_sessions_do_not_erase_each_other(projects_view, temp_db,
+                                              fake_streamlit):
+    """
+    شرط قبول 13-7: جلستان على منافسة واحدة لا تمحوان عمل بعضهما.
+
+    الجلسة الأولى هي هذه؛ والثانية تُحاكى بكتابة مباشرة على القاعدة.
+    """
+    pid = temp_db.create_project("منافسة", {"sec_exec": "أصل", "sec_plan": "أصل"})
+    _open(projects_view, pid)
+
+    # جلسة أخرى تكتب قسم الخطة
+    other = dict(temp_db.load_project(pid)["payload"])
+    other["sec_plan"] = "خطة الزميل"
+    temp_db.save_project(pid, other)
+
+    # وأنا أكتب قسم الملخص ثم أُحفظ
+    fake_streamlit.session_state["sec_exec"] = "ملخصي"
+    projects_view.save_current()
+
+    saved = temp_db.load_project(pid)["payload"]
+    assert saved["sec_exec"] == "ملخصي"          # عملي بقي
+    assert saved["sec_plan"] == "خطة الزميل"     # وعملهم بقي
+
+
+def test_a_clean_merge_is_reported_without_a_clash(projects_view, temp_db,
+                                                   fake_streamlit):
+    pid = temp_db.create_project("منافسة", {"sec_exec": "أصل", "sec_plan": "أصل"})
+    _open(projects_view, pid)
+
+    other = dict(temp_db.load_project(pid)["payload"])
+    other["sec_plan"] = "خطة الزميل"
+    temp_db.save_project(pid, other)
+
+    fake_streamlit.session_state["sec_exec"] = "ملخصي"
+    projects_view.save_current()
+
+    notice = fake_streamlit.session_state.get("_merge_notice")
+    assert notice and notice["clashing"] == []
+    assert notice["merged"] >= 1
+
+
+def test_the_same_field_from_both_sides_keeps_mine_as_a_version(
+    projects_view, temp_db, fake_streamlit
+):
+    """تعارض حقيقي: نسختهم تبقى، ونصّي يُحفظ نسخةً بدل أن يضيع."""
+    pid = temp_db.create_project("منافسة", {"sec_exec": "أصل"})
+    _open(projects_view, pid)
+
+    other = dict(temp_db.load_project(pid)["payload"])
+    other["sec_exec"] = "نصّهم"
+    temp_db.save_project(pid, other)
+
+    fake_streamlit.session_state["sec_exec"] = "نصّي"
+    projects_view.save_current()
+
+    assert temp_db.load_project(pid)["payload"]["sec_exec"] == "نصّهم"
+    versions = [v["content"] for v in temp_db.list_section_versions("exec", pid)]
+    assert "نصّي" in versions                      # لم يضع
+
+    notice = fake_streamlit.session_state.get("_merge_notice")
+    assert notice["clashing"] == ["sec_exec"]
+
+
+def test_a_merge_is_recorded_in_the_trail(projects_view, temp_db, fake_streamlit,
+                                          trail):
+    pid = temp_db.create_project("منافسة", {"sec_exec": "أصل"})
+    _open(projects_view, pid)
+
+    other = dict(temp_db.load_project(pid)["payload"])
+    other["sec_exec"] = "نصّهم"
+    temp_db.save_project(pid, other)
+
+    fake_streamlit.session_state["sec_exec"] = "نصّي"
+    projects_view.save_current()
+
+    assert [e["action"] for e in trail.entries(action=trail.PROJECT_MERGE)] == \
+        [trail.PROJECT_MERGE]
+
+
+def test_a_second_save_after_a_merge_needs_no_merge(projects_view, temp_db,
+                                                    fake_streamlit):
+    """الجلسة تلتقط رقم المراجعة الجديد، فلا تدخل الدمج في كل حفظ بعده."""
+    pid = temp_db.create_project("منافسة", {"sec_exec": "أصل"})
+    _open(projects_view, pid)
+
+    other = dict(temp_db.load_project(pid)["payload"])
+    other["sec_plan"] = "خطة الزميل"
+    temp_db.save_project(pid, other)
+
+    fake_streamlit.session_state["sec_exec"] = "ملخصي"
+    projects_view.save_current()
+    fake_streamlit.session_state.pop("_merge_notice", None)
+
+    fake_streamlit.session_state["sec_exec"] = "ملخصي المحدَّث"
+    projects_view.save_current()
+
+    assert fake_streamlit.session_state.get("_merge_notice") is None
+    assert temp_db.load_project(pid)["payload"]["sec_exec"] == "ملخصي المحدَّث"
+
+
+def test_an_untouched_session_does_not_resurrect_old_values(
+    projects_view, temp_db, fake_streamlit
+):
+    """
+    جلسة فتحت المنافسة ولم تعدّل شيئاً يجب ألّا تُعيد القيم القديمة على من كتب
+    بعدها — وهذا بالضبط ما كان يفعله «آخر كاتب يكسب».
+    """
+    pid = temp_db.create_project("منافسة", {"sec_exec": "أصل"})
+    _open(projects_view, pid)
+
+    other = dict(temp_db.load_project(pid)["payload"])
+    other["sec_exec"] = "نصّهم الجديد"
+    temp_db.save_project(pid, other)
+
+    projects_view.save_current()                  # حفظ بلا تعديل من طرفي
+    assert temp_db.load_project(pid)["payload"]["sec_exec"] == "نصّهم الجديد"
