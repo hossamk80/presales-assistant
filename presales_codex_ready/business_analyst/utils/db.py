@@ -138,6 +138,27 @@ CREATE INDEX IF NOT EXISTS idx_company_records_registry
 --
 -- `role` يُخزَّن الآن ويُفرَض في 13-3 (الأدوار الخمسة)؛ وجود العمود من الآن
 -- يوفّر ترحيلاً لاحقاً على قواعد صارت تحمل مستخدمين.
+-- نسخ الأقسام (13-6): سجل التدقيق يقول **من** غيّر، وهذا يحفظ **ماذا كان**.
+--
+-- الحاجة عملية: كاتب يستبدل قسماً بتوليد جديد فيخسر صياغة أفضل، أو مراجعة
+-- تُطبَّق فتُفقد فقرة. النسخة تُحفظ عند كل كتابة، فالرجوع خطوة لا إعادة كتابة.
+--
+-- المحتوى يُخزَّن كاملاً لا فرقاً: القسم بضعة آلاف حرف، وحساب الفروق المتسلسلة
+-- عند الاسترجاع يفتح باب سلسلة تالفة تُفقد النص كله.
+CREATE TABLE IF NOT EXISTS section_versions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  INTEGER,
+    section_key TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    user_id     INTEGER,
+    username    TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT 'human',
+    content     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_section_versions_lookup
+    ON section_versions(project_id, section_key);
+
 -- سجل التدقيق (13-5): من غيّر ماذا ومتى، وأي نص مصدره النموذج.
 --
 -- لجنة فحص تسأل عن مصدر فقرة، وقسم عطاءات يسأل من حذف منافسة — وكلاهما بلا
@@ -336,6 +357,79 @@ def duplicate_project(project_id: int, new_name: str) -> Optional[int]:
     if src is None:
         return None
     return create_project(new_name, src["payload"], src["reference"], src["entity"])
+
+
+# ─── نسخ الأقسام (13-6) ───────────────────────────────────────────────────────
+
+# أقصى عدد نسخ محفوظة لكل قسم. الأقدم يسقط تلقائياً — سجل بلا حدّ يُثقل القاعدة
+# بنص لا يعود إليه أحد، والحاجة العملية هي الرجوع خطوات لا أشهراً.
+SECTION_VERSION_LIMIT = 30
+
+
+def add_section_version(section_key: str, content: str,
+                        project_id: Optional[int] = None, user_id: Optional[int] = None,
+                        username: str = "", source: str = "human") -> Optional[int]:
+    """
+    يحفظ نسخة من نص القسم. يعيد `None` إن كان النص مطابقاً لأحدث نسخة.
+
+    التكرار مرفوض عمداً: دورة رسم تعيد الحفظ بلا تغيير لا يجوز أن تُنتج نسخة
+    تُزحزح نسخة حقيقية خارج الحدّ.
+    """
+    latest = list_section_versions(section_key, project_id, limit=1)
+    if latest and latest[0]["content"] == content:
+        return None
+
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO section_versions (project_id, section_key, created_at, "
+            "user_id, username, source, content) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (project_id, section_key, _now(), user_id, username,
+             source if source in ("human", "ai") else "human", content),
+        )
+        new_id = cur.lastrowid
+
+    prune_section_versions(section_key, project_id)
+    return new_id
+
+
+def list_section_versions(section_key: str, project_id: Optional[int] = None,
+                          limit: int = SECTION_VERSION_LIMIT) -> list:
+    """أحدث النسخ أولاً."""
+    rows = get_conn().execute(
+        "SELECT * FROM section_versions WHERE section_key = ? "
+        "AND project_id IS ? ORDER BY id DESC LIMIT ?",
+        (section_key, project_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_section_version(version_id: int) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM section_versions WHERE id = ?", (version_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def prune_section_versions(section_key: str, project_id: Optional[int] = None,
+                           keep: int = SECTION_VERSION_LIMIT) -> int:
+    """يُسقط أقدم النسخ فوق الحدّ. يعيد عدد ما أُسقط."""
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM section_versions WHERE id IN ("
+            "  SELECT id FROM section_versions WHERE section_key = ? "
+            "  AND project_id IS ? ORDER BY id DESC LIMIT -1 OFFSET ?)",
+            (section_key, project_id, keep),
+        )
+        return cur.rowcount
+
+
+def delete_section_versions(project_id: int) -> int:
+    """تُستدعى عند حذف المنافسة — نسخ أقسامها تذهب معها."""
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM section_versions WHERE project_id = ?", (project_id,)
+        )
+        return cur.rowcount
 
 
 # ─── سجل التدقيق (13-5) ───────────────────────────────────────────────────────

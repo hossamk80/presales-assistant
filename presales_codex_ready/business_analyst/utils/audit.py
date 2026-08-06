@@ -34,6 +34,7 @@ PROJECT_OUTCOME = "project.outcome"
 SECTION_GENERATE = "section.generate"
 SECTION_REFINE = "section.refine"
 SECTION_EDIT = "section.edit"
+SECTION_RESTORE = "section.restore"
 SECTION_ASSIGN = "section.assign"
 SECTION_STATUS = "section.status"
 OUTLINE_PROPOSE = "outline.propose"
@@ -47,13 +48,14 @@ AUTH_LOGIN = "auth.login"
 
 ACTIONS = (
     PROJECT_CREATE, PROJECT_DELETE, PROJECT_DUPLICATE, PROJECT_OUTCOME,
-    SECTION_GENERATE, SECTION_REFINE, SECTION_EDIT, SECTION_ASSIGN,
+    SECTION_GENERATE, SECTION_REFINE, SECTION_EDIT, SECTION_RESTORE, SECTION_ASSIGN,
     SECTION_STATUS, OUTLINE_PROPOSE, EXPORT_BUILD,
     USER_ADD, USER_ROLE, USER_ACTIVE, USER_DELETE, USER_PASSWORD, AUTH_LOGIN,
 )
 
 # الأحداث التي تُغيّر نص قسم — منها وحدها يُستنتج مصدر الفقرة.
-_CONTENT_ACTIONS = (SECTION_GENERATE, SECTION_REFINE, SECTION_EDIT)
+_CONTENT_ACTIONS = (SECTION_GENERATE, SECTION_REFINE, SECTION_EDIT,
+                    SECTION_RESTORE)
 
 
 def _actor() -> tuple:
@@ -119,6 +121,26 @@ def section_source(section_key: str, project_id: Optional[int] = None) -> str:
     return ""
 
 
+def snapshot_section(section_key: str, content: str, source: str = HUMAN,
+                     project_id: Optional[int] = None) -> Optional[int]:
+    """
+    يحفظ نسخة من نص القسم (13-6).
+
+    هنا لا في وحدة ثالثة: هذه الطبقة تعرف الفاعل والمنافسة أصلاً، والنسخة هي
+    **ماذا كان** لحدث تعرف هي **من فعله**. فشلها كفشل التسجيل — يُبتلع.
+    """
+    user_id, username = _actor()
+    if project_id is None:
+        project_id = st.session_state.get("_project_id")
+    try:
+        return db.add_section_version(
+            section_key, content or "", project_id=project_id, user_id=user_id,
+            username=username, source=source,
+        )
+    except Exception:
+        return None
+
+
 def record_section_edits(before: dict, after: dict, keys) -> int:
     """
     يسجّل الأقسام التي تغيّر نصّها بين لقطتين — يُستدعى من الحفظ.
@@ -137,5 +159,7 @@ def record_section_edits(before: dict, after: dict, keys) -> int:
         # هو تحرير إنسان لنصّ صار مسؤوليته
         record(SECTION_EDIT, target=section_target(key), source=HUMAN,
                detail=str(len(new) - len(old)))
+        # 13-6: ومعه نسخة من النص الجديد — نقطة الرصد واحدة لكليهما
+        snapshot_section(key, new, source=HUMAN)
         written += 1
     return written

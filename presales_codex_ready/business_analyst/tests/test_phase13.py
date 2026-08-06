@@ -717,3 +717,123 @@ def test_reading_the_trail_is_not_for_everyone(auth):
     _add(auth, "manager", "strong-pass-2", role=auth.BID_MANAGER)
     auth.login("manager", "strong-pass-2")
     assert auth.can("audit.view")
+
+
+# ─── 13-6: نسخ الأقسام واسترجاعها ────────────────────────────────────────────
+
+
+def _write(trail, key, content, source="human", project_id=1):
+    return trail.snapshot_section(key, content, source=source, project_id=project_id)
+
+
+def test_a_version_is_kept_for_every_write(trail, temp_db):
+    for text in ("الأولى", "الثانية", "الثالثة"):
+        _write(trail, "exec", text)
+
+    versions = temp_db.list_section_versions("exec", 1)
+    assert [v["content"] for v in versions] == ["الثالثة", "الثانية", "الأولى"]
+    assert versions[0]["username"] == "سارة"     # من كتب النسخة معلوم
+    assert versions[0]["created_at"]
+
+
+def test_an_unchanged_write_makes_no_version(trail, temp_db):
+    """دورة رسم تعيد الحفظ بلا تغيير لا تُزحزح نسخة حقيقية خارج الحدّ."""
+    assert _write(trail, "exec", "نص") is not None
+    assert _write(trail, "exec", "نص") is None
+    assert len(temp_db.list_section_versions("exec", 1)) == 1
+
+
+def test_restoring_a_version_from_three_edits_ago(trail, temp_db):
+    """شرط قبول 13-6 حرفياً."""
+    _write(trail, "exec", "الصياغة الأصلية")
+    for text in ("تعديل أول", "تعديل ثانٍ", "تعديل ثالث"):
+        _write(trail, "exec", text)
+
+    versions = temp_db.list_section_versions("exec", 1)
+    assert len(versions) == 4
+    target = versions[3]                          # قبل ثلاثة تعديلات
+    assert target["content"] == "الصياغة الأصلية"
+    assert temp_db.get_section_version(target["id"])["content"] == "الصياغة الأصلية"
+
+
+def test_versions_are_scoped_to_their_tender(trail, temp_db):
+    _write(trail, "exec", "منافسة أولى", project_id=1)
+    _write(trail, "exec", "منافسة ثانية", project_id=2)
+
+    assert [v["content"] for v in temp_db.list_section_versions("exec", 1)] == \
+        ["منافسة أولى"]
+    assert [v["content"] for v in temp_db.list_section_versions("exec", 2)] == \
+        ["منافسة ثانية"]
+
+
+def test_versions_are_scoped_to_their_section(trail, temp_db):
+    _write(trail, "exec", "ملخص")
+    _write(trail, "plan", "خطة")
+
+    assert [v["content"] for v in temp_db.list_section_versions("exec", 1)] == ["ملخص"]
+    assert [v["content"] for v in temp_db.list_section_versions("plan", 1)] == ["خطة"]
+
+
+def test_the_oldest_versions_fall_off_the_limit(trail, temp_db):
+    """سجل بلا حدّ يُثقل القاعدة بنص لا يعود إليه أحد."""
+    limit = temp_db.SECTION_VERSION_LIMIT
+    for i in range(limit + 5):
+        _write(trail, "exec", f"نسخة {i}")
+
+    versions = temp_db.list_section_versions("exec", 1, limit=limit + 50)
+    assert len(versions) == limit
+    assert versions[0]["content"] == f"نسخة {limit + 4}"    # الأحدث باقٍ
+    assert versions[-1]["content"] == "نسخة 5"              # والأقدم سقط
+
+
+def test_the_model_and_the_writer_are_told_apart_in_versions(trail, temp_db):
+    _write(trail, "exec", "مولَّد", source="ai")
+    _write(trail, "exec", "محرَّر", source="human")
+
+    assert [v["source"] for v in temp_db.list_section_versions("exec", 1)] == \
+        ["human", "ai"]
+
+
+def test_an_unknown_source_is_stored_as_human_in_versions(trail, temp_db):
+    _write(trail, "exec", "نص", source="magic")
+    assert temp_db.list_section_versions("exec", 1)[0]["source"] == "human"
+
+
+def test_saving_a_tender_keeps_a_version_of_each_changed_section(trail, temp_db):
+    """نقطة رصد واحدة تخدم السجل والنسخ معاً."""
+    before = {"sec_exec": "قديم", "sec_plan": "خطة"}
+    after = {"sec_exec": "جديد", "sec_plan": "خطة"}
+
+    trail.record_section_edits(before, after, ["exec", "plan"])
+
+    assert [v["content"] for v in temp_db.list_section_versions("exec", None)] == ["جديد"]
+    assert temp_db.list_section_versions("plan", None) == []
+
+
+def test_deleting_a_tender_takes_its_versions_with_it(trail, temp_db):
+    _write(trail, "exec", "نص", project_id=1)
+    _write(trail, "plan", "خطة", project_id=1)
+    _write(trail, "exec", "منافسة أخرى", project_id=2)
+
+    assert temp_db.delete_section_versions(1) == 2
+    assert temp_db.list_section_versions("exec", 1) == []
+    assert len(temp_db.list_section_versions("exec", 2)) == 1
+
+
+def test_restoring_is_recorded_as_a_human_write(trail):
+    """النص المسترجَع صار مسؤولية من استرجعه لا مصدره الأصلي."""
+    trail.record(trail.SECTION_GENERATE, target=trail.section_target("exec"),
+                 source=trail.AI, project_id=1)
+    assert trail.section_source("exec", project_id=1) == "ai"
+
+    trail.record(trail.SECTION_RESTORE, target=trail.section_target("exec"),
+                 source=trail.HUMAN, project_id=1)
+    assert trail.section_source("exec", project_id=1) == "human"
+
+
+def test_a_failing_version_write_never_breaks_the_work(trail, monkeypatch, temp_db):
+    def boom(*a, **k):
+        raise RuntimeError("القرص ممتلئ")
+
+    monkeypatch.setattr(temp_db, "add_section_version", boom)
+    assert trail.snapshot_section("exec", "نص") is None

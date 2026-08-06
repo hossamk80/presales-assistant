@@ -636,6 +636,7 @@ def _render_ai_editor(sec: dict):
                 audit.record(audit.SECTION_GENERATE,
                              target=audit.section_target(key), source=audit.AI,
                              detail=sec["title"])
+                audit.snapshot_section(key, out, source=audit.AI)
                 # نُبطل مفتاح المحرر ليعرض النص المولَّد الجديد
                 st.session_state.pop(f"ta_{key}", None)
                 st.rerun()
@@ -663,6 +664,7 @@ def _render_ai_editor(sec: dict):
             st.warning(t("db.placeholder_warn"))
 
         _render_side_assistant(sec, model)
+        _render_versions(sec)
 
 
 def _render_side_assistant(sec: dict, model: str):
@@ -733,6 +735,84 @@ def _render_side_assistant(sec: dict, model: str):
                 st.rerun()
 
 
+# ─── نسخ الأقسام واسترجاعها (13-6) ────────────────────────────────────────────
+
+
+def _version_label(version: dict) -> str:
+    """سطر يعرّف النسخة: متى · من · مصدرها · طولها."""
+    who = version["username"] or t("ad2.unknown_user")
+    mark = "🤖" if version["source"] == "ai" else "✍️"
+    return f'{version["created_at"]} · {mark} {who} · {len(version["content"]):,}'
+
+
+def _diff_lines(old: str, new: str) -> str:
+    """
+    فرق سطري بصيغة موحّدة — من `difflib` القياسية بلا مكتبة إضافية.
+
+    المقارنة على السطور لا الكلمات: العرض مكتوب فقرات، وفرق الكلمات داخل فقرة
+    طويلة يُخرج ضجيجاً لا يُقرأ.
+    """
+    import difflib
+
+    diff = difflib.unified_diff(
+        (old or "").splitlines(), (new or "").splitlines(),
+        lineterm="", n=1,
+    )
+    body = "\n".join(list(diff)[2:])       # سطرا الترويسة لا يفيدان القارئ
+    return body
+
+
+def _render_versions(sec: dict):
+    """
+    نسخ القسم: عرض ومقارنة واسترجاع.
+
+    الاسترجاع **يحفظ نسخة من النص الحالي قبل أن يستبدله** — وإلا صار الاسترجاع
+    نفسه سبباً لفقد ما استُرجع منه.
+    """
+    from utils import db
+
+    key = sec["key"]
+    ckey = section_content_key(key)
+    project_id = st.session_state.get("_project_id")
+    versions = db.list_section_versions(key, project_id)
+
+    with st.expander(t("db.versions", n=len(versions))):
+        if not versions:
+            st.caption(t("db.versions_empty"))
+            return
+
+        st.caption(t("db.versions_hint", limit=db.SECTION_VERSION_LIMIT))
+
+        labels = {v["id"]: _version_label(v) for v in versions}
+        chosen_id = st.selectbox(
+            t("db.versions_pick"), list(labels),
+            format_func=lambda i: labels[i], key=f"ver_pick_{key}",
+        )
+        chosen = db.get_section_version(chosen_id)
+        if chosen is None:
+            return
+
+        current = str(st.session_state.get(ckey, "") or "")
+        diff = _diff_lines(chosen["content"], current)
+        if diff:
+            st.caption(t("db.versions_diff"))
+            st.code(diff, language="diff")
+        else:
+            st.caption(t("db.versions_same"))
+
+        may_restore = auth.can_edit_section(sec) and bool(diff)
+        if st.button(t("db.versions_restore"), key=f"ver_restore_{key}",
+                     type="primary", disabled=not may_restore,
+                     help=None if may_restore else t("db.versions_restore_help")):
+            audit.snapshot_section(key, current, source=audit.HUMAN)
+            st.session_state[ckey] = chosen["content"]
+            st.session_state.pop(f"ta_{key}", None)
+            audit.record(audit.SECTION_RESTORE, target=audit.section_target(key),
+                         detail=str(chosen_id))
+            st.success(t("db.versions_restored"))
+            st.rerun()
+
+
 def _render_qa_thread(key: str):
     """
     آخر تبادلات السؤال والجواب لهذا القسم.
@@ -783,6 +863,10 @@ def _apply_refinement(sec: dict, request: str, model: str):
     st.session_state.pop(f"ta_{sec['key']}", None)
     audit.record(audit.SECTION_REFINE, target=audit.section_target(sec["key"]),
                  source=audit.AI, detail=request[:120])
+    # النسخة قبل التنقيح كما بعده: التراجع بنقرة يعالج آخر تنقيح وحده، والنسخ
+    # تعالج ما قبله
+    audit.snapshot_section(sec["key"], current, source=audit.HUMAN)
+    audit.snapshot_section(sec["key"], revised, source=audit.AI)
 
 
 def _answer_question(sec: dict, question: str, model: str):

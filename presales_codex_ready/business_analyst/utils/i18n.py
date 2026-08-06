@@ -1352,6 +1352,35 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── نسخ الأقسام (13-6) / Section versions ──
+    "db.versions": {"ar": "🕘 النسخ ({n})", "en": "🕘 Versions ({n})"},
+    "db.versions_empty": {
+        "ar": "لا نسخ بعد — تُحفظ نسخة عند كل كتابة على القسم.",
+        "en": "No versions yet — one is saved on every write to this section.",
+    },
+    "db.versions_hint": {
+        "ar": "آخر {limit} نسخة محفوظة، الأحدث أولاً. الاسترجاع يحفظ النص الحالي نسخةً قبل استبداله.",
+        "en": "The latest {limit} versions, newest first. Restoring saves the current "
+              "text as a version before replacing it.",
+    },
+    "db.versions_pick": {"ar": "النسخة", "en": "Version"},
+    "db.versions_diff": {
+        "ar": "الفرق بين النسخة المختارة والنص الحالي:",
+        "en": "Difference between the selected version and the current text:",
+    },
+    "db.versions_same": {
+        "ar": "هذه النسخة مطابقة للنص الحالي.",
+        "en": "This version matches the current text.",
+    },
+    "db.versions_restore": {"ar": "استرجاع هذه النسخة", "en": "Restore this version"},
+    "db.versions_restore_help": {
+        "ar": "الاسترجاع لمالك القسم، ولا يعمل إن كانت النسخة مطابقة للنص الحالي.",
+        "en": "Restoring is for the section owner, and does nothing when the version "
+              "matches the current text.",
+    },
+    "db.versions_restored": {"ar": "✅ استُرجعت النسخة.", "en": "✅ Version restored."},
+    "audit.act_section.restore": {"ar": "استرجاع نسخة", "en": "Version restored"},
+
     # ── سجل التدقيق (13-5) / Audit trail ──
     "ad2.title": {"ar": "🧾 سجل التدقيق", "en": "🧾 Audit trail"},
     "ad2.hint": {
