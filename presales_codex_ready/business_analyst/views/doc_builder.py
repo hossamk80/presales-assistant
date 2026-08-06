@@ -1059,8 +1059,21 @@ def _render_export(sections: list):
     may_export = auth.can("export")
     if not may_export:
         st.info(t("role.export_forbidden"))
+
+    # 13-8: لا تصدير نهائي بلا اعتماد مسجَّل على المراجعة الحالية. مانع يُضاف
+    # إلى موانع التصدير القائمة (نص ناقص · متطلب حرج بلا تغطية) لا بديلاً عنها.
+    from utils import db as _db
+
+    project_id = st.session_state.get("_project_id")
+    approved = project_id is not None and _db.approvals_complete(project_id)
+    if project_id is None:
+        st.warning(t("ap.export_needs_project"))
+    elif not approved:
+        pending = _db.next_approval_stage(project_id)
+        st.warning(t("ap.export_blocked", stage=t("ap.stage_" + pending)))
+
     blocked = (has_placeholders or not payload or bool(coverage["blocking"])
-               or not may_export)
+               or not may_export or not approved)
 
     col_w, col_p = st.columns(2)
 

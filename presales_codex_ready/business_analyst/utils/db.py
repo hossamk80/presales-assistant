@@ -132,6 +132,27 @@ CREATE TABLE IF NOT EXISTS company_records (
 CREATE INDEX IF NOT EXISTS idx_company_records_registry
     ON company_records(registry);
 
+-- سير الاعتماد قبل التسليم (13-8): مدير العطاءات ← المالية ← الاعتماد النهائي.
+--
+-- الاعتماد يُسجَّل **على رقم مراجعة بعينه** (13-7) لا على المنافسة مطلقاً: عرض
+-- اعتُمد ثم عُدّل ليس هو العرض المعتمَد، فيسقط اعتماده ويُعاد. بلا هذا الربط
+-- يصير الاعتماد ختماً على ورقة بيضاء تُملأ بعده.
+--
+-- الجدول يُضاف إليه فقط: قرار يُلغى يُنقض بقرار تالٍ لا بحذف الأول.
+CREATE TABLE IF NOT EXISTS approvals (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    stage      TEXT NOT NULL,
+    decision   TEXT NOT NULL,
+    revision   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    user_id    INTEGER,
+    username   TEXT NOT NULL DEFAULT '',
+    note       TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_approvals_project ON approvals(project_id);
+
 -- نسخ الأقسام (13-6): سجل التدقيق يقول **من** غيّر، وهذا يحفظ **ماذا كان**.
 --
 -- الحاجة عملية: كاتب يستبدل قسماً بتوليد جديد فيخسر صياغة أفضل، أو مراجعة
@@ -390,6 +411,91 @@ def duplicate_project(project_id: int, new_name: str) -> Optional[int]:
     if src is None:
         return None
     return create_project(new_name, src["payload"], src["reference"], src["entity"])
+
+
+# ─── سير الاعتماد (13-8) ──────────────────────────────────────────────────────
+
+# ثلاث مراحل بترتيبها. المفاتيح ثابتة لا تُترجم — التسميات في `i18n` تحت
+# `ap.stage_<key>`، فقرار مخزَّن لا يتغيّر بتغيّر لغة قارئه.
+APPROVAL_STAGES = ("bid_manager", "finance", "final")
+APPROVED = "approved"
+REJECTED = "rejected"
+
+
+def record_approval(project_id: int, stage: str, decision: str, revision: int,
+                    user_id: Optional[int] = None, username: str = "",
+                    note: str = "") -> Optional[int]:
+    """يسجّل قراراً على مرحلة. القرار السابق يُنقض بهذا لا يُحذف."""
+    if stage not in APPROVAL_STAGES or decision not in (APPROVED, REJECTED):
+        return None
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO approvals (project_id, stage, decision, revision, "
+            "created_at, user_id, username, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (project_id, stage, decision, int(revision or 0), _now(), user_id,
+             username, note),
+        )
+        return cur.lastrowid
+
+
+def list_approvals(project_id: int, limit: int = 100) -> list:
+    rows = get_conn().execute(
+        "SELECT * FROM approvals WHERE project_id = ? ORDER BY id DESC LIMIT ?",
+        (project_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def approval_state(project_id: int, revision: Optional[int] = None) -> dict:
+    """
+    حالة كل مرحلة الآن: آخر قرار عليها، وهل سقط لأن العرض تغيّر بعده.
+
+    `stale` هو بيت القصيد: اعتماد على مراجعة أقدم ليس اعتماداً لما يُصدَّر اليوم.
+    """
+    if revision is None:
+        revision = project_revision(project_id) or 0
+
+    state = {}
+    for stage in APPROVAL_STAGES:
+        row = get_conn().execute(
+            "SELECT * FROM approvals WHERE project_id = ? AND stage = ? "
+            "ORDER BY id DESC LIMIT 1",
+            (project_id, stage),
+        ).fetchone()
+        if row is None:
+            state[stage] = {"decision": "", "username": "", "created_at": "",
+                            "note": "", "revision": None, "stale": False}
+            continue
+        entry = dict(row)
+        entry["stale"] = (entry["decision"] == APPROVED
+                          and int(entry["revision"] or 0) != int(revision))
+        state[stage] = entry
+    return state
+
+
+def approvals_complete(project_id: int, revision: Optional[int] = None) -> bool:
+    """المراحل الثلاث معتمَدة على المراجعة الحالية — شرط التصدير النهائي."""
+    state = approval_state(project_id, revision)
+    return all(
+        state[stage]["decision"] == APPROVED and not state[stage]["stale"]
+        for stage in APPROVAL_STAGES
+    )
+
+
+def next_approval_stage(project_id: int, revision: Optional[int] = None) -> Optional[str]:
+    """المرحلة التالية المطلوبة، أو `None` إن اكتملت كلها."""
+    state = approval_state(project_id, revision)
+    for stage in APPROVAL_STAGES:
+        if state[stage]["decision"] != APPROVED or state[stage]["stale"]:
+            return stage
+    return None
+
+
+def delete_approvals(project_id: int) -> int:
+    """تُستدعى عند حذف المنافسة — قراراتها تذهب معها."""
+    with transaction() as conn:
+        cur = conn.execute("DELETE FROM approvals WHERE project_id = ?", (project_id,))
+        return cur.rowcount
 
 
 # ─── نسخ الأقسام (13-6) ───────────────────────────────────────────────────────

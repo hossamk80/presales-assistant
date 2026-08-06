@@ -1352,6 +1352,66 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── سير الاعتماد (13-8) / Approval workflow ──
+    "ap.title": {"ar": "✅ اعتماد التسليم", "en": "✅ Delivery approval"},
+    "ap.hint": {
+        "ar": "ثلاث مراحل بترتيبها. الاعتماد يخصّ نسخة العرض التي اعتُمدت — أي تعديل بعده يُسقطه.",
+        "en": "Three stages in order. An approval covers the exact version it was given "
+              "to — any later edit drops it.",
+    },
+    "ap.stage_bid_manager": {"ar": "مدير العطاءات", "en": "Bid manager"},
+    "ap.stage_finance": {"ar": "المالية", "en": "Finance"},
+    "ap.stage_final": {"ar": "الاعتماد النهائي", "en": "Final approval"},
+    "ap.approve": {"ar": "اعتماد", "en": "Approve"},
+    "ap.reject": {"ar": "ردّ", "en": "Reject"},
+    "ap.note": {"ar": "ملاحظة", "en": "Note"},
+    "ap.note_ph": {"ar": "سبب الردّ أو ملاحظة الاعتماد…", "en": "Reason or remark…"},
+    "ap.not_yet": {"ar": "لم تُعتمد بعد.", "en": "Not approved yet."},
+    "ap.approved_by": {
+        "ar": "✅ اعتمدها {who} — {when}",
+        "en": "✅ Approved by {who} — {when}",
+    },
+    "ap.rejected_by": {
+        "ar": "⛔ ردّها {who} — {when} · {note}",
+        "en": "⛔ Rejected by {who} — {when} · {note}",
+    },
+    "ap.stale": {
+        "ar": "⚠️ سقط اعتماد {who} ({when}) — العرض تغيّر بعده.",
+        "en": "⚠️ {who}'s approval ({when}) lapsed — the proposal changed after it.",
+    },
+    "ap.pending": {
+        "ar": "⏳ المرحلة المطلوبة الآن: {stage}",
+        "en": "⏳ Stage required now: {stage}",
+    },
+    "ap.complete": {
+        "ar": "✅ المراحل الثلاث معتمَدة على النسخة الحالية — التسليم مفتوح.",
+        "en": "✅ All three stages approved for the current version — delivery is open.",
+    },
+    "ap.locked": {
+        "ar": "المرحلة مقفلة: إمّا لا تملك صلاحيتها أو لم تُعتمد المرحلة التي قبلها.",
+        "en": "Stage locked: either you lack its permission or the previous stage is "
+              "not approved.",
+    },
+    "ap.revision_hint": {
+        "ar": "الاعتماد يُسجَّل على نسخة العرض رقم {revision}.",
+        "en": "Approvals are recorded against proposal version {revision}.",
+    },
+    "ap.on_revision": {"ar": "على النسخة {revision}", "en": "on version {revision}"},
+    "ap.history": {"ar": "سجل القرارات ({n})", "en": "Decision history ({n})"},
+    "ap.no_project": {
+        "ar": "افتح منافسة أولاً — الاعتماد يخصّ منافسة بعينها.",
+        "en": "Open a tender first — approval belongs to a specific tender.",
+    },
+    "ap.export_blocked": {
+        "ar": "🔒 التصدير محجوب: المرحلة «{stage}» لم تُعتمد على النسخة الحالية.",
+        "en": "🔒 Export blocked: stage “{stage}” is not approved for the current version.",
+    },
+    "ap.export_needs_project": {
+        "ar": "🔒 التصدير النهائي يتطلّب منافسة مفتوحة باعتماد مسجَّل.",
+        "en": "🔒 Final export requires an open tender with a recorded approval.",
+    },
+    "audit.act_approval.decision": {"ar": "قرار اعتماد", "en": "Approval decision"},
+
     # ── تعارض الحفظ (13-7) / Save conflicts ──
     "proj.merged_clean": {
         "ar": "🔀 كتبت جلسة أخرى على هذه المنافسة، ودُمج تعديلك معها ({n} حقلاً) بلا تعارض.",

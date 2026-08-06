@@ -371,6 +371,7 @@ def test_each_role_gets_exactly_its_matrix_row(auth):
             "data.manage", "projects.create", "projects.edit", "projects.delete",
             "tables.edit", "sections.write", "sections.assign", "review.run",
             "assistant.ask", "company.edit", "export", "audit.view",
+            "approve.bid_manager", "approve.finance",
         },
         auth.WRITER: {
             "projects.create", "projects.edit", "tables.edit", "sections.write",
@@ -992,3 +993,130 @@ def test_an_untouched_session_does_not_resurrect_old_values(
 
     projects_view.save_current()                  # حفظ بلا تعديل من طرفي
     assert temp_db.load_project(pid)["payload"]["sec_exec"] == "نصّهم الجديد"
+
+
+# ─── 13-8: سير الاعتماد قبل التسليم ──────────────────────────────────────────
+
+
+def _approve_all(temp_db, pid, revision=None):
+    if revision is None:
+        revision = temp_db.project_revision(pid) or 0
+    for stage in temp_db.APPROVAL_STAGES:
+        temp_db.record_approval(pid, stage, temp_db.APPROVED, revision,
+                                username="المدير")
+    return revision
+
+
+def test_nothing_is_approved_by_default(temp_db):
+    pid = temp_db.create_project("منافسة", {})
+    assert temp_db.approvals_complete(pid) is False
+    assert temp_db.next_approval_stage(pid) == "bid_manager"
+
+
+def test_all_three_stages_open_the_delivery(temp_db):
+    """شرط قبول 13-8: لا تصدير نهائي بلا اعتماد مسجَّل."""
+    pid = temp_db.create_project("منافسة", {})
+
+    temp_db.record_approval(pid, "bid_manager", temp_db.APPROVED, 0)
+    assert temp_db.approvals_complete(pid) is False      # مرحلة واحدة لا تكفي
+    assert temp_db.next_approval_stage(pid) == "finance"
+
+    temp_db.record_approval(pid, "finance", temp_db.APPROVED, 0)
+    assert temp_db.approvals_complete(pid) is False
+    assert temp_db.next_approval_stage(pid) == "final"
+
+    temp_db.record_approval(pid, "final", temp_db.APPROVED, 0)
+    assert temp_db.approvals_complete(pid) is True
+    assert temp_db.next_approval_stage(pid) is None
+
+
+def test_editing_after_approval_drops_it(temp_db):
+    """عرض اعتُمد ثم عُدّل ليس هو العرض المعتمَد."""
+    pid = temp_db.create_project("منافسة", {"sec_exec": "نص"})
+    _approve_all(temp_db, pid)
+    assert temp_db.approvals_complete(pid) is True
+
+    temp_db.save_project(pid, {"sec_exec": "نص معدَّل"})     # المراجعة تتقدّم
+
+    assert temp_db.approvals_complete(pid) is False
+    state = temp_db.approval_state(pid)
+    assert all(state[stage]["stale"] for stage in temp_db.APPROVAL_STAGES)
+    assert temp_db.next_approval_stage(pid) == "bid_manager"   # تُعاد من أولها
+
+
+def test_a_rejection_blocks_and_is_kept_with_its_reason(temp_db):
+    pid = temp_db.create_project("منافسة", {})
+    temp_db.record_approval(pid, "bid_manager", temp_db.APPROVED, 0)
+    temp_db.record_approval(pid, "finance", temp_db.REJECTED, 0,
+                            username="المالية", note="التسعير غير مكتمل")
+
+    assert temp_db.approvals_complete(pid) is False
+    assert temp_db.next_approval_stage(pid) == "finance"
+    state = temp_db.approval_state(pid)
+    assert state["finance"]["decision"] == temp_db.REJECTED
+    assert state["finance"]["note"] == "التسعير غير مكتمل"
+
+
+def test_a_rejection_can_be_lifted_by_a_later_decision(temp_db):
+    """قرار يُنقض بقرار تالٍ لا بحذف الأول — السجل يحفظ الاثنين."""
+    pid = temp_db.create_project("منافسة", {})
+    temp_db.record_approval(pid, "bid_manager", temp_db.REJECTED, 0, note="ناقص")
+    temp_db.record_approval(pid, "bid_manager", temp_db.APPROVED, 0)
+
+    assert temp_db.approval_state(pid)["bid_manager"]["decision"] == temp_db.APPROVED
+    decisions = [r["decision"] for r in temp_db.list_approvals(pid)]
+    assert decisions == [temp_db.APPROVED, temp_db.REJECTED]     # الأحدث أولاً
+
+
+def test_an_unknown_stage_or_decision_is_refused(temp_db):
+    pid = temp_db.create_project("منافسة", {})
+    assert temp_db.record_approval(pid, "legal", temp_db.APPROVED, 0) is None
+    assert temp_db.record_approval(pid, "final", "maybe", 0) is None
+    assert temp_db.list_approvals(pid) == []
+
+
+def test_approvals_are_scoped_to_their_tender(temp_db):
+    first = temp_db.create_project("أولى", {})
+    second = temp_db.create_project("ثانية", {})
+    _approve_all(temp_db, first)
+
+    assert temp_db.approvals_complete(first) is True
+    assert temp_db.approvals_complete(second) is False
+
+
+def test_deleting_a_tender_takes_its_approvals_with_it(temp_db):
+    pid = temp_db.create_project("منافسة", {})
+    _approve_all(temp_db, pid)
+
+    assert temp_db.delete_approvals(pid) == 3
+    assert temp_db.list_approvals(pid) == []
+
+
+def test_who_approved_and_when_is_recorded(temp_db):
+    pid = temp_db.create_project("منافسة", {})
+    temp_db.record_approval(pid, "bid_manager", temp_db.APPROVED, 0,
+                            user_id=7, username="سارة", note="جاهز")
+
+    entry = temp_db.approval_state(pid)["bid_manager"]
+    assert (entry["username"], entry["user_id"], entry["note"]) == ("سارة", 7, "جاهز")
+    assert entry["created_at"]
+
+
+def test_only_the_admin_gives_the_final_approval(auth):
+    """المرحلة الأخيرة لا تُترك لمن يُعدّ العرض."""
+    _add(auth, "manager", "strong-pass-1", role=auth.BID_MANAGER)
+    auth.login("manager", "strong-pass-1")
+    assert auth.can("approve.bid_manager")
+    assert auth.can("approve.finance")
+    assert auth.blocked("approve.final")
+
+    _add(auth, "boss", "strong-pass-2", role=auth.ADMIN)
+    auth.login("boss", "strong-pass-2")
+    assert auth.can("approve.final")
+
+
+def test_a_writer_approves_nothing(auth):
+    _add(auth, "kateb", "strong-pass-1", role=auth.WRITER)
+    auth.login("kateb", "strong-pass-1")
+    for stage in ("bid_manager", "finance", "final"):
+        assert auth.blocked(f"approve.{stage}")
