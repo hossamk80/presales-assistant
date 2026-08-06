@@ -442,17 +442,11 @@ def _users_section():
 
 
 def render_settings():
-    st.markdown(t("st.title"))
 
     # 13-3: المفاتيح والنماذج وحدّ الإنفاق لمدير النظام. غير المصرَّح له لا
     # يرى الحقول معطَّلة — لا يراها أصلاً: مفتاح معروض ولو معطَّلاً مفتاح مقروء.
     if auth.can("settings.manage"):
-        st.markdown(
-            f"""<div style="background:#FEF3C7;padding:12px 16px;border-radius:8px;
-                        margin-bottom:12px;font-family:Tajawal,sans-serif;font-size:14px;
-                        color:#92400E;">{t("st.key_warning")}</div>""",
-            unsafe_allow_html=True,
-        )
+        st.warning(t("st.key_warning"))
         _provider_section()
         _task_models_section()
         _embedding_section()
@@ -530,7 +524,6 @@ def _audit_section():
 
 
 def render_data():
-    st.markdown(t("dm.title"))
 
     if auth.can("audit.view"):
         _audit_section()

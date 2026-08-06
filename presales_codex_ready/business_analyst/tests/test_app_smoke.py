@@ -29,12 +29,12 @@ def real_streamlit(monkeypatch, tmp_path):
     yield
 
 
-def _nav_radio(at):
+def _nav_buttons(at):
     """
-    عنصر التنقّل وحده — شاشة الدخول تعرض مبدّل لغة الواجهة، فوجود `radio`
-    ليس دليلاً على الوصول إلى الشاشات.
+    أزرار التنقّل في الشريط العلوي وحدها — شاشة الدخول تعرض عناصر أخرى،
+    فوجود زر ليس دليلاً على الوصول إلى الشاشات.
     """
-    return [r for r in at.radio if r.key == "nav_radio"]
+    return [b for b in at.button if (b.key or "").startswith("nav_")]
 
 
 def _signed_in_user(role: str = "admin", username: str = "tester") -> int:
@@ -60,9 +60,8 @@ def _run(page: str | None = None, user_id: int | None = -1):
         at.session_state["auth_user_id"] = user_id
     at.run()
     if page is not None:
-        # `nav_radio` هو مصدر التوجيه: الشريط الجانبي يكتب `nav_selection` من
-        # قيمة الراديو في كل دورة، فضبط الأخير وحده لا يغيّر الصفحة.
-        at.session_state["nav_radio"] = page
+        # `nav_selection` وحده مصدر التوجيه بعد استبدال الشريط الجانبي بشريط
+        # علوي: الأزرار تكتب فيه، والتوجيه يقرأ منه.
         at.session_state["nav_selection"] = page
         at.run()
     return at
@@ -73,7 +72,7 @@ def test_app_starts_without_exception():
     assert not at.exception, f"التطبيق رفع استثناءً عند الإقلاع: {at.exception}"
 
 
-def test_sidebar_has_exactly_the_intended_pages():
+def test_top_nav_has_exactly_the_intended_pages():
     """
     مجلد views/ سُمّي كذلك تحديداً كي لا يلتقطه نظام الصفحات التلقائي في
     Streamlit ويضيف عناصر تنقّل شبحية. لو أُعيد لاسم pages/ لكسر هذا الاختبار.
@@ -81,12 +80,20 @@ def test_sidebar_has_exactly_the_intended_pages():
     from utils.i18n import t
 
     at = _run()
-    assert at.radio, "لا يوجد عنصر تنقّل في الشريط الجانبي"
-    # AppTest يعيد التسميات المنسّقة لا القيم، فنقارن بالتسميات المترجمة
-    labels = list(at.radio[0].options)
-    assert len(labels) == len(NAV_PAGES)
-    for key, label in zip(NAV_PAGES, labels):
-        assert t(f"nav.{key}") in label, f"عنصر التنقل {key} لا يطابق {label}"
+    buttons = _nav_buttons(at)
+    assert buttons, "لا يوجد عنصر تنقّل في الشريط العلوي"
+    assert [b.key for b in buttons] == [f"nav_{k}" for k in NAV_PAGES]
+    for key, button in zip(NAV_PAGES, buttons):
+        assert t(f"nav.{key}") in button.label, \
+            f"عنصر التنقل {key} لا يطابق {button.label}"
+
+
+def test_clicking_a_nav_button_switches_page():
+    """الشريط العلوي يوجّه فعلاً لا يرسم أزراراً معطّلة عن التوجيه."""
+    at = _run()
+    next((b for b in at.button if b.key == "nav_company")).click().run()
+    assert not at.exception
+    assert at.session_state["nav_selection"] == "company"
 
 
 @pytest.mark.parametrize("page", NAV_PAGES)
@@ -97,7 +104,7 @@ def test_every_page_renders(page):
 
 def test_no_api_key_does_not_crash_workspace():
     """مساحة العمل يجب أن تُرسم وترشد المستخدم بدل الانهيار بلا مفتاح."""
-    at = _run("🚀 مساحة العمل")
+    at = _run("workspace")
     assert not at.exception
 
 
@@ -109,7 +116,7 @@ def test_no_screen_renders_before_sign_in():
     _signed_in_user()                       # النظام مهيّأ، لكن لا جلسة
     at = _run(user_id=None)
     assert not at.exception
-    assert not _nav_radio(at), "عنصر التنقّل ظهر لمستخدم غير مسجَّل دخوله"
+    assert not _nav_buttons(at), "عنصر التنقّل ظهر لمستخدم غير مسجَّل دخوله"
     assert at.text_input, "شاشة الدخول لم تُرسم"
 
 
@@ -117,7 +124,7 @@ def test_first_run_offers_account_setup():
     """قاعدة بلا مستخدم لا تُقفل على نفسها: تعرض تهيئة أول حساب."""
     at = _run(user_id=None)
     assert not at.exception
-    assert not _nav_radio(at)
+    assert not _nav_buttons(at)
     assert at.text_input, "شاشة التهيئة بلا حقول"
 
 
@@ -127,18 +134,18 @@ def test_disabled_account_loses_its_open_session():
 
     user_id = _signed_in_user()
     at = _run(page=None, user_id=user_id)
-    assert _nav_radio(at), "المستخدم الفعّال لم يصل إلى الشاشات"
+    assert _nav_buttons(at), "المستخدم الفعّال لم يصل إلى الشاشات"
 
     db.set_user_active(user_id, False)
     at.run()
     assert not at.exception
-    assert not _nav_radio(at), "حساب معطَّل ظلّ يرى الشاشات"
+    assert not _nav_buttons(at), "حساب معطَّل ظلّ يرى الشاشات"
 
 
 def test_default_outline_is_available():
     from utils.state import DEFAULT_SECTIONS
 
-    at = _run("🚀 مساحة العمل")
+    at = _run("workspace")
     assert not at.exception
     assert len(DEFAULT_SECTIONS) >= 6
 
@@ -217,7 +224,7 @@ def test_a_writer_cannot_edit_a_section_owned_by_someone_else():
 
     at = _run(user_id=mine)
     at.session_state["proposal_sections"] = sections
-    at.session_state["nav_radio"] = "workspace"
+    at.session_state["nav_selection"] = "workspace"
     at.run()
     assert not at.exception
 

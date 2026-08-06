@@ -8,6 +8,7 @@ import json
 import streamlit as st
 
 from utils import audit, auth, db, history
+from components import theme
 from utils.i18n import t
 from utils.state import (
     STATE_SCHEMA,
@@ -163,7 +164,7 @@ def _render_history(projects: list, pid):
                     marks.append(" · ".join(item["shared_terms"][:4]))
                 st.markdown(
                     f"- **{item['name']}** — {outcome}"
-                    + (f"  \n  <span style='color:#64748B;font-size:12px'>"
+                    + (f"  \n  <span style='color:{theme.TOKENS['muted']};font-size:12px'>"
                        f"{' | '.join(marks)}</span>" if marks else ""),
                     unsafe_allow_html=True,
                 )
@@ -255,7 +256,6 @@ def _render_entities():
 
 
 def render():
-    st.markdown(f"### {t('proj.title')}")
     st.caption(f"{t('proj.caption')} {t('proj.db_path')} `{db.DB_PATH}`")
 
     pid = current_project_id()
@@ -332,7 +332,7 @@ def render():
                 ]))
                 st.markdown(
                     f"{'📂' if is_open else '📁'} **{proj['name']}**"
-                    f"<br><span style='color:#64748B;font-size:12px'>{meta}</span>",
+                    f"<br><span style='color:{theme.TOKENS['muted']};font-size:12px'>{meta}</span>",
                     unsafe_allow_html=True,
                 )
             with c_open:

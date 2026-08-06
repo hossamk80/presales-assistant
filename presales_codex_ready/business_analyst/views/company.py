@@ -9,12 +9,12 @@ import streamlit as st
 
 from utils import auth, db, knowledge, local_content, providers, records, submission
 from utils.file_handler import BRAND_COLOR, BRAND_FONT_AR
+from components import theme
 from utils.i18n import t
 from utils.state import get_company_snapshot
 
 
 def render():
-    st.markdown(t("co.title"))
 
     # 13-3: ملف الشركة وسجلاتها ومستودع معرفتها مِلك المنشأة لا المنافسة —
     # يعدّلها مدير النظام ومدير العطاءات. الباقون يقرأون.
@@ -303,7 +303,7 @@ def _render_knowledge_base():
             with c_info:
                 st.markdown(
                     f"**{doc['name']}**<br>"
-                    f"<span style='color:#64748B;font-size:12px'>"
+                    f"<span style='color:{theme.TOKENS['muted']};font-size:12px'>"
                     f"{t('kbcat.' + doc['category'])} · "
                     f"{doc['chunks']} {t('co.kb_chunk_unit')} · "
                     f"{doc['char_count']:,} {t('co.kb_char_unit')} · {doc['added_at']}"

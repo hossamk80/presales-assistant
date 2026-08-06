@@ -21,6 +21,7 @@ from utils import (
     addenda, boq_parser, db, history, knowledge, savings, submission, textprep,
 )
 from utils.file_handler import extract_texts_per_file
+from components import theme
 from utils.i18n import t
 from utils.state import (
     ATTACHMENT_ROLES,
@@ -235,7 +236,7 @@ def _render_attachment_roles():
             c_name, c_role, c_del = st.columns([5, 3, 1])
             with c_name:
                 st.markdown(
-                    f"**{name}**<br><span style='color:#64748B;font-size:12px'>"
+                    f"**{name}**<br><span style='color:{theme.TOKENS['muted']};font-size:12px'>"
                     f"{t('an.chars', n=f'{len(texts[name]):,}')}</span>",
                     unsafe_allow_html=True,
                 )

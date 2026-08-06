@@ -29,6 +29,7 @@ from utils.file_handler import (
     resolve_document_tokens,
 )
 from utils import audit, auth
+from components import theme
 from utils.i18n import t
 from utils.state import (
     SECTION_STATUSES,
@@ -375,7 +376,7 @@ def _render_section_list(sections: list):
             prio = t("db.priority", value=sec["priority"]) if sec.get("priority") else ""
             st.markdown(
                 f"{mark} {badge} **{sec['title']}**"
-                f"<span style='color:#64748B;font-size:12px'>{prio}</span>",
+                f"<span style='color:{theme.TOKENS['muted']};font-size:12px'>{prio}</span>",
                 unsafe_allow_html=True,
             )
 
