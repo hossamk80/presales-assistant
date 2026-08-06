@@ -1352,6 +1352,26 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── تعارض الحفظ (13-7) / Save conflicts ──
+    "proj.merged_clean": {
+        "ar": "🔀 كتبت جلسة أخرى على هذه المنافسة، ودُمج تعديلك معها ({n} حقلاً) بلا تعارض.",
+        "en": "🔀 Another session wrote to this tender; your {n} change(s) were merged "
+              "with no conflict.",
+    },
+    "proj.merged_with_clash": {
+        "ar": "⚠️ كتبت جلسة أخرى على هذه المنافسة. دُمج {n} حقلاً، وتعارض: {fields} — "
+              "اعتُمدت نسختهم، ونصّك محفوظ في نسخ القسم ويمكن استرجاعه.",
+        "en": "⚠️ Another session wrote to this tender. {n} field(s) merged; conflicting: "
+              "{fields} — their version was kept, and yours is saved in the section "
+              "versions and can be restored.",
+    },
+    "proj.merge_busy": {
+        "ar": "جلسات أخرى تكتب على هذه المنافسة الآن — لم يُحفظ تعديلك بعد، وهو باق أمامك.",
+        "en": "Other sessions are writing to this tender right now — your change is not "
+              "saved yet, and is still in front of you.",
+    },
+    "audit.act_project.merge": {"ar": "دمج تعارض حفظ", "en": "Save conflict merged"},
+
     # ── نسخ الأقسام (13-6) / Section versions ──
     "db.versions": {"ar": "🕘 النسخ ({n})", "en": "🕘 Versions ({n})"},
     "db.versions_empty": {

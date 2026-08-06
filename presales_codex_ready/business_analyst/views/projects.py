@@ -35,11 +35,101 @@ def save_current(show_toast: bool = False) -> bool:
         return False
     snapshot = get_project_snapshot()
     _audit_section_edits(snapshot)
-    db.save_project(pid, snapshot)
-    st.session_state["_saved_fingerprint"] = _fingerprint(snapshot)
+    _write(pid, snapshot)
     if show_toast:
         st.toast(t("proj.saved"))
     return True
+
+
+# ─── تعارض الحفظ التلقائي (13-7) ──────────────────────────────────────────────
+#
+# كان الحفظ غير مشروط: جلستان على منافسة واحدة تكتبان بالتناوب، فآخر كاتب يمحو
+# عمل الأول بلا أن يعلم أحدهما. الآن لكل منافسة رقم مراجعة، والجلسة تحمل الرقم
+# الذي رأته آخر مرة. عند اختلافهما نُدمج بدل أن ندهس:
+#
+#   · حقل غيّرته أنا وحدي            ← يُكتب كما لديّ
+#   · حقل غيّره الآخر وحده           ← يبقى كما لديه
+#   · حقل غيّرناه كلانا إلى قيمتين   ← تعارض حقيقي: تُعتمد نسخته (فهي المحفوظة
+#                                       بالفعل) ويُحفظ نصّي نسخةً في سجل النسخ
+#                                       (13-6) وأُبلَّغ به. لا شيء يضيع.
+
+
+# محاولات الدمج قبل الاستسلام — الدوران بلا حدّ يُعلّق الواجهة
+_MERGE_ATTEMPTS = 3
+
+
+def _revision() -> int | None:
+    return st.session_state.get("_project_revision")
+
+
+def _write(project_id: int, snapshot: dict):
+    """يحفظ حفظاً مشروطاً، ويدمج إن سبقته جلسة أخرى."""
+    new_revision = db.save_project(
+        project_id, snapshot, expected_revision=_revision()
+    )
+    if new_revision is None:
+        new_revision = _merge_and_write(project_id, snapshot)
+    st.session_state["_project_revision"] = new_revision
+    st.session_state["_saved_fingerprint"] = _fingerprint(get_project_snapshot())
+
+
+def _changed_keys(before: dict, after: dict) -> set:
+    return {k for k in set(before) | set(after) if before.get(k) != after.get(k)}
+
+
+def _merge_and_write(project_id: int, mine: dict, attempt: int = 1) -> int | None:
+    """
+    يدمج تعديلاتي في نسخة الجلسة الأخرى ويحفظ. يعيد رقم المراجعة الجديد.
+
+    الأساس هو ما حفظتُه أنا آخر مرة (`_saved_fingerprint`): ما اختلف عنه عندي
+    هو تعديلي، وما اختلف عنه عندهم هو تعديلهم.
+    """
+    if attempt > _MERGE_ATTEMPTS:
+        # جلسات تكتب أسرع مما ندمج — نتوقف بلا كتابة بدل الدوران، وعملي باقٍ
+        # في جلستي وفي سجل النسخ
+        st.session_state["_autosave_error"] = t("proj.merge_busy")
+        return db.project_revision(project_id)
+
+    record = db.load_project(project_id)
+    if record is None:
+        return None
+    theirs = record["payload"]
+
+    try:
+        base = json.loads(st.session_state.get("_saved_fingerprint") or "{}")
+    except (TypeError, ValueError):
+        base = {}
+
+    my_edits = _changed_keys(base, mine)
+    their_edits = _changed_keys(base, theirs)
+    clashing = sorted(
+        k for k in my_edits & their_edits if mine.get(k) != theirs.get(k)
+    )
+
+    merged = dict(theirs)
+    for key in my_edits - set(clashing):
+        merged[key] = mine[key]
+
+    # التعارض الحقيقي: نصّي لا يُكتب فوق نصّهم، لكنه لا يضيع — يُحفظ نسخةً
+    for key in clashing:
+        if key.startswith("sec_"):
+            audit.snapshot_section(key[4:], str(mine.get(key) or ""),
+                                   project_id=project_id)
+
+    revision = db.save_project(project_id, merged,
+                               expected_revision=record.get("revision"))
+    if revision is None:
+        # جلسة ثالثة كتبت أثناء الدمج — نعيد المحاولة على حالتها الجديدة
+        return _merge_and_write(project_id, mine, attempt + 1)
+
+    load_state_snapshot(merged)
+    audit.record(audit.PROJECT_MERGE, project_id=project_id,
+                 detail=",".join(clashing))
+    st.session_state["_merge_notice"] = {
+        "merged": len(my_edits - set(clashing)),
+        "clashing": clashing,
+    }
+    return revision
 
 
 def _fingerprint(snapshot: dict) -> str:
@@ -81,8 +171,7 @@ def autosave():
         fingerprint = _fingerprint(snapshot)
         if fingerprint != st.session_state.get("_saved_fingerprint"):
             _audit_section_edits(snapshot)
-            db.save_project(current_project_id(), snapshot)
-            st.session_state["_saved_fingerprint"] = fingerprint
+            _write(current_project_id(), snapshot)
     except Exception as e:
         # الحفظ التلقائي لا يجوز أن يُسقط الواجهة
         st.session_state["_autosave_error"] = str(e)
@@ -114,6 +203,8 @@ def open_project(project_id: int):
     load_state_snapshot(record["payload"])
     st.session_state["_project_id"] = project_id
     st.session_state["_project_name"] = record["name"]
+    # 13-7: الرقم الذي رأته هذه الجلسة — أساس كشف كتابة جلسة أخرى بعده
+    st.session_state["_project_revision"] = record.get("revision")
     st.session_state["_saved_fingerprint"] = _fingerprint(get_project_snapshot())
 
 
@@ -122,6 +213,7 @@ def close_project():
     _clear_project_state()
     st.session_state.pop("_project_id", None)
     st.session_state.pop("_project_name", None)
+    st.session_state.pop("_project_revision", None)
     st.session_state.pop("_saved_fingerprint", None)
 
 
@@ -274,6 +366,15 @@ def render():
     else:
         st.info(t("proj.none_open"))
 
+    notice = st.session_state.pop("_merge_notice", None)
+    if notice:
+        # 13-7: الدمج حدث فعلاً — نُبلّغ به ولا نسأل عنه بعد فوات الأوان
+        if notice["clashing"]:
+            st.warning(t("proj.merged_with_clash",
+                         n=notice["merged"], fields=" · ".join(notice["clashing"])))
+        else:
+            st.info(t("proj.merged_clean", n=notice["merged"]))
+
     if st.session_state.get("_autosave_error"):
         st.warning(t("proj.autosave_failed", error=st.session_state.pop("_autosave_error")))
 
@@ -307,6 +408,7 @@ def render():
                     )
                     st.session_state["_project_id"] = new_id
                     st.session_state["_project_name"] = name.strip()
+                    st.session_state["_project_revision"] = db.project_revision(new_id)
                     st.session_state["_saved_fingerprint"] = _fingerprint(get_project_snapshot())
                     audit.record(audit.PROJECT_CREATE, project_id=new_id,
                                  project_name=name.strip())

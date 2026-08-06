@@ -32,7 +32,10 @@ CREATE TABLE IF NOT EXISTS projects (
     entity      TEXT DEFAULT '',
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
-    payload     TEXT NOT NULL
+    payload     TEXT NOT NULL,
+    -- 13-7: يزيد مع كل حفظ. الحفظ المشروط يقارنه بما رآه المُحرِّر آخر مرة،
+    -- فيكتشف أن جلسة أخرى كتبت بينهما بدل أن يدهس عملها.
+    revision    INTEGER NOT NULL DEFAULT 0
 );
 
 -- ملف الشركة (13-1): كان الجدول مقيَّداً بصف واحد `CHECK (id = 1)` لأن النظام
@@ -129,15 +132,6 @@ CREATE TABLE IF NOT EXISTS company_records (
 CREATE INDEX IF NOT EXISTS idx_company_records_registry
     ON company_records(registry);
 
--- المستخدمون (13-2): النظام كان بلا هوية — من يفتح المتصفح يملك كل شيء. قسم
--- عطاءات فيه أكثر من شخص يحتاج حساباً لكل واحد قبل أي شاشة.
---
--- الكلمة لا تُخزَّن ولا تُشفَّر تشفيراً عكسياً: يُخزَّن ناتج اشتقاق بطيء
--- (scrypt) مع ملحه، والتحقق في `utils/auth.py`. القاعدة هنا لا تعرف كلمة سر.
--- `username` بلا حساسية لحالة الأحرف — «Ahmed» و «ahmed» شخص واحد لا اثنان.
---
--- `role` يُخزَّن الآن ويُفرَض في 13-3 (الأدوار الخمسة)؛ وجود العمود من الآن
--- يوفّر ترحيلاً لاحقاً على قواعد صارت تحمل مستخدمين.
 -- نسخ الأقسام (13-6): سجل التدقيق يقول **من** غيّر، وهذا يحفظ **ماذا كان**.
 --
 -- الحاجة عملية: كاتب يستبدل قسماً بتوليد جديد فيخسر صياغة أفضل، أو مراجعة
@@ -184,6 +178,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_log_project ON audit_log(project_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at);
 
+-- المستخدمون (13-2): النظام كان بلا هوية — من يفتح المتصفح يملك كل شيء. قسم
+-- عطاءات فيه أكثر من شخص يحتاج حساباً لكل واحد قبل أي شاشة.
+--
+-- الكلمة لا تُخزَّن ولا تُشفَّر تشفيراً عكسياً: يُخزَّن ناتج اشتقاق بطيء
+-- (scrypt) مع ملحه، والتحقق في `utils/auth.py`. القاعدة هنا لا تعرف كلمة سر.
+-- `username` بلا حساسية لحالة الأحرف — «Ahmed» و «ahmed» شخص واحد لا اثنان.
+--
+-- `role` يُخزَّن الآن ويُفرَض في 13-3 (الأدوار الخمسة)؛ وجود العمود من الآن
+-- يوفّر ترحيلاً لاحقاً على قواعد صارت تحمل مستخدمين.
 CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -205,6 +208,9 @@ _ADDED_COLUMNS = (
     # 11-6: تغيير نموذج التضمين يُبطل المتجهات المخزَّنة. نحفظ اسم النموذج
     # مع كل مقطع حتى نعدّ المقاطع المعطَّلة صراحةً بدل إهمالها صامتةً.
     ("kb_chunks", "embed_model", "TEXT DEFAULT ''"),
+    # 13-7: عدّاد يزيد مع كل حفظ. جلستان على منافسة واحدة تكتشفان تعارضهما
+    # بمقارنته بدل أن يمحو آخر كاتب عمل الأول.
+    ("projects", "revision", "INTEGER NOT NULL DEFAULT 0"),
     # 13-1: الشركة صارت صفاً من صفوف لا صفاً وحيداً، فلها اسم وتاريخ إنشاء.
     ("company", "name", "TEXT NOT NULL DEFAULT ''"),
     ("company", "created_at", "TEXT NOT NULL DEFAULT ''"),
@@ -334,17 +340,44 @@ def load_project(project_id: int) -> Optional[dict]:
     return data
 
 
+def project_revision(project_id: int) -> Optional[int]:
+    row = get_conn().execute(
+        "SELECT revision FROM projects WHERE id = ?", (project_id,)
+    ).fetchone()
+    return None if row is None else int(row["revision"] or 0)
+
+
 def save_project(project_id: int, payload: dict, name: Optional[str] = None,
-                 reference: Optional[str] = None, entity: Optional[str] = None):
-    sets = ["updated_at = ?", "payload = ?"]
+                 reference: Optional[str] = None, entity: Optional[str] = None,
+                 expected_revision: Optional[int] = None) -> Optional[int]:
+    """
+    يحفظ المنافسة ويعيد رقم مراجعتها الجديد.
+
+    **حفظ مشروط (13-7)**: عند تمرير `expected_revision` لا تُكتب الحمولة إلا إن
+    كانت المراجعة المخزَّنة مطابقة لما رآه المُحرِّر آخر مرة، ويعيد `None` إن
+    تغيّرت — أي أن جلسة أخرى كتبت بينهما. الشرط والكتابة في جملة `UPDATE`
+    واحدة، فلا فجوة بين الفحص والكتابة تمرّ منها جلسة ثالثة.
+
+    بلا `expected_revision` يبقى السلوك القديم: كتابة غير مشروطة.
+    """
+    sets = ["updated_at = ?", "payload = ?", "revision = revision + 1"]
     args: list[Any] = [_now(), json.dumps(payload, ensure_ascii=False)]
     for column, value in (("name", name), ("reference", reference), ("entity", entity)):
         if value is not None:
             sets.append(f"{column} = ?")
             args.append(value)
     args.append(project_id)
+
+    where = "id = ?"
+    if expected_revision is not None:
+        where += " AND revision = ?"
+        args.append(expected_revision)
+
     with transaction() as conn:
-        conn.execute(f"UPDATE projects SET {', '.join(sets)} WHERE id = ?", args)
+        cur = conn.execute(f"UPDATE projects SET {', '.join(sets)} WHERE {where}", args)
+        if cur.rowcount == 0:
+            return None
+    return project_revision(project_id)
 
 
 def delete_project(project_id: int):
