@@ -20,6 +20,9 @@ TEXT, LONGTEXT, INT, DATE, BOOL, CHOICE = (
 )
 
 PARTNERSHIP_LEVELS = ["", "Registered", "Silver", "Gold", "Platinum", "Elite", "أخرى"]
+# 13-10: أسس المعالجة المعلنة في سجل الكوادر
+LEGAL_BASES = ("عقد عمل", "موافقة صريحة", "مصلحة مشروعة")
+
 AVAILABILITY = ["متاح", "مرتبط جزئياً", "مرتبط بالكامل", "غير معلوم"]
 OUR_ROLES = ["مقاول رئيسي", "مقاول من الباطن", "شريك في تحالف", "مورّد"]
 
@@ -46,6 +49,10 @@ REGISTRIES = {
             _col("availability", "rec.p_availability", CHOICE,
                  options=AVAILABILITY, default="غير معلوم"),
             _col("cv_document", "rec.p_cv"),
+            # 13-10: أساس معالجة بيانات هذا الشخص — يُعلن لكل صفّ لا للنظام
+            # جملةً، فالموظف والمرشّح والمستشار لا يتساوى أساسهم.
+            _col("legal_basis", "rec.p_basis", CHOICE,
+                 options=LEGAL_BASES, default=LEGAL_BASES[0]),
         ],
     },
     # 12-3: سابقة الأعمال — «ثلاثة مشاريع مماثلة» تُطابَق بصفوف لا بنص

@@ -1270,3 +1270,163 @@ def test_restoring_swaps_the_live_connection(bk, temp_db):
 
     assert bk.restore(data) is None
     assert [p["name"] for p in temp_db.list_projects()] == ["منافسة"]
+
+
+# ─── 13-10: سياسة البيانات الشخصية ───────────────────────────────────────────
+
+
+def _person_with_cv(db, name="سارة", filename="سيرة-سارة.pdf", link=True):
+    """يزرع شخصاً في سجل الكوادر وسيرته في المستودع بمقاطعها."""
+    import struct
+
+    db.save_records("people", [
+        {"name": name, "role": "مدير مشروع", "cv_document": filename if link else ""},
+    ])
+    doc_id = db.add_kb_document(filename, "cv", 4000, person=name if link else "")
+    db.add_kb_chunks(doc_id, [
+        (0, f"خبرة {name} في القطاع الصحي", 3, struct.pack("3f", 1.0, 0.0, 0.0)),
+        (1, f"شهادات {name}", 3, struct.pack("3f", 0.0, 1.0, 0.0)),
+    ])
+    return doc_id
+
+
+def test_erasing_a_person_removes_their_cv_and_its_chunks(temp_db):
+    """شرط قبول 13-10: حذف شخص يحذف سيرته ومقاطعها من المستودع."""
+    _person_with_cv(temp_db, "سارة")
+    assert temp_db.kb_stats() == {"docs": 1, "chunks": 2}
+
+    removed = temp_db.forget_person("سارة")
+
+    assert removed == {"records": 1, "documents": 1, "chunks": 2}
+    assert temp_db.list_records("people") == []
+    assert temp_db.kb_stats() == {"docs": 0, "chunks": 0}
+
+
+def test_erasing_one_person_leaves_the_others_untouched(temp_db):
+    import struct
+
+    temp_db.save_records("people", [
+        {"name": "سارة", "cv_document": "سارة.pdf"},
+        {"name": "عمر", "cv_document": "عمر.pdf"},
+    ])
+    for name in ("سارة", "عمر"):
+        doc = temp_db.add_kb_document(f"{name}.pdf", "cv", 100, person=name)
+        temp_db.add_kb_chunks(doc, [(0, name, 3, struct.pack("3f", 1.0, 0.0, 0.0))])
+
+    temp_db.forget_person("سارة")
+
+    assert [r["name"] for r in temp_db.list_records("people")] == ["عمر"]
+    assert [d["person"] for d in temp_db.list_kb_documents()] == ["عمر"]
+    assert temp_db.kb_stats()["chunks"] == 1
+
+
+def test_a_cv_uploaded_before_the_link_existed_is_still_erased(temp_db):
+    """
+    سيرة رُفعت قبل 13-10 لا تحمل ربطاً — وحقّ صاحبها في حذفها لا ينتظر ترقية.
+    الصلة تأتي من `cv_document` في صفّه.
+    """
+    _person_with_cv(temp_db, "سارة", "سيرة-قديمة.pdf", link=False)
+    temp_db.save_records("people", [{"name": "سارة", "cv_document": "سيرة-قديمة.pdf"}])
+
+    removed = temp_db.forget_person("سارة")
+
+    assert removed["documents"] == 1
+    assert temp_db.kb_stats() == {"docs": 0, "chunks": 0}
+
+
+def test_the_footprint_is_shown_before_erasing_not_after(temp_db):
+    _person_with_cv(temp_db, "سارة")
+
+    footprint = temp_db.person_footprint("سارة")
+    assert footprint == {"records": 1, "documents": 1, "chunks": 2}
+    assert temp_db.kb_stats()["docs"] == 1        # العرض لا يحذف
+
+
+def test_erasing_an_unknown_person_changes_nothing(temp_db):
+    _person_with_cv(temp_db, "سارة")
+
+    assert temp_db.forget_person("شخص لا وجود له") == {
+        "records": 0, "documents": 0, "chunks": 0}
+    assert temp_db.forget_person("") == {"records": 0, "documents": 0, "chunks": 0}
+    assert temp_db.kb_stats()["docs"] == 1
+
+
+def test_the_policy_has_a_declared_default(temp_db):
+    policy = temp_db.personal_data_policy()
+    assert policy["legal_basis"] in temp_db.LEGAL_BASES
+    assert policy["retention_months"] == temp_db.DEFAULT_RETENTION_MONTHS
+
+
+def test_the_policy_is_stored_and_read_back(temp_db):
+    assert temp_db.set_personal_data_policy("consent", 12) is True
+    assert temp_db.personal_data_policy() == {
+        "legal_basis": "consent", "retention_months": 12}
+
+
+def test_an_unknown_basis_or_negative_period_is_refused(temp_db):
+    before = temp_db.personal_data_policy()
+    assert temp_db.set_personal_data_policy("because-we-can", 12) is False
+    assert temp_db.set_personal_data_policy("consent", -3) is False
+    assert temp_db.personal_data_policy() == before
+
+
+def test_a_damaged_policy_value_falls_back_to_the_default(temp_db):
+    """قيمة تالفة في القاعدة لا تُسقط الشاشة ولا تُلغي السياسة."""
+    temp_db.set_app_setting("pd_retention_months", "لا رقم")
+    temp_db.set_app_setting("pd_legal_basis", "superuser")
+
+    policy = temp_db.personal_data_policy()
+    assert policy["retention_months"] == temp_db.DEFAULT_RETENTION_MONTHS
+    assert policy["legal_basis"] == temp_db.DEFAULT_LEGAL_BASIS
+
+
+def test_cvs_past_the_retention_period_are_listed(temp_db):
+    doc_id = _person_with_cv(temp_db, "سارة")
+    temp_db.get_conn().execute(
+        "UPDATE kb_documents SET added_at = '2019-01-01 00:00:00' WHERE id = ?",
+        (doc_id,),
+    )
+    temp_db.get_conn().commit()
+
+    temp_db.set_personal_data_policy("contract", 24)
+    expired = temp_db.expired_cv_documents()
+    assert [d["id"] for d in expired] == [doc_id]
+    assert expired[0]["chunks"] == 2
+
+
+def test_a_recent_cv_is_not_expired(temp_db):
+    _person_with_cv(temp_db, "سارة")
+    temp_db.set_personal_data_policy("contract", 24)
+    assert temp_db.expired_cv_documents() == []
+
+
+def test_no_declared_limit_means_nothing_expires(temp_db):
+    """إعلان «نحتفظ بلا حدّ» أصدق من حذف صامت."""
+    doc_id = _person_with_cv(temp_db, "سارة")
+    temp_db.get_conn().execute(
+        "UPDATE kb_documents SET added_at = '2001-01-01 00:00:00' WHERE id = ?",
+        (doc_id,),
+    )
+    temp_db.get_conn().commit()
+
+    temp_db.set_personal_data_policy("contract", 0)
+    assert temp_db.expired_cv_documents() == []
+
+
+def test_retention_only_covers_cvs_not_the_whole_repository(temp_db):
+    """الشهادات والمشاريع ليست بيانات شخصية — لا تسقط بمدة السير."""
+    old = temp_db.add_kb_document("شهادة.pdf", "cert", 100)
+    temp_db.get_conn().execute(
+        "UPDATE kb_documents SET added_at = '2001-01-01 00:00:00' WHERE id = ?", (old,))
+    temp_db.get_conn().commit()
+
+    temp_db.set_personal_data_policy("contract", 12)
+    assert temp_db.expired_cv_documents() == []
+
+
+def test_the_personnel_registry_declares_a_basis_per_person(temp_db):
+    """الموظف والمرشّح والمستشار لا يتساوى أساس معالجتهم."""
+    from utils import records
+
+    assert "legal_basis" in records.column_keys("people")
+    assert records.blank_row("people")["legal_basis"] in records.LEGAL_BASES

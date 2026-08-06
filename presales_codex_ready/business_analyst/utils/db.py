@@ -14,7 +14,7 @@ import os
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -132,6 +132,13 @@ CREATE TABLE IF NOT EXISTS company_records (
 CREATE INDEX IF NOT EXISTS idx_company_records_registry
     ON company_records(registry);
 
+-- إعدادات النظام (13-10): مفتاح ← قيمة. جدول واحد صغير بدل عمود لكل إعداد
+-- جديد، وأول ساكنيه سياسة البيانات الشخصية (أساس المعالجة ومدة الاحتفاظ).
+CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+
 -- سير الاعتماد قبل التسليم (13-8): مدير العطاءات ← المالية ← الاعتماد النهائي.
 --
 -- الاعتماد يُسجَّل **على رقم مراجعة بعينه** (13-7) لا على المنافسة مطلقاً: عرض
@@ -232,6 +239,9 @@ _ADDED_COLUMNS = (
     # 13-7: عدّاد يزيد مع كل حفظ. جلستان على منافسة واحدة تكتشفان تعارضهما
     # بمقارنته بدل أن يمحو آخر كاتب عمل الأول.
     ("projects", "revision", "INTEGER NOT NULL DEFAULT 0"),
+    # 13-10: السيرة الذاتية بيانات شخص بعينه. بلا هذا الربط يبقى «احذف بياناتي»
+    # بحثاً بالاسم في أسماء الملفات — يُخطئ ويُبقي مقاطع تخصّ إنساناً طلب حذفها.
+    ("kb_documents", "person", "TEXT NOT NULL DEFAULT ''"),
     # 13-1: الشركة صارت صفاً من صفوف لا صفاً وحيداً، فلها اسم وتاريخ إنشاء.
     ("company", "name", "TEXT NOT NULL DEFAULT ''"),
     ("company", "created_at", "TEXT NOT NULL DEFAULT ''"),
@@ -923,12 +933,14 @@ def clear_company_template(company_id: Optional[int] = None):
 # ─── مستودع المعرفة ───────────────────────────────────────────────────────────
 
 
-def add_kb_document(name: str, category: str, char_count: int) -> int:
+def add_kb_document(name: str, category: str, char_count: int,
+                    person: str = "") -> int:
+    """`person` (13-10): صاحب السيرة الذاتية — يربط المستند بمن يملك حذفه."""
     with transaction() as conn:
         cur = conn.execute(
-            "INSERT INTO kb_documents (name, category, added_at, char_count) "
-            "VALUES (?, ?, ?, ?)",
-            (name, category, _now(), char_count),
+            "INSERT INTO kb_documents (name, category, added_at, char_count, person) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, category, _now(), char_count, (person or "").strip()),
         )
         return cur.lastrowid
 
@@ -977,6 +989,147 @@ def kb_stats() -> dict:
         "(SELECT COUNT(*) FROM kb_chunks) AS chunks"
     ).fetchone()
     return dict(row)
+
+
+# ─── سياسة البيانات الشخصية (13-10) ───────────────────────────────────────────
+#
+# رفع السير الذاتية يُدخل النظام في نطاق نظام حماية البيانات الشخصية: لكل معالجة
+# **أساس** معلن، ولكل احتفاظ **مدة**، ولكل شخص **حق الحذف**. الثلاثة هنا.
+
+# أسس المعالجة المعلنة. المفاتيح ثابتة والتسميات في `i18n` تحت `pd.basis_<key>`.
+LEGAL_BASES = ("contract", "consent", "legitimate_interest")
+DEFAULT_LEGAL_BASIS = "contract"
+# مدة الاحتفاظ الافتراضية بالأشهر — تُضبط من الواجهة، و0 تعني بلا حدّ معلن.
+DEFAULT_RETENTION_MONTHS = 24
+
+_PD_BASIS_KEY = "pd_legal_basis"
+_PD_RETENTION_KEY = "pd_retention_months"
+
+
+def app_setting(key: str, default: str = "") -> str:
+    row = get_conn().execute(
+        "SELECT value FROM app_settings WHERE key = ?", (key,)
+    ).fetchone()
+    return row["value"] if row else default
+
+
+def set_app_setting(key: str, value: str):
+    with transaction() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, str(value)),
+        )
+
+
+def personal_data_policy() -> dict:
+    """السياسة المعلنة: أساس المعالجة ومدة الاحتفاظ."""
+    basis = app_setting(_PD_BASIS_KEY, DEFAULT_LEGAL_BASIS)
+    try:
+        months = int(app_setting(_PD_RETENTION_KEY, str(DEFAULT_RETENTION_MONTHS)))
+    except ValueError:
+        months = DEFAULT_RETENTION_MONTHS
+    return {
+        "legal_basis": basis if basis in LEGAL_BASES else DEFAULT_LEGAL_BASIS,
+        "retention_months": max(0, months),
+    }
+
+
+def set_personal_data_policy(legal_basis: str, retention_months: int) -> bool:
+    if legal_basis not in LEGAL_BASES or int(retention_months) < 0:
+        return False
+    set_app_setting(_PD_BASIS_KEY, legal_basis)
+    set_app_setting(_PD_RETENTION_KEY, str(int(retention_months)))
+    return True
+
+
+def expired_cv_documents(months: Optional[int] = None) -> list:
+    """
+    السير التي تجاوزت مدة الاحتفاظ المعلنة. مدة صفر تعني بلا حدّ فلا يُعدّ شيء
+    منتهياً — إعلان «نحتفظ بلا حدّ» أصدق من حذف صامت.
+    """
+    if months is None:
+        months = personal_data_policy()["retention_months"]
+    if not months:
+        return []
+
+    cutoff = datetime.now() - timedelta(days=30 * int(months))
+    limit = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    rows = get_conn().execute(
+        "SELECT d.*, COUNT(c.id) AS chunks FROM kb_documents d "
+        "LEFT JOIN kb_chunks c ON c.doc_id = d.id "
+        "WHERE d.category = 'cv' AND d.added_at < ? "
+        "GROUP BY d.id ORDER BY d.added_at",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def person_footprint(name: str) -> dict:
+    """ما يخصّ هذا الشخص في النظام — يُعرض قبل الحذف لا بعده."""
+    name = (name or "").strip()
+    if not name:
+        return {"records": 0, "documents": 0, "chunks": 0}
+
+    records = [r for r in list_records("people")
+               if str(r.get("name", "")).strip() == name]
+    docs = _person_documents(name)
+    return {
+        "records": len(records),
+        "documents": len(docs),
+        "chunks": sum(d["chunks"] for d in docs),
+    }
+
+
+def _person_documents(name: str) -> list:
+    """
+    مستندات الشخص: ما رُبط به صراحةً، وما سمّاه صفّه في سجل الكوادر.
+
+    الاثنان معاً لأن الربط الصريح أُضيف في 13-10: سيرة رُفعت قبله لا تحمل ربطاً،
+    وحقّ الشخص في حذفها لا ينتظر ترقية.
+    """
+    linked_names = {
+        str(r.get("cv_document", "")).strip()
+        for r in list_records("people")
+        if str(r.get("name", "")).strip() == name and str(r.get("cv_document", "")).strip()
+    }
+    rows = get_conn().execute(
+        "SELECT d.*, COUNT(c.id) AS chunks FROM kb_documents d "
+        "LEFT JOIN kb_chunks c ON c.doc_id = d.id "
+        "GROUP BY d.id"
+    ).fetchall()
+    return [
+        dict(r) for r in rows
+        if (r["person"] or "").strip() == name or r["name"] in linked_names
+    ]
+
+
+def forget_person(name: str) -> dict:
+    """
+    حقّ الحذف عند الطلب: يمحو صفّ الشخص في سجل الكوادر وسيرته ومقاطعها.
+
+    المقاطع أخطر ما في الباب: نصّ السيرة يعيش فيها مُقطَّعاً، فحذف المستند
+    وحده يترك بيانات الشخص في المستودع تُسترجَع في كل توليد.
+    """
+    name = (name or "").strip()
+    if not name:
+        return {"records": 0, "documents": 0, "chunks": 0}
+
+    removed = {"records": 0, "documents": 0, "chunks": 0}
+
+    documents = _person_documents(name)
+    for doc in documents:
+        delete_kb_document(doc["id"])
+        removed["documents"] += 1
+        removed["chunks"] += doc["chunks"]
+
+    people = list_records("people")
+    kept = [r for r in people if str(r.get("name", "")).strip() != name]
+    removed["records"] = len(people) - len(kept)
+    if removed["records"]:
+        save_records("people", kept)
+
+    return removed
 
 
 # ─── نسخ المرفقات ─────────────────────────────────────────────────────────────

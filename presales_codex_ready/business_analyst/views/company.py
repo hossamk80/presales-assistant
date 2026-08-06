@@ -7,7 +7,7 @@ views/company.py — ملف الشركة ومستودع المعرفة
 import pandas as pd
 import streamlit as st
 
-from utils import auth, db, knowledge, local_content, providers, records, submission
+from utils import audit, auth, db, knowledge, local_content, providers, records, submission
 from utils.file_handler import BRAND_COLOR, BRAND_FONT_AR
 from components import theme
 from utils.i18n import t
@@ -139,6 +139,9 @@ def render():
     st.divider()
     _render_knowledge_base()
 
+    st.divider()
+    _render_personal_data()
+
     # حفظ ملف الشركة على القرص عند تغيّره — لمن يملك تعديله وحده (13-3)
     snapshot = get_company_snapshot()
     if auth.can("company.edit") and snapshot != st.session_state.get("_company_saved"):
@@ -254,6 +257,91 @@ def _render_records():
 # ─── مستودع المعرفة ───────────────────────────────────────────────────────────
 
 
+def _render_personal_data():
+    """
+    سياسة البيانات الشخصية (13-10): أساس المعالجة · مدة الاحتفاظ · حذف عند
+    الطلب. رفع السير يُدخل النظام في نطاق النظام، وهذه أدواته الثلاث.
+    """
+    may_edit = auth.can("company.edit")
+    policy = db.personal_data_policy()
+
+    with st.expander(t("pd.title")):
+        st.caption(t("pd.hint"))
+
+        c1, c2 = st.columns(2)
+        with c1:
+            basis = st.selectbox(
+                t("pd.basis"), db.LEGAL_BASES,
+                index=db.LEGAL_BASES.index(policy["legal_basis"]),
+                format_func=lambda b: t("pd.basis_" + b),
+                key="pd_basis", disabled=not may_edit,
+            )
+        with c2:
+            months = st.number_input(
+                t("pd.retention"), min_value=0, max_value=240, step=6,
+                value=policy["retention_months"], key="pd_retention",
+                disabled=not may_edit, help=t("pd.retention_help"),
+            )
+        if not months:
+            st.caption(t("pd.retention_unlimited"))
+
+        if may_edit and (basis != policy["legal_basis"]
+                         or int(months) != policy["retention_months"]):
+            if st.button(t("pd.save_policy"), type="primary", key="pd_save"):
+                db.set_personal_data_policy(basis, int(months))
+                audit.record(audit.PD_POLICY, detail=f"{basis}:{int(months)}")
+                st.success(t("pd.policy_saved"))
+                st.rerun()
+
+        # ── السير التي تجاوزت المدة ──
+        expired = db.expired_cv_documents()
+        st.markdown(f"**{t('pd.expired', n=len(expired))}**")
+        if expired:
+            st.warning(t("pd.expired_hint", months=policy["retention_months"]))
+            for doc in expired:
+                st.markdown(
+                    f'· **{doc["name"]}** — {doc["person"] or t("pd.cv_owner_none")}'
+                    f' · {doc["added_at"]} · {doc["chunks"]} {t("co.kb_chunk_unit")}'
+                )
+            if st.button(t("pd.delete_expired"), key="pd_delete_expired",
+                         disabled=not may_edit):
+                for doc in expired:
+                    db.delete_kb_document(doc["id"])
+                audit.record(audit.PD_ERASE, detail=f"expired:{len(expired)}")
+                st.success(t("pd.expired_deleted", n=len(expired)))
+                st.rerun()
+        else:
+            st.caption(t("pd.expired_none"))
+
+        # ── حذف شخص عند الطلب ──
+        st.divider()
+        st.markdown(f"**{t('pd.erase')}**")
+        st.caption(t("pd.erase_hint"))
+
+        people = [str(r.get("name", "")).strip() for r in db.list_records("people")
+                  if str(r.get("name", "")).strip()]
+        if not people:
+            st.caption(t("pd.no_people"))
+            return
+
+        target = st.selectbox(t("pd.person"), people, key="pd_person",
+                              disabled=not may_edit)
+        footprint = db.person_footprint(target)
+        st.caption(t("pd.footprint", records=footprint["records"],
+                     documents=footprint["documents"], chunks=footprint["chunks"]))
+
+        confirm = st.checkbox(t("pd.erase_confirm"), key="pd_confirm",
+                              disabled=not may_edit)
+        if st.button(t("pd.erase_btn"), type="primary", key="pd_erase",
+                     disabled=not (may_edit and confirm)):
+            removed = db.forget_person(target)
+            audit.record(audit.PD_ERASE, target=target,
+                         detail=f'{removed["documents"]}:{removed["chunks"]}')
+            st.success(t("pd.erased", name=target, documents=removed["documents"],
+                         chunks=removed["chunks"]))
+            st.rerun()
+
+
 def _render_knowledge_base():
     st.markdown(t("co.kb"))
     stats = db.kb_stats()
@@ -274,10 +362,26 @@ def _render_knowledge_base():
             options=list(knowledge.CATEGORIES),
             format_func=lambda k: t(f"kbcat.{k}"),
         )
+        # 13-10: السيرة الذاتية بيانات شخص بعينه — تُربط به عند الرفع، فحذف
+        # بياناته لاحقاً لا يصير بحثاً بالاسم في أسماء الملفات.
+        person = ""
+        if category == "cv":
+            names = [""] + [
+                str(r.get("name", "")).strip() for r in db.list_records("people")
+                if str(r.get("name", "")).strip()
+            ]
+            person = st.selectbox(
+                t("pd.cv_owner"), names,
+                format_func=lambda n: n or t("pd.cv_owner_none"),
+                key="kb_person", help=t("pd.cv_owner_help"),
+                disabled=auth.blocked("company.edit"),
+            )
+
         files = st.file_uploader(
             t("an.formats"),
             accept_multiple_files=True,
             key="kb_upload",
+            disabled=auth.blocked("company.edit"),
         )
         if st.button(t("co.kb_index"), type="primary",
                      disabled=not files or not has_key or auth.blocked("company.edit")):
@@ -285,7 +389,7 @@ def _render_knowledge_base():
             added = 0
             for i, f in enumerate(files, start=1):
                 progress.progress((i - 1) / len(files), text=f"فهرسة {f.name}…")
-                count = knowledge.ingest_file(f, category)
+                count = knowledge.ingest_file(f, category, person=person)
                 if count:
                     added += 1
                     st.success(t("co.kb_indexed", name=f.name, n=count))

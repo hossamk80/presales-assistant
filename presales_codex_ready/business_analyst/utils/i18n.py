@@ -1352,6 +1352,73 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── سياسة البيانات الشخصية (13-10) / Personal-data policy ──
+    "pd.title": {"ar": "🧑 سياسة البيانات الشخصية", "en": "🧑 Personal-data policy"},
+    "pd.hint": {
+        "ar": "رفع السير الذاتية يُدخل النظام في نطاق نظام حماية البيانات الشخصية: "
+              "أساس معلن للمعالجة، ومدة احتفاظ، وحذف عند الطلب.",
+        "en": "Uploading CVs brings this system under personal-data protection rules: "
+              "a declared basis for processing, a retention period, and erasure on request.",
+    },
+    "pd.basis": {"ar": "أساس المعالجة", "en": "Basis for processing"},
+    "pd.basis_contract": {"ar": "تنفيذ عقد", "en": "Performance of a contract"},
+    "pd.basis_consent": {"ar": "موافقة صريحة", "en": "Explicit consent"},
+    "pd.basis_legitimate_interest": {"ar": "مصلحة مشروعة", "en": "Legitimate interest"},
+    "pd.retention": {"ar": "مدة الاحتفاظ (بالأشهر)", "en": "Retention period (months)"},
+    "pd.retention_help": {
+        "ar": "بعدها تُعرض السير لحذفها. صفر يعني بلا حدّ معلن.",
+        "en": "After this, CVs are listed for deletion. Zero means no declared limit.",
+    },
+    "pd.retention_unlimited": {
+        "ar": "⚠️ لا حدّ معلن للاحتفاظ — إعلانه أصدق من حذف صامت، لكنه يبقى قراراً.",
+        "en": "⚠️ No declared retention limit — declaring that is more honest than "
+              "silent deletion, but it remains a decision.",
+    },
+    "pd.save_policy": {"ar": "حفظ السياسة", "en": "Save policy"},
+    "pd.policy_saved": {"ar": "✅ حُفظت السياسة.", "en": "✅ Policy saved."},
+    "pd.expired": {"ar": "السير المتجاوزة للمدة ({n})", "en": "CVs past the retention period ({n})"},
+    "pd.expired_hint": {
+        "ar": "هذه السير مضى عليها أكثر من {months} شهراً.",
+        "en": "These CVs are older than {months} months.",
+    },
+    "pd.expired_none": {
+        "ar": "لا سير تجاوزت المدة.",
+        "en": "No CVs are past the retention period.",
+    },
+    "pd.delete_expired": {"ar": "حذف السير المتجاوزة", "en": "Delete expired CVs"},
+    "pd.expired_deleted": {"ar": "✅ حُذفت {n} سيرة.", "en": "✅ Deleted {n} CV(s)."},
+    "pd.erase": {"ar": "حذف بيانات شخص عند الطلب", "en": "Erase a person's data on request"},
+    "pd.erase_hint": {
+        "ar": "يحذف صفّ الشخص في سجل الكوادر وسيرته ومقاطعها من المستودع. لا رجعة فيه.",
+        "en": "Deletes the person's row in the personnel registry, their CV, and its "
+              "chunks in the repository. It cannot be undone.",
+    },
+    "pd.person": {"ar": "الشخص", "en": "Person"},
+    "pd.footprint": {
+        "ar": "سيُحذف: {records} صفّاً · {documents} مستنداً · {chunks} مقطعاً.",
+        "en": "Will delete: {records} row(s) · {documents} document(s) · {chunks} chunk(s).",
+    },
+    "pd.erase_confirm": {"ar": "أؤكّد الحذف النهائي", "en": "Confirm permanent erasure"},
+    "pd.erase_btn": {"ar": "حذف بياناته", "en": "Erase their data"},
+    "pd.erased": {
+        "ar": "✅ حُذفت بيانات {name}: {documents} مستنداً و {chunks} مقطعاً.",
+        "en": "✅ Erased {name}'s data: {documents} document(s) and {chunks} chunk(s).",
+    },
+    "pd.no_people": {
+        "ar": "سجل الكوادر فارغ.",
+        "en": "The personnel registry is empty.",
+    },
+    "pd.cv_owner": {"ar": "صاحب السيرة", "en": "CV owner"},
+    "pd.cv_owner_none": {"ar": "غير محدَّد", "en": "Not specified"},
+    "pd.cv_owner_help": {
+        "ar": "ربط السيرة بصاحبها يجعل حذف بياناته لاحقاً كاملاً لا تخميناً بالاسم.",
+        "en": "Linking a CV to its owner makes erasing their data later complete, "
+              "rather than a guess based on the file name.",
+    },
+    "rec.p_basis": {"ar": "أساس المعالجة", "en": "Processing basis"},
+    "audit.act_pd.policy": {"ar": "تغيير سياسة البيانات", "en": "Data policy changed"},
+    "audit.act_pd.erase": {"ar": "حذف بيانات شخص", "en": "Personal data erased"},
+
     # ── النسخ الاحتياطي (13-9) / Backup & restore ──
     "bk.title": {"ar": "🗄️ نسخة احتياطية واسترجاع", "en": "🗄️ Backup & restore"},
     "bk.hint": {
