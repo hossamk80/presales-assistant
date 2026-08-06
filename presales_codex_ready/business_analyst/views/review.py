@@ -305,9 +305,109 @@ def _render_consistency(sections: list):
                  + "\n".join(f"- {f['message']}" for f in findings))
 
 
+# ─── سير الاعتماد قبل التسليم (13-8) ──────────────────────────────────────────
+#
+# ثلاث مراحل بترتيبها: مدير العطاءات ← المالية ← الاعتماد النهائي. لكل مرحلة
+# صلاحيتها في `auth.PERMISSIONS`، والاعتماد يُسجَّل على **رقم مراجعة بعينه**
+# (13-7): عرض اعتُمد ثم عُدّل ليس هو العرض المعتمَد، فيسقط اعتماده ويُعاد.
+
+
+def _render_approvals():
+    """لوحة الاعتماد: حالة كل مرحلة، وقرار من يملكها."""
+    from utils import db
+
+    project_id = st.session_state.get("_project_id")
+    if project_id is None:
+        st.info(t("ap.no_project"))
+        return
+
+    revision = db.project_revision(project_id) or 0
+    state = db.approval_state(project_id, revision)
+    pending = db.next_approval_stage(project_id, revision)
+
+    if pending is None:
+        st.success(t("ap.complete"))
+    else:
+        st.warning(t("ap.pending", stage=t("ap.stage_" + pending)))
+
+    for stage in db.APPROVAL_STAGES:
+        entry = state[stage]
+        c_name, c_status, c_act = st.columns([2, 3, 2])
+        with c_name:
+            st.markdown(f"**{t('ap.stage_' + stage)}**")
+        with c_status:
+            if entry["stale"]:
+                st.caption(t("ap.stale", who=entry["username"],
+                             when=entry["created_at"]))
+            elif entry["decision"] == db.APPROVED:
+                st.caption(t("ap.approved_by", who=entry["username"],
+                             when=entry["created_at"]))
+            elif entry["decision"] == db.REJECTED:
+                st.caption(t("ap.rejected_by", who=entry["username"],
+                             when=entry["created_at"],
+                             note=entry["note"] or "—"))
+            else:
+                st.caption(t("ap.not_yet"))
+
+        # الترتيب مفروض: لا تُعتمد مرحلة قبل ما قبلها
+        earlier = db.APPROVAL_STAGES[:db.APPROVAL_STAGES.index(stage)]
+        blocked_by_order = any(
+            state[s]["decision"] != db.APPROVED or state[s]["stale"] for s in earlier
+        )
+        allowed = auth.can(f"approve.{stage}") and not blocked_by_order
+
+        with c_act:
+            note = st.text_input(
+                t("ap.note"), key=f"ap_note_{stage}", label_visibility="collapsed",
+                placeholder=t("ap.note_ph"), disabled=not allowed,
+            )
+            b_ok, b_no = st.columns(2)
+            with b_ok:
+                if st.button(t("ap.approve"), key=f"ap_ok_{stage}",
+                             width="stretch", type="primary", disabled=not allowed,
+                             help=None if allowed else t("ap.locked")):
+                    _decide(project_id, stage, db.APPROVED, revision, note)
+            with b_no:
+                if st.button(t("ap.reject"), key=f"ap_no_{stage}",
+                             width="stretch", disabled=not allowed):
+                    _decide(project_id, stage, db.REJECTED, revision, note)
+
+    st.caption(t("ap.revision_hint", revision=revision))
+    history_rows = db.list_approvals(project_id, limit=20)
+    if history_rows:
+        with st.expander(t("ap.history", n=len(history_rows))):
+            for row in history_rows:
+                mark = "✅" if row["decision"] == db.APPROVED else "⛔"
+                st.markdown(
+                    f'{mark} **{t("ap.stage_" + row["stage"])}** · '
+                    f'{row["username"] or t("ad2.unknown_user")} · {row["created_at"]} · '
+                    f'{t("ap.on_revision", revision=row["revision"])}'
+                    + (f' — {row["note"]}' if row["note"] else "")
+                )
+
+
+def _decide(project_id: int, stage: str, decision: str, revision: int, note: str):
+    from utils import audit, db
+
+    user = auth.current_user() or {}
+    db.record_approval(
+        project_id, stage, decision, revision,
+        user_id=user.get("id"),
+        username=user.get("display_name") or user.get("username", ""),
+        note=(note or "").strip(),
+    )
+    audit.record(audit.APPROVAL_DECISION, target=stage, detail=decision,
+                 project_id=project_id)
+    st.rerun()
+
+
 def render():
     st.markdown(t("rv.title"))
     st.caption(t("rv.caption"))
+
+    with st.expander(t("ap.title"), expanded=False):
+        st.caption(t("ap.hint"))
+        _render_approvals()
 
     sections = _written_sections()
     if not sections:

@@ -231,3 +231,27 @@ def test_a_writer_cannot_edit_a_section_owned_by_someone_else():
     editors = {ta.key: ta for ta in at.text_area}
     assert editors["ta_exec"].disabled is False, "المالك مُنع من تحرير قسمه"
     assert editors["ta_plan"].disabled is True, "قسم مُسند إلى غيره ظلّ قابلاً للتحرير"
+
+
+def test_the_workspace_renders_the_approval_gate():
+    """
+    13-8: مسار بوابة الاعتماد يُنفَّذ فعلاً في التطبيق — منافسة مفتوحة بلا
+    اعتماد تعرض التحذير ولا ترفع استثناءً، وبعد الاعتماد يزول.
+    """
+    from utils import db
+
+    admin = _signed_in_user("admin", "boss")
+    pid = db.create_project("منافسة", {}, "REF", "جهة")
+
+    at = _run(user_id=admin)
+    at.session_state["_project_id"] = pid
+    at.session_state["nav_selection"] = "workspace"
+    at.run()
+    assert not at.exception
+
+    for stage in db.APPROVAL_STAGES:
+        db.record_approval(pid, stage, db.APPROVED,
+                           db.project_revision(pid) or 0, username="boss")
+    at.run()
+    assert not at.exception
+    assert db.approvals_complete(pid) is True

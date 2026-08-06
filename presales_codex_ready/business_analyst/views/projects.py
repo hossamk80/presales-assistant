@@ -464,8 +464,10 @@ def render():
                                 close_project()
                             audit.record(audit.PROJECT_DELETE, project_id=proj["id"],
                                          project_name=proj["name"])
-                            # 13-6: نسخ الأقسام تذهب مع منافستها
+                            # 13-6 و 13-8: نسخ الأقسام وقرارات الاعتماد تذهب
+                            # مع منافستها
                             db.delete_section_versions(proj["id"])
+                            db.delete_approvals(proj["id"])
                             db.delete_project(proj["id"])
                             st.session_state.pop(confirm_key, None)
                             st.rerun()
