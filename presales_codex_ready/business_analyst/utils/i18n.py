@@ -1352,6 +1352,114 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── نسخ الأقسام (13-6) / Section versions ──
+    "db.versions": {"ar": "🕘 النسخ ({n})", "en": "🕘 Versions ({n})"},
+    "db.versions_empty": {
+        "ar": "لا نسخ بعد — تُحفظ نسخة عند كل كتابة على القسم.",
+        "en": "No versions yet — one is saved on every write to this section.",
+    },
+    "db.versions_hint": {
+        "ar": "آخر {limit} نسخة محفوظة، الأحدث أولاً. الاسترجاع يحفظ النص الحالي نسخةً قبل استبداله.",
+        "en": "The latest {limit} versions, newest first. Restoring saves the current "
+              "text as a version before replacing it.",
+    },
+    "db.versions_pick": {"ar": "النسخة", "en": "Version"},
+    "db.versions_diff": {
+        "ar": "الفرق بين النسخة المختارة والنص الحالي:",
+        "en": "Difference between the selected version and the current text:",
+    },
+    "db.versions_same": {
+        "ar": "هذه النسخة مطابقة للنص الحالي.",
+        "en": "This version matches the current text.",
+    },
+    "db.versions_restore": {"ar": "استرجاع هذه النسخة", "en": "Restore this version"},
+    "db.versions_restore_help": {
+        "ar": "الاسترجاع لمالك القسم، ولا يعمل إن كانت النسخة مطابقة للنص الحالي.",
+        "en": "Restoring is for the section owner, and does nothing when the version "
+              "matches the current text.",
+    },
+    "db.versions_restored": {"ar": "✅ استُرجعت النسخة.", "en": "✅ Version restored."},
+    "audit.act_section.restore": {"ar": "استرجاع نسخة", "en": "Version restored"},
+
+    # ── سجل التدقيق (13-5) / Audit trail ──
+    "ad2.title": {"ar": "🧾 سجل التدقيق", "en": "🧾 Audit trail"},
+    "ad2.hint": {
+        "ar": "من غيّر ماذا ومتى، وأي نص مصدره النموذج. يُقرأ ولا يُحرَّر.",
+        "en": "Who changed what and when, and which text came from the model. "
+              "Read-only by design.",
+    },
+    "ad2.all": {"ar": "الكل", "en": "All"},
+    "ad2.filter_project": {"ar": "المنافسة", "en": "Tender"},
+    "ad2.filter_user": {"ar": "المستخدم", "en": "User"},
+    "ad2.col_when": {"ar": "الوقت", "en": "When"},
+    "ad2.col_who": {"ar": "من", "en": "Who"},
+    "ad2.col_what": {"ar": "الحدث", "en": "Event"},
+    "ad2.col_target": {"ar": "الهدف", "en": "Target"},
+    "ad2.col_source": {"ar": "المصدر", "en": "Source"},
+    "ad2.unknown_user": {"ar": "غير معروف", "en": "Unknown"},
+    "ad2.empty": {"ar": "لا أحداث مسجَّلة بعد.", "en": "No events recorded yet."},
+    "ad2.total": {"ar": "إجمالي الأحداث المسجَّلة: {n}", "en": "Total recorded events: {n}"},
+    "db.source_ai": {
+        "ar": "🤖 النص الحالي مصدره النموذج",
+        "en": "🤖 The current text came from the model",
+    },
+    "db.source_human": {
+        "ar": "✍️ النص الحالي حرّره إنسان",
+        "en": "✍️ The current text was edited by a person",
+    },
+    "audit.act_project.create": {"ar": "إنشاء منافسة", "en": "Tender created"},
+    "audit.act_project.delete": {"ar": "حذف منافسة", "en": "Tender deleted"},
+    "audit.act_project.duplicate": {"ar": "نسخ منافسة", "en": "Tender duplicated"},
+    "audit.act_project.outcome": {"ar": "تسجيل نتيجة", "en": "Outcome recorded"},
+    "audit.act_section.generate": {"ar": "توليد قسم", "en": "Section generated"},
+    "audit.act_section.refine": {"ar": "تنقيح قسم", "en": "Section refined"},
+    "audit.act_section.edit": {"ar": "تحرير قسم", "en": "Section edited"},
+    "audit.act_section.assign": {"ar": "إسناد قسم", "en": "Section assigned"},
+    "audit.act_section.status": {"ar": "تغيير حالة قسم", "en": "Section status changed"},
+    "audit.act_outline.propose": {"ar": "اقتراح هيكل", "en": "Outline proposed"},
+    "audit.act_export.build": {"ar": "بناء مستند", "en": "Document built"},
+    "audit.act_user.add": {"ar": "إضافة مستخدم", "en": "User added"},
+    "audit.act_user.role": {"ar": "تغيير دور", "en": "Role changed"},
+    "audit.act_user.active": {"ar": "تفعيل/تعطيل حساب", "en": "Account enabled/disabled"},
+    "audit.act_user.delete": {"ar": "حذف مستخدم", "en": "User deleted"},
+    "audit.act_user.password": {"ar": "تغيير كلمة سر", "en": "Password changed"},
+    "audit.act_auth.login": {"ar": "تسجيل دخول", "en": "Signed in"},
+
+    # ── إسناد الأقسام (13-4) / Section assignment ──
+    "db.owner": {"ar": "مالك القسم", "en": "Section owner"},
+    "db.owner_none": {"ar": "غير مُسند", "en": "Unassigned"},
+    "db.owner_gone": {"ar": "مالك لم يعد متاحاً", "en": "Owner no longer available"},
+    "db.owner_help": {
+        "ar": "المُسند إليه وحده يعدّل هذا القسم. القسم غير المُسند متاح لكل من يكتب.",
+        "en": "Only the assignee may edit this section. An unassigned section is open "
+              "to anyone who writes.",
+    },
+    "db.owner_locked": {
+        "ar": "الإسناد لمدير العطاءات ومدير النظام.",
+        "en": "Assignment is for the bid manager and the system administrator.",
+    },
+    "db.owned_by_other": {
+        "ar": "🔒 هذا القسم مُسند إلى {name} — للعرض فقط بالنسبة لك.",
+        "en": "🔒 This section is assigned to {name} — read-only for you.",
+    },
+    "db.status": {"ar": "الحالة", "en": "Status"},
+    "db.status_todo": {"ar": "لم يبدأ", "en": "Not started"},
+    "db.status_in_progress": {"ar": "قيد الكتابة", "en": "In progress"},
+    "db.status_ready": {"ar": "جاهز للمراجعة", "en": "Ready for review"},
+    "db.board": {"ar": "🗂️ لوحة الأقسام", "en": "🗂️ Section board"},
+    "db.board_hint": {
+        "ar": "من يكتب ماذا، وأين وصل — بلا فتح كل قسم على حدة.",
+        "en": "Who writes what, and how far along — without opening each section.",
+    },
+    "db.board_section": {"ar": "القسم", "en": "Section"},
+    "db.board_owner": {"ar": "المالك", "en": "Owner"},
+    "db.board_status": {"ar": "الحالة", "en": "Status"},
+    "db.board_text": {"ar": "النص", "en": "Text"},
+    "db.board_unassigned": {
+        "ar": "⚠️ {n} قسماً بلا مالك.",
+        "en": "⚠️ {n} section(s) without an owner.",
+    },
+
     # ── الأدوار (13-3) / Roles ──
     "role.admin": {"ar": "مدير النظام", "en": "System administrator"},
     "role.bid_manager": {"ar": "مدير العطاءات", "en": "Bid manager"},

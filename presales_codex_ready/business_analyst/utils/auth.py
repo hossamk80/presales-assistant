@@ -79,6 +79,10 @@ PERMISSIONS: dict[str, tuple] = {
     # المحتوى
     "tables.edit": (ADMIN, BID_MANAGER, WRITER),
     "sections.write": (ADMIN, BID_MANAGER, WRITER),
+    # 13-4: إسناد الأقسام لمُلّاكها — ومن يملكه يعدّل أي قسم بصرف النظر عن مالكه
+    "sections.assign": (ADMIN, BID_MANAGER),
+    # 13-5: قراءة سجل التدقيق — يكشف من فعل ماذا، فليس لكل من يكتب
+    "audit.view": (ADMIN, BID_MANAGER),
     # المراجعة: المراجع يشغّلها ولا يكتب، والكاتب يطبّق الثغرة على قسمه
     "review.run": (ADMIN, BID_MANAGER, REVIEWER),
     # سؤال المساعد لا يمسّ النص لكنه استدعاء نموذج بكلفة — يُمنع عن المطّلع
@@ -227,6 +231,11 @@ def start_session(user_id: int):
     st.session_state[_FAILED_KEY] = 0
     st.session_state.pop(_COOLDOWN_KEY, None)
     db.touch_user_login(user_id)
+    # 13-5: الاستيراد هنا لا في الأعلى — `audit` يقرأ المستخدم الحالي من هذه
+    # الوحدة، فاستيراده على مستوى الملف حلقة.
+    from utils import audit
+
+    audit.record(audit.AUTH_LOGIN)
 
 
 def logout():
@@ -345,6 +354,29 @@ def can(permission: str, user: Optional[dict] = None) -> bool:
 def blocked(permission: str, user: Optional[dict] = None) -> bool:
     """عكس `can` — تُمرَّر مباشرةً إلى `disabled=` في عناصر الواجهة."""
     return not can(permission, user)
+
+
+def can_edit_section(section: dict) -> bool:
+    """
+    هل يعدّل المستخدم الحالي هذا القسم بعينه؟ (13-4)
+
+    ثلاث حالات فوق صلاحية الكتابة العامة:
+      · قسم **غير مُسند** — متاح لكل من يكتب، فالإسناد تنظيم لا شرط بدء.
+      · قسم **مُسند إليه** — يعدّله.
+      · قسم **مُسند إلى غيره** — محجوب، إلا لمن يملك الإسناد (مدير العطاءات
+        ومدير النظام) فهو مسؤول عن العرض كله لا عن قسم فيه.
+    """
+    if not can("sections.write"):
+        return False
+
+    owner = (section or {}).get("owner")
+    if not isinstance(owner, int) or owner <= 0:
+        return True
+    if can("sections.assign"):
+        return True
+
+    user = current_user()
+    return bool(user and user["id"] == owner)
 
 
 def permissions_of(role: str) -> set:

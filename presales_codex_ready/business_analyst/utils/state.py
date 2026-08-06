@@ -397,6 +397,50 @@ def section_content_key(key: str) -> str:
     return f"sec_{key}"
 
 
+# ─── إسناد الأقسام (13-4) ─────────────────────────────────────────────────────
+# القسم يحمل حقلين إضافيين: `owner` معرّف المستخدم المسؤول عنه (أو `None` إن
+# كان غير مُسند)، و `status` حالته في الدورة. الحقلان يُخزَّنان مع هيكل العرض
+# داخل حمولة المنافسة، فلا يحتاجان جدولاً ولا ترحيلاً — وقسم أُنشئ قبل 13-4
+# يقرأ افتراضه من `section_owner` و `section_status` بلا انهيار.
+
+SECTION_STATUSES = ("todo", "in_progress", "ready")
+DEFAULT_SECTION_STATUS = "todo"
+
+
+def section_owner(section: dict):
+    """معرّف مالك القسم، أو `None` إن كان غير مُسند."""
+    owner = section.get("owner")
+    return owner if isinstance(owner, int) and owner > 0 else None
+
+
+def section_status(section: dict) -> str:
+    status = section.get("status")
+    return status if status in SECTION_STATUSES else DEFAULT_SECTION_STATUS
+
+
+def _update_section(key: str, **fields):
+    sections = get_sections()
+    for section in sections:
+        if section["key"] == key:
+            section.update(fields)
+            break
+    else:
+        return False
+    set_sections(sections, st.session_state.get("outline_source", "custom"))
+    return True
+
+
+def set_section_owner(key: str, owner) -> bool:
+    """يُسند القسم إلى مستخدم، أو يرفع الإسناد بتمرير `None`."""
+    return _update_section(key, owner=owner if isinstance(owner, int) and owner > 0 else None)
+
+
+def set_section_status(key: str, status: str) -> bool:
+    if status not in SECTION_STATUSES:
+        return False
+    return _update_section(key, status=status)
+
+
 # ─── أدوار المرفقات ────────────────────────────────────────────────────────────
 # تُحلَّل كل مرفقات المنافسة معاً، لكن بعض التعليمات تحتاج تمييز الكراسة عن
 # ملاحقها عن ملفات الكميات، فنحفظ نص كل دور على حدة إلى جانب النص المدموج.

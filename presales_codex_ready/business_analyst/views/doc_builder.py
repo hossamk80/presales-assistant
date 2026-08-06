@@ -28,16 +28,21 @@ from utils.file_handler import (
     confidentiality_notice,
     resolve_document_tokens,
 )
-from utils import auth
+from utils import audit, auth
 from components import theme
 from utils.i18n import t
 from utils.state import (
+    SECTION_STATUSES,
     boq_scope_block,
     get_sections,
     matrix_block,
     project_context_block as _project_context_block,
     reset_sections,
     section_content_key,
+    section_owner,
+    section_status,
+    set_section_owner,
+    set_section_status,
     set_sections,
 )
 
@@ -133,6 +138,8 @@ def _render_outline_designer():
                 st.session_state["proposal_title"] = str(result["proposal_title"]).strip()
             if proposed:
                 _apply_proposed_outline(proposed)
+                audit.record(audit.OUTLINE_PROPOSE, source=audit.AI,
+                             detail=str(len(proposed)))
                 st.rerun()
             elif result is not None:
                 st.warning(t("db.no_sections"))
@@ -181,10 +188,127 @@ def _apply_proposed_outline(proposed: list):
             "rationale": str(item.get("purpose", "")).strip(),
             "priority": str(item.get("priority", "متوسطة")),
             "prompt_key": (by_key.get(key) or {}).get("prompt_key"),
+            # 13-4: قسم باقٍ بمفتاحه يبقى بمالكه وحالته — إعادة اقتراح الهيكل
+            # لا تُلغي إسناداً اتُّفق عليه
+            "owner": (by_key.get(key) or {}).get("owner"),
+            "status": (by_key.get(key) or {}).get("status"),
         })
 
     set_sections(head + body + tail, source="proposed")
     st.success(t("db.proposed", n=len(body)))
+
+
+# ─── إسناد الأقسام ولوحتها (13-4) ─────────────────────────────────────────────
+
+
+def _people() -> dict:
+    """المستخدمون الفعّالون: معرّف ← اسم ظاهر. مصدر قائمة المُلّاك."""
+    from utils import db
+
+    return {
+        u["id"]: (u["display_name"] or u["username"])
+        for u in db.list_users() if u["active"]
+    }
+
+
+def _owner_label(section: dict, people: dict) -> str:
+    owner = section_owner(section)
+    if owner is None:
+        return t("db.owner_none")
+    # مالك حُذف حسابه أو عُطِّل: يبقى القسم مُسنداً ويظهر أن مالكه لم يعد متاحاً
+    return people.get(owner) or t("db.owner_gone")
+
+
+def _render_assignment_board(sections: list):
+    """
+    لوحة الأقسام: مالك كل قسم وحالته وهل كُتب نصّه.
+
+    الغاية عملية لا تزيينية: في قسم عطاءات يعمل على عرض واحد، السؤال المتكرّر
+    «أي قسم ينتظر من؟» — والجواب كان يتطلّب فتح كل موسّع على حدة.
+    """
+    import pandas as pd
+
+    writable = [s for s in sections if s["kind"] == "ai"]
+    if not writable:
+        return
+
+    people = _people()
+    with st.expander(t("db.board"), expanded=False):
+        st.caption(t("db.board_hint"))
+
+        rows = []
+        for sec in writable:
+            filled = bool(
+                str(st.session_state.get(section_content_key(sec["key"]), "")).strip()
+            )
+            rows.append({
+                t("db.board_section"): sec["title"],
+                t("db.board_owner"): _owner_label(sec, people),
+                t("db.board_status"): t("db.status_" + section_status(sec)),
+                t("db.board_text"): "🟢" if filled else "⚪",
+                t("db.include"): "✅" if sec.get("include") else "—",
+            })
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+
+        unassigned = sum(1 for s in writable if section_owner(s) is None)
+        if unassigned:
+            st.caption(t("db.board_unassigned", n=unassigned))
+
+
+def _assign_owner(key: str):
+    owner = st.session_state.get(f"owner_{key}")
+    if set_section_owner(key, owner):
+        audit.record(audit.SECTION_ASSIGN, target=audit.section_target(key),
+                     detail=str(owner or ""))
+
+
+def _assign_status(key: str):
+    status = st.session_state.get(f"status_{key}")
+    if set_section_status(key, status):
+        audit.record(audit.SECTION_STATUS, target=audit.section_target(key),
+                     detail=str(status))
+
+
+def _render_section_assignment(sec: dict):
+    """إسناد قسم بعينه وحالته — داخل موسّع القسم نفسه."""
+    people = _people()
+    key = sec["key"]
+    may_assign = auth.can("sections.assign")
+    owner = section_owner(sec)
+
+    c_owner, c_status = st.columns(2)
+    with c_owner:
+        options = [None] + list(people)
+        st.selectbox(
+            t("db.owner"),
+            options,
+            index=options.index(owner) if owner in options else 0,
+            format_func=lambda i: t("db.owner_none") if i is None
+            else people.get(i, t("db.owner_gone")),
+            key=f"owner_{key}",
+            disabled=not may_assign,
+            help=t("db.owner_help") if may_assign else t("db.owner_locked"),
+            on_change=lambda k=key: _assign_owner(k),
+        )
+    with c_status:
+        # الحالة يحدّثها مالك القسم نفسه — هي إقراره لا حكم غيره عليه
+        st.selectbox(
+            t("db.status"),
+            SECTION_STATUSES,
+            index=SECTION_STATUSES.index(section_status(sec)),
+            format_func=lambda s: t("db.status_" + s),
+            key=f"status_{key}",
+            disabled=not auth.can_edit_section(sec),
+            on_change=lambda k=key: _assign_status(k),
+        )
+
+    if not auth.can_edit_section(sec) and auth.can("sections.write"):
+        st.info(t("db.owned_by_other", name=_owner_label(sec, people)))
+
+    # 13-5: مصدر النص الحالي — سؤال لجنة الفحص لا سؤال فضول
+    source = audit.section_source(key)
+    if source:
+        st.caption(t("db.source_" + source))
 
 
 def _render_mandatory_check(sections: list):
@@ -393,6 +517,7 @@ def _writing_context(sec: dict) -> tuple[str, str]:
 
 def _render_editors(sections: list):
     st.markdown(t("db.editors"))
+    _render_assignment_board(sections)
 
     included = [s for s in sections if s.get("include")]
     if not included:
@@ -475,6 +600,9 @@ def _render_ai_editor(sec: dict):
     icon = "🟢" if content.strip() else "⚪"
 
     with st.expander(f"{icon} {sec['title']}", expanded=False):
+        _render_section_assignment(sec)
+        # 13-4: من هنا فصاعداً الصلاحية على هذا القسم بعينه لا على النوع
+        may_write = auth.can_edit_section(sec)
         if sec.get("rationale"):
             st.caption(f"💡 {sec['rationale']}")
         points = sec.get("key_points") or []
@@ -488,7 +616,7 @@ def _render_ai_editor(sec: dict):
             model = _model_picker(f"model_{key}")
         with col_b:
             go = st.button(f"⚡ {t('common.generate')}", key=f"btn_{key}", type="primary",
-                           width="stretch", disabled=auth.blocked("sections.write"))
+                           width="stretch", disabled=not may_write)
 
         if go:
             status = st.empty()
@@ -505,6 +633,10 @@ def _render_ai_editor(sec: dict):
             status.empty()
             if out:
                 st.session_state[ckey] = out
+                audit.record(audit.SECTION_GENERATE,
+                             target=audit.section_target(key), source=audit.AI,
+                             detail=sec["title"])
+                audit.snapshot_section(key, out, source=audit.AI)
                 # نُبطل مفتاح المحرر ليعرض النص المولَّد الجديد
                 st.session_state.pop(f"ta_{key}", None)
                 st.rerun()
@@ -515,22 +647,24 @@ def _render_ai_editor(sec: dict):
             height=80,
             placeholder=t("db.steering_ph"),
             key=_steering_key(key),
-            disabled=auth.blocked("sections.write"),
+            disabled=not may_write,
         )
 
         # 13-3: المراجع والمطّلع يقرآن النص ولا يكتبانه
+        # 13-4: ومن ليس مالك القسم كذلك — والنص يبقى مقروءاً للجميع
         st.session_state[ckey] = st.text_area(
             t("db.section_text"),
             value=content,
             height=300,
             key=f"ta_{key}",
-            disabled=auth.blocked("sections.write"),
+            disabled=not may_write,
         )
 
         if _has_placeholders(st.session_state[ckey]):
             st.warning(t("db.placeholder_warn"))
 
         _render_side_assistant(sec, model)
+        _render_versions(sec)
 
 
 def _render_side_assistant(sec: dict, model: str):
@@ -559,7 +693,7 @@ def _render_side_assistant(sec: dict, model: str):
         for col, (qkey, label) in zip(cols, quick.items()):
             with col:
                 if st.button(label, key=f"quick_{qkey}_{key}", width="stretch",
-                             disabled=auth.blocked("sections.write")):
+                             disabled=not auth.can_edit_section(sec)):
                     _apply_refinement(sec, label, model)
                     st.rerun()
 
@@ -574,7 +708,7 @@ def _render_side_assistant(sec: dict, model: str):
         with c_apply:
             go = st.button(t("db.refine"), key=f"refine_{key}",
                            type="primary", width="stretch",
-                           disabled=auth.blocked("sections.write"))
+                           disabled=not auth.can_edit_section(sec))
         with c_ask:
             # السؤال والتعديل زرّان منفصلان عمداً: السؤال لا يمسّ نص القسم،
             # وخلطهما كان يجعل "هل غطّينا شرط السعودة؟" يُعيد كتابة القسم.
@@ -595,10 +729,88 @@ def _render_side_assistant(sec: dict, model: str):
         undo_key = f"_undo_{ckey}"
         if st.session_state.get(undo_key):
             if st.button(f"↩️ {t('common.undo')}", key=f"undo_refine_{key}",
-                         disabled=auth.blocked("sections.write")):
+                         disabled=not auth.can_edit_section(sec)):
                 st.session_state[ckey] = st.session_state.pop(undo_key)
                 st.session_state.pop(f"ta_{key}", None)
                 st.rerun()
+
+
+# ─── نسخ الأقسام واسترجاعها (13-6) ────────────────────────────────────────────
+
+
+def _version_label(version: dict) -> str:
+    """سطر يعرّف النسخة: متى · من · مصدرها · طولها."""
+    who = version["username"] or t("ad2.unknown_user")
+    mark = "🤖" if version["source"] == "ai" else "✍️"
+    return f'{version["created_at"]} · {mark} {who} · {len(version["content"]):,}'
+
+
+def _diff_lines(old: str, new: str) -> str:
+    """
+    فرق سطري بصيغة موحّدة — من `difflib` القياسية بلا مكتبة إضافية.
+
+    المقارنة على السطور لا الكلمات: العرض مكتوب فقرات، وفرق الكلمات داخل فقرة
+    طويلة يُخرج ضجيجاً لا يُقرأ.
+    """
+    import difflib
+
+    diff = difflib.unified_diff(
+        (old or "").splitlines(), (new or "").splitlines(),
+        lineterm="", n=1,
+    )
+    body = "\n".join(list(diff)[2:])       # سطرا الترويسة لا يفيدان القارئ
+    return body
+
+
+def _render_versions(sec: dict):
+    """
+    نسخ القسم: عرض ومقارنة واسترجاع.
+
+    الاسترجاع **يحفظ نسخة من النص الحالي قبل أن يستبدله** — وإلا صار الاسترجاع
+    نفسه سبباً لفقد ما استُرجع منه.
+    """
+    from utils import db
+
+    key = sec["key"]
+    ckey = section_content_key(key)
+    project_id = st.session_state.get("_project_id")
+    versions = db.list_section_versions(key, project_id)
+
+    with st.expander(t("db.versions", n=len(versions))):
+        if not versions:
+            st.caption(t("db.versions_empty"))
+            return
+
+        st.caption(t("db.versions_hint", limit=db.SECTION_VERSION_LIMIT))
+
+        labels = {v["id"]: _version_label(v) for v in versions}
+        chosen_id = st.selectbox(
+            t("db.versions_pick"), list(labels),
+            format_func=lambda i: labels[i], key=f"ver_pick_{key}",
+        )
+        chosen = db.get_section_version(chosen_id)
+        if chosen is None:
+            return
+
+        current = str(st.session_state.get(ckey, "") or "")
+        diff = _diff_lines(chosen["content"], current)
+        if diff:
+            st.caption(t("db.versions_diff"))
+            st.code(diff, language="diff")
+        else:
+            st.caption(t("db.versions_same"))
+
+        may_restore = auth.can_edit_section(sec) and bool(diff)
+        if st.button(t("db.versions_restore"), key=f"ver_restore_{key}",
+                     type="primary", disabled=not may_restore,
+                     help=None if may_restore else t("db.versions_restore_help")):
+            audit.snapshot_section(key, current, source=audit.HUMAN)
+            st.session_state[ckey] = chosen["content"]
+            st.session_state.pop(f"ta_{key}", None)
+            audit.record(audit.SECTION_RESTORE, target=audit.section_target(key),
+                         detail=str(chosen_id))
+            st.success(t("db.versions_restored"))
+            st.rerun()
 
 
 def _render_qa_thread(key: str):
@@ -649,6 +861,12 @@ def _apply_refinement(sec: dict, request: str, model: str):
     st.session_state[f"_undo_{ckey}"] = current
     st.session_state[ckey] = revised
     st.session_state.pop(f"ta_{sec['key']}", None)
+    audit.record(audit.SECTION_REFINE, target=audit.section_target(sec["key"]),
+                 source=audit.AI, detail=request[:120])
+    # النسخة قبل التنقيح كما بعده: التراجع بنقرة يعالج آخر تنقيح وحده، والنسخ
+    # تعالج ما قبله
+    audit.snapshot_section(sec["key"], current, source=audit.HUMAN)
+    audit.snapshot_section(sec["key"], revised, source=audit.AI)
 
 
 def _answer_question(sec: dict, question: str, model: str):
@@ -864,6 +1082,7 @@ def _render_export(sections: list):
                         **brand,
                     )
                 st.session_state["_built_docx"] = bio.getvalue()
+                audit.record(audit.EXPORT_BUILD, detail="docx")
                 st.success(t("db.built_word"))
             except Exception as e:
                 st.error(t("db.build_failed", error=e))
@@ -886,6 +1105,7 @@ def _render_export(sections: list):
                         **brand,
                     )
                 st.session_state["_built_pdf"] = bio.getvalue()
+                audit.record(audit.EXPORT_BUILD, detail="pdf")
                 st.success(t("db.built_pdf"))
             except ImportError as e:
                 st.error(

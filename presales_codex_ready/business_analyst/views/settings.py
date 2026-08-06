@@ -11,7 +11,7 @@ import time
 import pandas as pd
 import streamlit as st
 
-from utils import auth, db, knowledge, providers, savings
+from utils import audit, auth, db, knowledge, providers, savings
 from utils.i18n import UI_LANGUAGES, t
 from utils.providers import catalog
 from utils.state import get_state_snapshot, load_state_snapshot
@@ -368,6 +368,7 @@ def _users_section():
             if problem:
                 st.error(t(problem))
             else:
+                audit.record(audit.USER_ADD, target=username.strip(), detail=role)
                 st.success(t("us.added", username=username.strip()))
                 st.rerun()
 
@@ -402,6 +403,8 @@ def _users_section():
             if problem:
                 st.error(t(problem))
             else:
+                audit.record(audit.USER_ROLE, target=target["username"],
+                             detail=new_role)
                 st.success(t("us.role_saved"))
                 st.rerun()
 
@@ -415,6 +418,7 @@ def _users_section():
                 if problem:
                     st.error(t(problem))
                 else:
+                    audit.record(audit.USER_PASSWORD, target=target["username"])
                     st.success(t("us.password_changed"))
         with m2:
             allowed = auth.can_disable(target_id)
@@ -422,6 +426,8 @@ def _users_section():
             if st.button(t(toggle_key), key="manage_user_toggle",
                          disabled=target["active"] and not allowed):
                 db.set_user_active(target_id, not target["active"])
+                audit.record(audit.USER_ACTIVE, target=target["username"],
+                             detail="off" if target["active"] else "on")
                 st.rerun()
             if target["active"] and not allowed:
                 st.caption(t("us.cannot_disable"))
@@ -430,6 +436,7 @@ def _users_section():
                                          key="manage_user_delete_confirm")
             if st.button(t("us.delete_btn"), key="manage_user_delete",
                          disabled=not (confirm_delete and auth.can_disable(target_id))):
+                audit.record(audit.USER_DELETE, target=target["username"])
                 db.delete_user(target_id)
                 st.rerun()
 
@@ -471,7 +478,55 @@ def render_settings():
         )
 
 
+def _audit_section():
+    """
+    سجل التدقيق (13-5): من فعل ماذا ومتى، وما مصدره النموذج.
+
+    يُعرض ولا يُحرَّر: لا زر حذف ولا تعديل هنا ولا في طبقة التخزين.
+    """
+    with st.expander(t("ad2.title")):
+        st.caption(t("ad2.hint"))
+
+        projects = {p["id"]: p["name"] for p in db.list_projects()}
+        people = {u["id"]: (u["display_name"] or u["username"]) for u in db.list_users()}
+
+        c1, c2 = st.columns(2)
+        with c1:
+            project_id = st.selectbox(
+                t("ad2.filter_project"), [None] + list(projects),
+                format_func=lambda i: t("ad2.all") if i is None else projects[i],
+                key="audit_project",
+            )
+        with c2:
+            user_id = st.selectbox(
+                t("ad2.filter_user"), [None] + list(people),
+                format_func=lambda i: t("ad2.all") if i is None else people[i],
+                key="audit_user",
+            )
+
+        rows = audit.entries(limit=200, project_id=project_id, user_id=user_id)
+        if not rows:
+            st.info(t("ad2.empty"))
+            return
+
+        st.dataframe(
+            pd.DataFrame([{
+                t("ad2.col_when"): r["created_at"],
+                t("ad2.col_who"): r["username"] or t("ad2.unknown_user"),
+                t("ad2.col_what"): t("audit.act_" + r["action"]),
+                t("ad2.col_target"): r["target"] or r["project_name"] or "—",
+                t("ad2.col_source"): t("db.source_" + r["source"])
+                if r["source"] in ("ai", "human") else r["source"],
+            } for r in rows]),
+            hide_index=True, width="stretch",
+        )
+        st.caption(t("ad2.total", n=db.count_audit_entries()))
+
+
 def render_data():
+
+    if auth.can("audit.view"):
+        _audit_section()
 
     # 13-3: استيراد مساحة عمل أو مسحها يمسّ كل شيء دفعةً واحدة — لا يُترك لكل
     # من يكتب قسماً. التصدير في الحزمة نفسها: نسخة كاملة تخرج من النظام.

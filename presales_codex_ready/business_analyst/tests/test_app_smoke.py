@@ -203,3 +203,31 @@ def test_viewer_gets_a_read_only_workspace():
     assert _button(at, "rec_save_entities").disabled
     create = next((b for b in at.button if "new_project" in (b.key or "")), None)
     assert create is not None and create.disabled, "المطّلع أنشأ منافسة"
+
+
+def test_a_writer_cannot_edit_a_section_owned_by_someone_else():
+    """
+    شرط قبول 13-4 في التطبيق الحقيقي: محرّر قسم مُسند إلى غيرك مقفل، ومحرّر
+    قسمك أنت مفتوح — في الشاشة نفسها وفي الدورة نفسها.
+    """
+    from utils.state import DEFAULT_SECTIONS
+
+    mine = _signed_in_user("writer", "sara")
+    theirs = _signed_in_user("writer", "omar")
+
+    sections = [dict(s) for s in DEFAULT_SECTIONS]
+    for section in sections:
+        if section["key"] == "exec":
+            section.update(include=True, owner=mine)
+        if section["key"] == "plan":
+            section.update(include=True, owner=theirs)
+
+    at = _run(user_id=mine)
+    at.session_state["proposal_sections"] = sections
+    at.session_state["nav_selection"] = "workspace"
+    at.run()
+    assert not at.exception
+
+    editors = {ta.key: ta for ta in at.text_area}
+    assert editors["ta_exec"].disabled is False, "المالك مُنع من تحرير قسمه"
+    assert editors["ta_plan"].disabled is True, "قسم مُسند إلى غيره ظلّ قابلاً للتحرير"
