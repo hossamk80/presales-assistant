@@ -1352,6 +1352,136 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── سياسة البيانات الشخصية (13-10) / Personal-data policy ──
+    "pd.title": {"ar": "🧑 سياسة البيانات الشخصية", "en": "🧑 Personal-data policy"},
+    "pd.hint": {
+        "ar": "رفع السير الذاتية يُدخل النظام في نطاق نظام حماية البيانات الشخصية: "
+              "أساس معلن للمعالجة، ومدة احتفاظ، وحذف عند الطلب.",
+        "en": "Uploading CVs brings this system under personal-data protection rules: "
+              "a declared basis for processing, a retention period, and erasure on request.",
+    },
+    "pd.basis": {"ar": "أساس المعالجة", "en": "Basis for processing"},
+    "pd.basis_contract": {"ar": "تنفيذ عقد", "en": "Performance of a contract"},
+    "pd.basis_consent": {"ar": "موافقة صريحة", "en": "Explicit consent"},
+    "pd.basis_legitimate_interest": {"ar": "مصلحة مشروعة", "en": "Legitimate interest"},
+    "pd.retention": {"ar": "مدة الاحتفاظ (بالأشهر)", "en": "Retention period (months)"},
+    "pd.retention_help": {
+        "ar": "بعدها تُعرض السير لحذفها. صفر يعني بلا حدّ معلن.",
+        "en": "After this, CVs are listed for deletion. Zero means no declared limit.",
+    },
+    "pd.retention_unlimited": {
+        "ar": "⚠️ لا حدّ معلن للاحتفاظ — إعلانه أصدق من حذف صامت، لكنه يبقى قراراً.",
+        "en": "⚠️ No declared retention limit — declaring that is more honest than "
+              "silent deletion, but it remains a decision.",
+    },
+    "pd.save_policy": {"ar": "حفظ السياسة", "en": "Save policy"},
+    "pd.policy_saved": {"ar": "✅ حُفظت السياسة.", "en": "✅ Policy saved."},
+    "pd.expired": {"ar": "السير المتجاوزة للمدة ({n})", "en": "CVs past the retention period ({n})"},
+    "pd.expired_hint": {
+        "ar": "هذه السير مضى عليها أكثر من {months} شهراً.",
+        "en": "These CVs are older than {months} months.",
+    },
+    "pd.expired_none": {
+        "ar": "لا سير تجاوزت المدة.",
+        "en": "No CVs are past the retention period.",
+    },
+    "pd.delete_expired": {"ar": "حذف السير المتجاوزة", "en": "Delete expired CVs"},
+    "pd.expired_deleted": {"ar": "✅ حُذفت {n} سيرة.", "en": "✅ Deleted {n} CV(s)."},
+    "pd.erase": {"ar": "حذف بيانات شخص عند الطلب", "en": "Erase a person's data on request"},
+    "pd.erase_hint": {
+        "ar": "يحذف صفّ الشخص في سجل الكوادر وسيرته ومقاطعها من المستودع. لا رجعة فيه.",
+        "en": "Deletes the person's row in the personnel registry, their CV, and its "
+              "chunks in the repository. It cannot be undone.",
+    },
+    "pd.person": {"ar": "الشخص", "en": "Person"},
+    "pd.footprint": {
+        "ar": "سيُحذف: {records} صفّاً · {documents} مستنداً · {chunks} مقطعاً.",
+        "en": "Will delete: {records} row(s) · {documents} document(s) · {chunks} chunk(s).",
+    },
+    "pd.erase_confirm": {"ar": "أؤكّد الحذف النهائي", "en": "Confirm permanent erasure"},
+    "pd.erase_btn": {"ar": "حذف بياناته", "en": "Erase their data"},
+    "pd.erased": {
+        "ar": "✅ حُذفت بيانات {name}: {documents} مستنداً و {chunks} مقطعاً.",
+        "en": "✅ Erased {name}'s data: {documents} document(s) and {chunks} chunk(s).",
+    },
+    "pd.no_people": {
+        "ar": "سجل الكوادر فارغ.",
+        "en": "The personnel registry is empty.",
+    },
+    "pd.cv_owner": {"ar": "صاحب السيرة", "en": "CV owner"},
+    "pd.cv_owner_none": {"ar": "غير محدَّد", "en": "Not specified"},
+    "pd.cv_owner_help": {
+        "ar": "ربط السيرة بصاحبها يجعل حذف بياناته لاحقاً كاملاً لا تخميناً بالاسم.",
+        "en": "Linking a CV to its owner makes erasing their data later complete, "
+              "rather than a guess based on the file name.",
+    },
+    "rec.p_basis": {"ar": "أساس المعالجة", "en": "Processing basis"},
+    "audit.act_pd.policy": {"ar": "تغيير سياسة البيانات", "en": "Data policy changed"},
+    "audit.act_pd.erase": {"ar": "حذف بيانات شخص", "en": "Personal data erased"},
+
+    # ── النسخ الاحتياطي (13-9) / Backup & restore ──
+    "bk.title": {"ar": "🗄️ نسخة احتياطية واسترجاع", "en": "🗄️ Backup & restore"},
+    "bk.hint": {
+        "ar": "نسخة من القاعدة كاملةً: المنافسات وملف الشركة والمعرفة والمستخدمون "
+              "والسجل والاعتمادات.",
+        "en": "A copy of the whole database: tenders, company profile, knowledge "
+              "repository, users, audit trail, and approvals.",
+    },
+    "bk.password": {"ar": "كلمة تشفير النسخة (اختيارية)", "en": "Backup password (optional)"},
+    "bk.password_help": {
+        "ar": "بكلمة تُشفَّر النسخة ولا تُفتح بدونها — ولا سبيل لاستعادتها إن نُسيت. "
+              "بلا كلمة تخرج ملف SQLite يفتحه أي عميل.",
+        "en": "With a password the backup is encrypted and cannot be opened without it "
+              "— and it cannot be recovered if forgotten. Without one it is a plain "
+              "SQLite file any client can open.",
+    },
+    "bk.build": {"ar": "إنشاء النسخة", "en": "Create backup"},
+    "bk.download": {"ar": "تنزيل النسخة", "en": "Download backup"},
+    "bk.size": {"ar": "حجم النسخة: {kb} كيلوبايت", "en": "Backup size: {kb} KB"},
+    "bk.no_crypto": {
+        "ar": "مكتبة التشفير غير مركَّبة — النسخ والاسترجاع يعملان بلا تشفير. "
+              "للتشفير: pip install cryptography",
+        "en": "The encryption library is not installed — backup and restore work "
+              "unencrypted. For encryption: pip install cryptography",
+    },
+    "bk.restore": {"ar": "استرجاع نسخة", "en": "Restore a backup"},
+    "bk.restore_warn": {
+        "ar": "⚠️ الاسترجاع يستبدل كل ما في النظام الآن بما في النسخة، ويُخرجك من جلستك.",
+        "en": "⚠️ Restoring replaces everything currently in the system with the "
+              "backup's contents, and signs you out.",
+    },
+    "bk.restore_upload": {"ar": "ملف النسخة", "en": "Backup file"},
+    "bk.restore_password": {"ar": "كلمة فكّ التشفير", "en": "Decryption password"},
+    "bk.restore_confirm": {"ar": "أؤكّد الاستبدال", "en": "Confirm replacement"},
+    "bk.restore_btn": {"ar": "استرجاع", "en": "Restore"},
+    "bk.restored": {"ar": "✅ استُرجعت النسخة — سجّل الدخول من جديد.", "en": "✅ Backup restored — please sign in again."},
+    "bk.file_info": {"ar": "الملف: {kb} كيلوبايت · {state}", "en": "File: {kb} KB · {state}"},
+    "bk.encrypted": {"ar": "مشفَّر", "en": "encrypted"},
+    "bk.plain": {"ar": "غير مشفَّر", "en": "not encrypted"},
+    "bk.err_password_short": {
+        "ar": "❌ كلمة التشفير أقصر من ثمانية أحرف.",
+        "en": "❌ The backup password is shorter than eight characters.",
+    },
+    "bk.err_password_needed": {
+        "ar": "❌ النسخة مشفَّرة — أدخل كلمة فكّ التشفير.",
+        "en": "❌ This backup is encrypted — enter its password.",
+    },
+    "bk.err_bad_password": {
+        "ar": "❌ الكلمة خاطئة أو النسخة عُبث بها.",
+        "en": "❌ Wrong password, or the backup was tampered with.",
+    },
+    "bk.err_not_backup": {
+        "ar": "❌ هذا الملف ليس نسخة صالحة من قاعدة النظام.",
+        "en": "❌ This file is not a valid backup of the system database.",
+    },
+    "bk.err_empty": {"ar": "❌ الملف فارغ.", "en": "❌ The file is empty."},
+    "bk.err_no_crypto": {
+        "ar": "❌ التشفير يتطلّب مكتبة cryptography.",
+        "en": "❌ Encryption requires the cryptography library.",
+    },
+    "audit.act_backup.create": {"ar": "إنشاء نسخة احتياطية", "en": "Backup created"},
+    "audit.act_backup.restore": {"ar": "استرجاع نسخة احتياطية", "en": "Backup restored"},
+
     # ── سير الاعتماد (13-8) / Approval workflow ──
     "ap.title": {"ar": "✅ اعتماد التسليم", "en": "✅ Delivery approval"},
     "ap.hint": {

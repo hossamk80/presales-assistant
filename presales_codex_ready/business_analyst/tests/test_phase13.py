@@ -1120,3 +1120,313 @@ def test_a_writer_approves_nothing(auth):
     auth.login("kateb", "strong-pass-1")
     for stage in ("bid_manager", "finance", "final"):
         assert auth.blocked(f"approve.{stage}")
+
+
+# ─── 13-9: النسخ الاحتياطي والتشفير ──────────────────────────────────────────
+
+
+@pytest.fixture()
+def bk(temp_db):
+    from utils import backup as backup_module
+    return backup_module
+
+
+def _seed(db):
+    """منافسة + ملف شركة + مستند معرفة + مستخدم — ما يجب أن تحمله أي نسخة."""
+    import struct
+
+    db.create_project("منافسة", {"sec_exec": "نص العرض"}, "REF-9", "جهة")
+    db.save_company({"c_name": "شركتي"}, template=b"DOCX", logo=b"PNG")
+    doc_id = db.add_kb_document("سيرة.pdf", "cv", 1200)
+    db.add_kb_chunks(doc_id, [(0, "مقطع معرفي", 3, struct.pack("3f", 1.0, 2.0, 3.0))])
+    db.create_user("sara", "scrypt$x", "سارة")
+
+
+def test_a_backup_carries_everything_and_restores(bk, temp_db):
+    """شرط قبول 13-9: نسخة كاملة تشمل المعرفة وملف الشركة، تُستعاد بنجاح."""
+    _seed(temp_db)
+    data = bk.create()
+
+    # كارثة: القاعدة تُمحى بالكامل
+    temp_db.delete_project(temp_db.list_projects()[0]["id"])
+    for doc in temp_db.list_kb_documents():
+        temp_db.delete_kb_document(doc["id"])
+    temp_db.save_company({})
+    assert temp_db.list_projects() == []
+
+    assert bk.restore(data) is None
+
+    assert [p["name"] for p in temp_db.list_projects()] == ["منافسة"]
+    payload, template, logo = temp_db.load_company()
+    assert payload["c_name"] == "شركتي"
+    assert (template, logo) == (b"DOCX", b"PNG")          # ملف الشركة كاملاً
+    assert len(temp_db.list_kb_documents()) == 1          # والمعرفة
+    assert temp_db.kb_stats()["chunks"] == 1
+    assert temp_db.get_user("sara") is not None           # والمستخدمون
+
+
+def test_an_unencrypted_backup_is_a_plain_sqlite_file(bk, temp_db):
+    """نسخة يفتحها أي عميل SQLite — البيانات ليست رهينة هذا البرنامج."""
+    _seed(temp_db)
+    data = bk.create()
+
+    assert data.startswith(temp_db.SQLITE_MAGIC)
+    assert bk.is_encrypted(data) is False
+    assert temp_db.validate_snapshot(data) is True
+
+
+def test_an_encrypted_backup_hides_its_content_and_comes_back(bk, temp_db):
+    if not bk.encryption_available():
+        pytest.skip("مكتبة التشفير غير مركَّبة")
+    _seed(temp_db)
+    data = bk.create("backup-pass-1")
+
+    assert bk.is_encrypted(data) is True
+    assert not data.startswith(temp_db.SQLITE_MAGIC)
+    assert "شركتي".encode("utf-8") not in data      # اسم الشركة لا يظهر خاماً
+
+    temp_db.save_company({})
+    assert bk.restore(data, "backup-pass-1") is None
+    assert temp_db.load_company()[0]["c_name"] == "شركتي"
+
+
+def test_the_wrong_password_is_refused_and_changes_nothing(bk, temp_db):
+    if not bk.encryption_available():
+        pytest.skip("مكتبة التشفير غير مركَّبة")
+    _seed(temp_db)
+    data = bk.create("backup-pass-1")
+    temp_db.save_company({"c_name": "الحالي"})
+
+    assert bk.restore(data, "backup-pass-2") == "bk.err_bad_password"
+    assert bk.restore(data) == "bk.err_password_needed"
+    assert temp_db.load_company()[0]["c_name"] == "الحالي"     # لم تُمسّ
+
+
+def test_a_tampered_backup_is_rejected(bk, temp_db):
+    """التوقيع يكشف العبث — النسخة لا تُفكّ إلى قمامة تُكتب فوق القاعدة."""
+    if not bk.encryption_available():
+        pytest.skip("مكتبة التشفير غير مركَّبة")
+    _seed(temp_db)
+    data = bytearray(bk.create("backup-pass-1"))
+    data[-5] ^= 0xFF
+
+    assert bk.restore(bytes(data), "backup-pass-1") == "bk.err_bad_password"
+
+
+def test_a_file_that_is_not_a_backup_is_refused(bk, temp_db):
+    _seed(temp_db)
+    before = temp_db.list_projects()
+
+    assert bk.restore(b"") == "bk.err_empty"
+    assert bk.restore("ما هذا الملف؟".encode("utf-8")) == "bk.err_not_backup"
+    assert temp_db.list_projects() == before
+
+
+def test_a_sqlite_file_without_our_tables_is_refused(bk, temp_db, tmp_path):
+    """ملف SQLite صالح لكنه ليس قاعدتنا — الترويسة وحدها لا تكفي."""
+    other = tmp_path / "other.db"
+    conn = sqlite3.connect(other)
+    conn.execute("CREATE TABLE shopping (id INTEGER)")
+    conn.commit()
+    conn.close()
+
+    assert bk.restore(other.read_bytes()) == "bk.err_not_backup"
+
+
+def test_a_weak_backup_password_is_refused_before_encrypting(bk):
+    assert bk.password_problem("short") == "bk.err_password_short"
+    assert bk.password_problem("") is None            # بلا تشفير مقبول
+    assert bk.password_problem("backup-pass-1") is None
+
+
+def test_the_summary_describes_the_file_before_restoring(bk, temp_db):
+    if not bk.encryption_available():
+        pytest.skip("مكتبة التشفير غير مركَّبة")
+    _seed(temp_db)
+    plain = bk.summary(bk.create())
+    secret = bk.summary(bk.create("backup-pass-1"))
+
+    assert plain["encrypted"] is False
+    assert secret["encrypted"] is True
+    assert plain["size_kb"] >= 0
+
+
+def test_a_snapshot_is_taken_while_the_connection_is_open(bk, temp_db):
+    """النسخ عبر واجهة SQLite لا بنسخ الملف خاماً — لا نسخة ممزّقة."""
+    _seed(temp_db)
+    temp_db.create_project("أثناء النسخ", {})
+
+    data = temp_db.snapshot_bytes()
+    assert temp_db.validate_snapshot(data)
+    assert len(temp_db.list_projects()) == 2
+
+
+def test_restoring_swaps_the_live_connection(bk, temp_db):
+    """بعد الاسترجاع تقرأ القاعدة من الملف الجديد لا من اتصال قديم."""
+    _seed(temp_db)
+    data = bk.create()
+    temp_db.create_project("بعد النسخة", {})
+    assert len(temp_db.list_projects()) == 2
+
+    assert bk.restore(data) is None
+    assert [p["name"] for p in temp_db.list_projects()] == ["منافسة"]
+
+
+# ─── 13-10: سياسة البيانات الشخصية ───────────────────────────────────────────
+
+
+def _person_with_cv(db, name="سارة", filename="سيرة-سارة.pdf", link=True):
+    """يزرع شخصاً في سجل الكوادر وسيرته في المستودع بمقاطعها."""
+    import struct
+
+    db.save_records("people", [
+        {"name": name, "role": "مدير مشروع", "cv_document": filename if link else ""},
+    ])
+    doc_id = db.add_kb_document(filename, "cv", 4000, person=name if link else "")
+    db.add_kb_chunks(doc_id, [
+        (0, f"خبرة {name} في القطاع الصحي", 3, struct.pack("3f", 1.0, 0.0, 0.0)),
+        (1, f"شهادات {name}", 3, struct.pack("3f", 0.0, 1.0, 0.0)),
+    ])
+    return doc_id
+
+
+def test_erasing_a_person_removes_their_cv_and_its_chunks(temp_db):
+    """شرط قبول 13-10: حذف شخص يحذف سيرته ومقاطعها من المستودع."""
+    _person_with_cv(temp_db, "سارة")
+    assert temp_db.kb_stats() == {"docs": 1, "chunks": 2}
+
+    removed = temp_db.forget_person("سارة")
+
+    assert removed == {"records": 1, "documents": 1, "chunks": 2}
+    assert temp_db.list_records("people") == []
+    assert temp_db.kb_stats() == {"docs": 0, "chunks": 0}
+
+
+def test_erasing_one_person_leaves_the_others_untouched(temp_db):
+    import struct
+
+    temp_db.save_records("people", [
+        {"name": "سارة", "cv_document": "سارة.pdf"},
+        {"name": "عمر", "cv_document": "عمر.pdf"},
+    ])
+    for name in ("سارة", "عمر"):
+        doc = temp_db.add_kb_document(f"{name}.pdf", "cv", 100, person=name)
+        temp_db.add_kb_chunks(doc, [(0, name, 3, struct.pack("3f", 1.0, 0.0, 0.0))])
+
+    temp_db.forget_person("سارة")
+
+    assert [r["name"] for r in temp_db.list_records("people")] == ["عمر"]
+    assert [d["person"] for d in temp_db.list_kb_documents()] == ["عمر"]
+    assert temp_db.kb_stats()["chunks"] == 1
+
+
+def test_a_cv_uploaded_before_the_link_existed_is_still_erased(temp_db):
+    """
+    سيرة رُفعت قبل 13-10 لا تحمل ربطاً — وحقّ صاحبها في حذفها لا ينتظر ترقية.
+    الصلة تأتي من `cv_document` في صفّه.
+    """
+    _person_with_cv(temp_db, "سارة", "سيرة-قديمة.pdf", link=False)
+    temp_db.save_records("people", [{"name": "سارة", "cv_document": "سيرة-قديمة.pdf"}])
+
+    removed = temp_db.forget_person("سارة")
+
+    assert removed["documents"] == 1
+    assert temp_db.kb_stats() == {"docs": 0, "chunks": 0}
+
+
+def test_the_footprint_is_shown_before_erasing_not_after(temp_db):
+    _person_with_cv(temp_db, "سارة")
+
+    footprint = temp_db.person_footprint("سارة")
+    assert footprint == {"records": 1, "documents": 1, "chunks": 2}
+    assert temp_db.kb_stats()["docs"] == 1        # العرض لا يحذف
+
+
+def test_erasing_an_unknown_person_changes_nothing(temp_db):
+    _person_with_cv(temp_db, "سارة")
+
+    assert temp_db.forget_person("شخص لا وجود له") == {
+        "records": 0, "documents": 0, "chunks": 0}
+    assert temp_db.forget_person("") == {"records": 0, "documents": 0, "chunks": 0}
+    assert temp_db.kb_stats()["docs"] == 1
+
+
+def test_the_policy_has_a_declared_default(temp_db):
+    policy = temp_db.personal_data_policy()
+    assert policy["legal_basis"] in temp_db.LEGAL_BASES
+    assert policy["retention_months"] == temp_db.DEFAULT_RETENTION_MONTHS
+
+
+def test_the_policy_is_stored_and_read_back(temp_db):
+    assert temp_db.set_personal_data_policy("consent", 12) is True
+    assert temp_db.personal_data_policy() == {
+        "legal_basis": "consent", "retention_months": 12}
+
+
+def test_an_unknown_basis_or_negative_period_is_refused(temp_db):
+    before = temp_db.personal_data_policy()
+    assert temp_db.set_personal_data_policy("because-we-can", 12) is False
+    assert temp_db.set_personal_data_policy("consent", -3) is False
+    assert temp_db.personal_data_policy() == before
+
+
+def test_a_damaged_policy_value_falls_back_to_the_default(temp_db):
+    """قيمة تالفة في القاعدة لا تُسقط الشاشة ولا تُلغي السياسة."""
+    temp_db.set_app_setting("pd_retention_months", "لا رقم")
+    temp_db.set_app_setting("pd_legal_basis", "superuser")
+
+    policy = temp_db.personal_data_policy()
+    assert policy["retention_months"] == temp_db.DEFAULT_RETENTION_MONTHS
+    assert policy["legal_basis"] == temp_db.DEFAULT_LEGAL_BASIS
+
+
+def test_cvs_past_the_retention_period_are_listed(temp_db):
+    doc_id = _person_with_cv(temp_db, "سارة")
+    temp_db.get_conn().execute(
+        "UPDATE kb_documents SET added_at = '2019-01-01 00:00:00' WHERE id = ?",
+        (doc_id,),
+    )
+    temp_db.get_conn().commit()
+
+    temp_db.set_personal_data_policy("contract", 24)
+    expired = temp_db.expired_cv_documents()
+    assert [d["id"] for d in expired] == [doc_id]
+    assert expired[0]["chunks"] == 2
+
+
+def test_a_recent_cv_is_not_expired(temp_db):
+    _person_with_cv(temp_db, "سارة")
+    temp_db.set_personal_data_policy("contract", 24)
+    assert temp_db.expired_cv_documents() == []
+
+
+def test_no_declared_limit_means_nothing_expires(temp_db):
+    """إعلان «نحتفظ بلا حدّ» أصدق من حذف صامت."""
+    doc_id = _person_with_cv(temp_db, "سارة")
+    temp_db.get_conn().execute(
+        "UPDATE kb_documents SET added_at = '2001-01-01 00:00:00' WHERE id = ?",
+        (doc_id,),
+    )
+    temp_db.get_conn().commit()
+
+    temp_db.set_personal_data_policy("contract", 0)
+    assert temp_db.expired_cv_documents() == []
+
+
+def test_retention_only_covers_cvs_not_the_whole_repository(temp_db):
+    """الشهادات والمشاريع ليست بيانات شخصية — لا تسقط بمدة السير."""
+    old = temp_db.add_kb_document("شهادة.pdf", "cert", 100)
+    temp_db.get_conn().execute(
+        "UPDATE kb_documents SET added_at = '2001-01-01 00:00:00' WHERE id = ?", (old,))
+    temp_db.get_conn().commit()
+
+    temp_db.set_personal_data_policy("contract", 12)
+    assert temp_db.expired_cv_documents() == []
+
+
+def test_the_personnel_registry_declares_a_basis_per_person(temp_db):
+    """الموظف والمرشّح والمستشار لا يتساوى أساس معالجتهم."""
+    from utils import records
+
+    assert "legal_basis" in records.column_keys("people")
+    assert records.blank_row("people")["legal_basis"] in records.LEGAL_BASES

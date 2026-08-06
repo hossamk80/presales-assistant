@@ -120,10 +120,13 @@ def active_embed_model() -> str:
     return providers.active_embed_signature()
 
 
-def ingest_file(file, category: str) -> Optional[int]:
+def ingest_file(file, category: str, person: str = "") -> Optional[int]:
     """
     يستخرج نص ملف ويقسّمه ويضمّنه ويخزّنه.
     يُرجع عدد المقاطع المخزّنة، أو None عند الفشل.
+
+    `person` (13-10): صاحب السيرة الذاتية — يُخزَّن مع المستند فيُعرف لاحقاً
+    ما يجب حذفه إن طلب حذف بياناته.
     """
     from utils.file_handler import _extract_single
 
@@ -141,7 +144,7 @@ def ingest_file(file, category: str) -> Optional[int]:
     if vectors is None:
         return None
 
-    doc_id = db.add_kb_document(file.name, category, len(text))
+    doc_id = db.add_kb_document(file.name, category, len(text), person=person)
     db.add_kb_chunks(
         doc_id,
         [(i, chunk, EMBED_DIMS, _pack(vec))
