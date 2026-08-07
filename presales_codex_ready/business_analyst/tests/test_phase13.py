@@ -372,10 +372,14 @@ def test_each_role_gets_exactly_its_matrix_row(auth):
             "tables.edit", "sections.write", "sections.assign", "review.run",
             "assistant.ask", "company.edit", "export", "audit.view",
             "approve.bid_manager", "approve.finance",
+            # 14-4: يحرّر كتل المكتبة ويعتمدها
+            "library.manage", "library.approve",
         },
         auth.WRITER: {
             "projects.create", "projects.edit", "tables.edit", "sections.write",
             "assistant.ask", "export",
+            # 14-4: يقترح كتلة ولا يعتمدها — الاعتماد ليس هنا عمداً
+            "library.manage",
         },
         auth.REVIEWER: {"review.run", "assistant.ask", "export"},
         auth.VIEWER: set(),

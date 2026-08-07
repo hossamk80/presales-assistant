@@ -132,6 +132,74 @@ CREATE TABLE IF NOT EXISTS company_records (
 CREATE INDEX IF NOT EXISTS idx_company_records_registry
     ON company_records(registry);
 
+-- البرومبتات (14-1): تعليمات النموذج قابلة للتحرير من الواجهة بلا إعادة تشغيل.
+--
+-- الجدول يحمل **التجاوزات وحدها** لا نسخة من كل برومبت: النصوص الافتراضية تبقى
+-- في `ai_engine.py` مصدراً واحداً، وصفٌّ هنا يعني «هذا المفتاح عُدّل». وزرْع
+-- الجدول بنسخة من كل نصّ يبدو أنظف حتى يتغيّر الافتراضي في الشيفرة فيبقى
+-- المزروع قديماً صامتاً — والفرق لا يظهر إلا في جودة عرض خسر.
+--
+-- «استعادة الافتراضي» تحذف الصف فيعود النص من الشيفرة — لا نسخ ولا مقارنة.
+--
+-- `sector` و `language` فارغان يعنيان «لكل القطاعات وكل اللغات»، والأخص يغلب.
+-- والقواعد الثابتة (14-2) **ليست هنا ولا تُحرَّر**: تُلحق وقت الاستدعاء.
+CREATE TABLE IF NOT EXISTS prompts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    key        TEXT NOT NULL,
+    agent      TEXT NOT NULL DEFAULT '',
+    sector     TEXT NOT NULL DEFAULT '',
+    language   TEXT NOT NULL DEFAULT '',
+    version    INTEGER NOT NULL DEFAULT 1,
+    text       TEXT NOT NULL,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_scope
+    ON prompts(key, sector, language);
+
+-- مكتبة المحتوى المعتمد (14-4): كتل نصّية تُدرَج في الأقسام كما هي.
+--
+-- الحاجة: نصف العرض الفني لا يتغيّر بين منافسة وأخرى — سياسة الجودة، منهجية
+-- التسليم، نبذة الشركة، التزامات الضمان. توليدها بالنموذج كل مرة يكلّف توكناً
+-- ويُخرج صياغة مختلفة في كل عرض عن نصّ **راجعه القسم القانوني مرة**. الكتلة
+-- المعتمدة تُدرَج **بلا استدعاء نموذج** — وهذا شرط قبول هذا البند.
+--
+-- `status`: `draft` ← `approved` ← `retired`. والمُدرَج المعتمد وحده: مسودّة
+-- تُدرَج تجعل المكتبة مجلّد قصاصات لا مكتبة معتمدة.
+--
+-- **تحرير النصّ يُسقط الاعتماد** إلى `draft` — كما يسقط اعتماد العرض بتعديله
+-- بعده (13-8). كتلة اعتُمدت ثم غُيّر نصّها ليست الكتلة المعتمدة، وإبقاء الختم
+-- عليها يجعل «معتمد» ختماً على ورقة تُملأ بعده.
+--
+-- `reviewed_at` + `review_months`: المحتوى يصدأ — رقم سعودة تغيّر، شهادة
+-- انتهت، منهجية استُبدلت. الكتلة المتأخّرة عن مراجعتها تُدرَج **بتحذير لا
+-- بمنع**: قفلها يوم انقضاء التاريخ يوقف الكتابة في يوم تسليم، والقرار البشري
+-- هو الأصل في هذا النظام. صفر شهراً = بلا دورة مراجعة معلنة فلا شيء يتأخّر.
+--
+-- `used_count` عدّاد إعادة الاستخدام — الغاية من المكتبة قياسها لا الثقة بها.
+CREATE TABLE IF NOT EXISTS content_blocks (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    key           TEXT NOT NULL UNIQUE,
+    title         TEXT NOT NULL DEFAULT '',
+    body          TEXT NOT NULL DEFAULT '',
+    category      TEXT NOT NULL DEFAULT '',
+    sector        TEXT NOT NULL DEFAULT '',
+    language      TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'draft',
+    reviewed_at   TEXT NOT NULL DEFAULT '',
+    reviewed_by   TEXT NOT NULL DEFAULT '',
+    review_months INTEGER NOT NULL DEFAULT 12,
+    used_count    INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT '',
+    updated_at    TEXT NOT NULL DEFAULT '',
+    updated_by    TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_blocks_status
+    ON content_blocks(status);
+
 -- إعدادات النظام (13-10): مفتاح ← قيمة. جدول واحد صغير بدل عمود لكل إعداد
 -- جديد، وأول ساكنيه سياسة البيانات الشخصية (أساس المعالجة ومدة الاحتفاظ).
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -989,6 +1057,300 @@ def kb_stats() -> dict:
         "(SELECT COUNT(*) FROM kb_chunks) AS chunks"
     ).fetchone()
     return dict(row)
+
+
+# ─── البرومبتات (14-1) ────────────────────────────────────────────────────────
+
+
+def list_prompts(key: str = "") -> list:
+    sql = "SELECT * FROM prompts"
+    args: list[Any] = []
+    if key:
+        sql += " WHERE key = ?"
+        args.append(key)
+    sql += " ORDER BY key, sector, language"
+    return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
+
+
+def prompt_override(key: str, sector: str = "", language: str = "") -> Optional[dict]:
+    """
+    التجاوز الساري لهذا المفتاح، أو `None`.
+
+    **الأخص يغلب**: (قطاع ولغة) ← (قطاع) ← (لغة) ← (عام). فبرومبت كُتب لقطاع
+    الصحة لا يُزيحه عامٌّ كُتب قبله، ولا العكس.
+    """
+    for candidate in (
+        (sector, language), (sector, ""), ("", language), ("", ""),
+    ):
+        row = get_conn().execute(
+            "SELECT * FROM prompts WHERE key = ? AND sector = ? AND language = ? "
+            "AND enabled = 1",
+            (key, candidate[0], candidate[1]),
+        ).fetchone()
+        if row is not None:
+            return dict(row)
+    return None
+
+
+def save_prompt(key: str, text: str, agent: str = "", sector: str = "",
+                language: str = "", updated_by: str = "") -> int:
+    """يحفظ تجاوزاً ويعيد رقم إصداره. الإصدار يزيد مع كل حفظ."""
+    existing = get_conn().execute(
+        "SELECT version FROM prompts WHERE key = ? AND sector = ? AND language = ?",
+        (key, sector, language),
+    ).fetchone()
+    version = (int(existing["version"]) + 1) if existing else 1
+
+    with transaction() as conn:
+        conn.execute(
+            "INSERT INTO prompts (key, agent, sector, language, version, text, "
+            "enabled, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) "
+            "ON CONFLICT(key, sector, language) DO UPDATE SET "
+            "text = excluded.text, agent = excluded.agent, version = excluded.version, "
+            "enabled = 1, updated_at = excluded.updated_at, "
+            "updated_by = excluded.updated_by",
+            (key, agent, sector, language, version, text, _now(), updated_by),
+        )
+    return version
+
+
+def set_prompt_enabled(key: str, enabled: bool, sector: str = "",
+                       language: str = "") -> bool:
+    """تعطيل تجاوز يعيد العمل بالنص الافتراضي بلا فقد ما كُتب."""
+    with transaction() as conn:
+        cur = conn.execute(
+            "UPDATE prompts SET enabled = ? WHERE key = ? AND sector = ? "
+            "AND language = ?",
+            (1 if enabled else 0, key, sector, language),
+        )
+        return cur.rowcount > 0
+
+
+def delete_prompt(key: str, sector: str = "", language: str = "") -> bool:
+    """استعادة الافتراضي: يُحذف التجاوز فيعود النص من الشيفرة."""
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM prompts WHERE key = ? AND sector = ? AND language = ?",
+            (key, sector, language),
+        )
+        return cur.rowcount > 0
+
+
+# ─── مكتبة المحتوى المعتمد (14-4) ─────────────────────────────────────────────
+#
+# كتل جاهزة تُدرَج في أقسام العرض **بلا استدعاء نموذج**. الطبقة هنا لا تعرف
+# Streamlit ولا تلمس نص القسم — الإدراج نفسه في `views/doc_builder.py`.
+
+BLOCK_DRAFT = "draft"
+BLOCK_APPROVED = "approved"
+BLOCK_RETIRED = "retired"
+BLOCK_STATUSES = (BLOCK_DRAFT, BLOCK_APPROVED, BLOCK_RETIRED)
+
+# دورة المراجعة الافتراضية بالأشهر. صفر = بلا دورة معلنة فلا تتأخّر الكتلة.
+DEFAULT_REVIEW_MONTHS = 12
+
+
+def _block_row(block_id: int):
+    return get_conn().execute(
+        "SELECT * FROM content_blocks WHERE id = ?", (int(block_id),)
+    ).fetchone()
+
+
+def get_content_block(block_id: int) -> Optional[dict]:
+    row = _block_row(block_id)
+    return dict(row) if row is not None else None
+
+
+def content_block_by_key(key: str) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM content_blocks WHERE key = ?", ((key or "").strip(),)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def list_content_blocks(status: str = "", category: str = "", sector: str = "",
+                        language: str = "") -> list:
+    """
+    كتل المكتبة مرشّحة اختيارياً. `sector` و `language` يُطابقان **الموسَّع
+    أيضاً**: كتلة بلا قطاع تصلح لكل القطاعات، فحصرها على المطابق التام يُخفي
+    عن كاتب قطاع الصحة كل ما كُتب ليصلح للجميع.
+    """
+    sql = "SELECT * FROM content_blocks WHERE 1 = 1"
+    args: list[Any] = []
+    if status:
+        sql += " AND status = ?"
+        args.append(status)
+    if category:
+        sql += " AND category = ?"
+        args.append(category)
+    if sector:
+        sql += " AND sector IN ('', ?)"
+        args.append(sector)
+    if language:
+        sql += " AND language IN ('', ?)"
+        args.append(language)
+    sql += " ORDER BY category, title, key"
+    return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
+
+
+def block_review_due(block: dict) -> bool:
+    """
+    هل تأخّرت الكتلة عن مراجعتها؟
+
+    بلا دورة معلنة (صفر) لا شيء يتأخّر. وكتلة معتمدة بلا تاريخ مراجعة تُعدّ
+    متأخّرة: «معتمد ولا نعرف متى» أسوأ من «معتمد ومضى عليه عام».
+    """
+    try:
+        months = int(block.get("review_months") or 0)
+    except (TypeError, ValueError):
+        months = 0
+    if months <= 0:
+        return False
+
+    reviewed = str(block.get("reviewed_at") or "").strip()
+    if not reviewed:
+        return True
+    try:
+        stamp = datetime.strptime(reviewed[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return True
+    return datetime.now() - stamp > timedelta(days=30 * months)
+
+
+def approved_blocks(sector: str = "", language: str = "") -> list:
+    """
+    ما يجوز إدراجه: المعتمد وحده. المسودّة والمسحوبة تبقيان في المكتبة للتحرير
+    ولا تصلان إلى قسم — وهذا الفرق بين مكتبة معتمدة ومجلّد قصاصات.
+
+    الترتيب يُنزل المتأخّر عن مراجعته إلى الآخر: يُدرَج بتحذير، ولا يُقترَح أولاً.
+    """
+    blocks = list_content_blocks(status=BLOCK_APPROVED, sector=sector,
+                                 language=language)
+    return sorted(blocks, key=lambda b: (block_review_due(b), b.get("title", "")))
+
+
+def save_content_block(key: str, title: str, body: str, category: str = "",
+                       sector: str = "", language: str = "",
+                       review_months: Optional[int] = None,
+                       updated_by: str = "") -> Optional[int]:
+    """
+    ينشئ كتلة أو يعدّلها، ويعيد معرّفها (أو `None` لمفتاح فارغ).
+
+    **تغيير النصّ يُسقط الاعتماد** ويمسح تاريخ المراجعة: المعتمَد هو النصّ الذي
+    قُرئ لا المفتاح الذي يحمله. أمّا تغيير العنوان أو التصنيف فلا يمسّ الاعتماد —
+    إسقاطه لتصحيح حرف في عنوان يجعل الكتّاب يتجنّبون التصحيح.
+    """
+    key = (key or "").strip()
+    if not key:
+        return None
+    body = body or ""
+    now = _now()
+
+    existing = content_block_by_key(key)
+    if existing is None:
+        months = (DEFAULT_REVIEW_MONTHS if review_months is None
+                  else max(0, int(review_months)))
+        with transaction() as conn:
+            cur = conn.execute(
+                "INSERT INTO content_blocks (key, title, body, category, sector, "
+                "language, status, review_months, created_at, updated_at, updated_by) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (key, title or "", body, category or "", sector or "",
+                 language or "", BLOCK_DRAFT, months, now, now, updated_by),
+            )
+            return int(cur.lastrowid)
+
+    months = (int(existing["review_months"]) if review_months is None
+              else max(0, int(review_months)))
+    body_changed = body != (existing["body"] or "")
+    status = BLOCK_DRAFT if body_changed else existing["status"]
+    reviewed_at = "" if body_changed else existing["reviewed_at"]
+    reviewed_by = "" if body_changed else existing["reviewed_by"]
+
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE content_blocks SET title = ?, body = ?, category = ?, "
+            "sector = ?, language = ?, status = ?, reviewed_at = ?, "
+            "reviewed_by = ?, review_months = ?, updated_at = ?, updated_by = ? "
+            "WHERE id = ?",
+            (title or "", body, category or "", sector or "", language or "",
+             status, reviewed_at, reviewed_by, months, now, updated_by,
+             int(existing["id"])),
+        )
+    return int(existing["id"])
+
+
+def set_block_status(block_id: int, status: str, username: str = "") -> bool:
+    """
+    يغيّر حالة الكتلة. الاعتماد يختم **تاريخ مراجعة** معه: كتلة تُعتمد اليوم
+    مراجَعة اليوم، فلا تُولد متأخّرة عن دورتها.
+    """
+    if status not in BLOCK_STATUSES:
+        return False
+    row = _block_row(block_id)
+    if row is None:
+        return False
+
+    reviewed_at = _now() if status == BLOCK_APPROVED else row["reviewed_at"]
+    reviewed_by = username if status == BLOCK_APPROVED else row["reviewed_by"]
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE content_blocks SET status = ?, reviewed_at = ?, "
+            "reviewed_by = ?, updated_at = ? WHERE id = ?",
+            (status, reviewed_at, reviewed_by, _now(), int(block_id)),
+        )
+    return True
+
+
+def mark_block_reviewed(block_id: int, username: str = "") -> bool:
+    """
+    «راجعتُها ولم تتغيّر» — يجدّد التاريخ بلا لمس النصّ ولا الحالة. بدونه كان
+    تأكيد صلاحية كتلة يستلزم تعديلاً وهمياً يُسقط اعتمادها.
+    """
+    if _block_row(block_id) is None:
+        return False
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE content_blocks SET reviewed_at = ?, reviewed_by = ?, "
+            "updated_at = ? WHERE id = ?",
+            (_now(), username, _now(), int(block_id)),
+        )
+    return True
+
+
+def record_block_use(block_id: int) -> int:
+    """يزيد عدّاد الاستخدام ويعيد قيمته الجديدة (أو صفراً لكتلة غير موجودة)."""
+    with transaction() as conn:
+        cur = conn.execute(
+            "UPDATE content_blocks SET used_count = used_count + 1 WHERE id = ?",
+            (int(block_id),),
+        )
+        if not cur.rowcount:
+            return 0
+    row = _block_row(block_id)
+    return int(row["used_count"]) if row is not None else 0
+
+
+def delete_content_block(block_id: int) -> bool:
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM content_blocks WHERE id = ?", (int(block_id),)
+        )
+        return cur.rowcount > 0
+
+
+def content_block_stats() -> dict:
+    """عدّاد لكل حالة + كم كتلة تأخّرت عن مراجعتها."""
+    blocks = list_content_blocks()
+    stats = {status: 0 for status in BLOCK_STATUSES}
+    for block in blocks:
+        if block["status"] in stats:
+            stats[block["status"]] += 1
+    stats["total"] = len(blocks)
+    stats["due"] = sum(1 for b in blocks
+                       if b["status"] == BLOCK_APPROVED and block_review_due(b))
+    stats["used"] = sum(int(b["used_count"] or 0) for b in blocks)
+    return stats
 
 
 # ─── سياسة البيانات الشخصية (13-10) ───────────────────────────────────────────

@@ -81,6 +81,12 @@ PERMISSIONS: dict[str, tuple] = {
     "sections.write": (ADMIN, BID_MANAGER, WRITER),
     # 13-4: إسناد الأقسام لمُلّاكها — ومن يملكه يعدّل أي قسم بصرف النظر عن مالكه
     "sections.assign": (ADMIN, BID_MANAGER),
+    # 14-1: تحرير تعليمات النموذج — يمسّ كل مخرَج في النظام، فللمدير وحده
+    "prompts.manage": (ADMIN,),
+    # 14-4: مكتبة المحتوى المعتمد. الكتابة والاعتماد **صلاحيتان لا واحدة**:
+    # الكاتب يقترح كتلة، ولا يمنح نصَّه ختم «يُدرَج بلا مراجعة» بنفسه.
+    "library.manage": (ADMIN, BID_MANAGER, WRITER),
+    "library.approve": (ADMIN, BID_MANAGER),
     # 13-5: قراءة سجل التدقيق — يكشف من فعل ماذا، فليس لكل من يكتب
     "audit.view": (ADMIN, BID_MANAGER),
     # 13-8: سير الاعتماد قبل التسليم. لا دور «مالية» بين الأدوار الخمسة بعد،
@@ -186,6 +192,19 @@ def current_user() -> Optional[dict]:
 
 def is_authenticated() -> bool:
     return current_user() is not None
+
+
+def display_name() -> str:
+    """
+    الاسم الذي يُنسب إليه فعل المستخدم — الاسم الظاهر، وإلا اسم الدخول.
+
+    يُخزَّن **لقطةً** مع ما يوقّعه (اعتماد كتلة، تعديلها): حذف حساب لاحقاً لا
+    يجوز أن يمحو من راجع نصّاً يُدرَج في العروض.
+    """
+    user = current_user()
+    if user is None:
+        return ""
+    return user.get("display_name") or user.get("username", "")
 
 
 def needs_setup() -> bool:

@@ -663,8 +663,91 @@ def _render_ai_editor(sec: dict):
         if _has_placeholders(st.session_state[ckey]):
             st.warning(t("db.placeholder_warn"))
 
+        _render_block_library(sec)
         _render_side_assistant(sec, model)
         _render_versions(sec)
+
+
+# ─── مكتبة المحتوى المعتمد (14-4) ─────────────────────────────────────────────
+
+
+def _insert_block(sec: dict, block: dict):
+    """
+    يُلحق نصّ كتلة معتمدة بنص القسم — **بلا استدعاء نموذج**، وهذا شرط قبول 14-4.
+
+    لا شيء في هذا المسار يمسّ `ai_engine`: النصّ يأتي من القاعدة كما اعتُمد
+    ويُكتب في الجلسة. أي توليد هنا يُبطل الغاية — الكتلة موجودة **لأنّ** صياغتها
+    حُسمت مرة فلا تُعاد كتابتها في كل عرض.
+
+    الإلحاق لا الاستبدال: كتلة تمحو ما كتبه الكاتب تخسر عملاً، والحذف بيد
+    المستخدم في محرّر القسم. والنصّ الحالي يُحفظ نسخةً قبل الإلحاق (13-6)
+    فالإدراج تراجعه خطوة.
+    """
+    from utils import db
+
+    key = sec["key"]
+    ckey = section_content_key(key)
+    current = str(st.session_state.get(ckey, "") or "")
+
+    audit.snapshot_section(key, current, source=audit.HUMAN)
+    body = str(block.get("body") or "").strip()
+    st.session_state[ckey] = f"{current.rstrip()}\n\n{body}".lstrip() if current.strip() else body
+    st.session_state.pop(f"ta_{key}", None)
+
+    db.record_block_use(int(block["id"]))
+    # المصدر إنسان لا نموذج: نصّ كتبه بشر واعتمده بشر لا يصير مسؤولية النموذج
+    # لأنّ زرّاً أدرجه — و 13-5 يقرأ هذا الحقل ليقول من يملك الفقرة.
+    audit.record(audit.BLOCK_INSERT, target=audit.section_target(key),
+                 source=audit.HUMAN, detail=str(block.get("key") or ""))
+
+
+def _render_block_library(sec: dict):
+    """
+    اختيار كتلة معتمدة وإدراجها في القسم.
+
+    المعروض **المعتمد وحده** (`db.approved_blocks`) مرشّحاً بقطاع المنافسة ولغة
+    المخرجات: كتلة إنجليزية في عرض عربي ضوضاء لا خيار. والمتأخّرة عن مراجعتها
+    تُعرض بتحذير ولا تُمنع — المنع يوم انقضاء تاريخ يوقف الكتابة في يوم تسليم،
+    والقرار البشري هو الأصل.
+    """
+    from utils import ai_engine, db
+
+    key = sec["key"]
+    blocks = db.approved_blocks(sector=ai_engine.active_sector(),
+                                language=_language())
+
+    with st.expander(t("lib.insert_title"), expanded=False):
+        st.caption(t("lib.insert_help"))
+        if not blocks:
+            st.info(t("lib.none_approved"))
+            return
+
+        labels = {}
+        for block in blocks:
+            title = block.get("title") or block.get("key")
+            due = "⚠️ " if db.block_review_due(block) else ""
+            category = block.get("category") or ""
+            labels[block["id"]] = f"{due}{title}" + (f" — {category}" if category else "")
+
+        chosen_id = st.selectbox(
+            t("lib.pick"), list(labels), format_func=lambda i: labels[i],
+            key=f"lib_pick_{key}",
+        )
+        chosen = next((b for b in blocks if b["id"] == chosen_id), None)
+        if chosen is None:
+            return
+
+        if db.block_review_due(chosen):
+            st.warning(t("lib.review_due"))
+        st.caption(t("lib.used_count", count=int(chosen.get("used_count") or 0)))
+        st.text_area(t("lib.preview"), value=chosen.get("body") or "", height=140,
+                     key=f"lib_prev_{key}", disabled=True)
+
+        if st.button(f"➕ {t('lib.insert')}", key=f"lib_ins_{key}",
+                     type="primary", disabled=not auth.can_edit_section(sec)):
+            _insert_block(sec, chosen)
+            st.success(t("lib.inserted"))
+            st.rerun()
 
 
 def _render_side_assistant(sec: dict, model: str):

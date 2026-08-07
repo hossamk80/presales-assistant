@@ -10,7 +10,10 @@ import streamlit as st
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
     REVIEW_LENSES,
+    REVIEW_PROMPT_PREFIX,
     REVIEW_SCHEMA,
+    active_prompt,
+    active_sector,
     ai_generate,
     ai_generate_json,
     build_prompt,
@@ -72,8 +75,10 @@ def _run_lens(lens_key: str, sections: list, model: str, report) -> list:
     lens = REVIEW_LENSES[lens_key]
     titles = "\n".join(f"- {s['title']}" for s in sections)
 
+    # 14-1: نص الوكيل هو الساري — تجاوز محرَّر إن وُجد وإلا الافتراضي
+    lens_text = active_prompt(f"{REVIEW_PROMPT_PREFIX}{lens_key}", active_sector())
     prompt = (
-        f"{lens['prompt']}\n\n"
+        f"{lens_text}\n\n"
         f"استخدم في الحقل section أحد هذه العناوين حرفياً ولا تخترع غيرها:\n{titles}\n\n"
         f"لا تُرجع ملاحظات عامة أو إنشائية — كل ملاحظة يجب أن تشير إلى نقص أو خطأ محدد.\n"
         f"إن كان القسم سليماً من زاويتك فلا تضف له ملاحظة.\n"

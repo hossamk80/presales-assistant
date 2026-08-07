@@ -140,6 +140,9 @@ def render():
     _render_knowledge_base()
 
     st.divider()
+    _render_content_library()
+
+    st.divider()
     _render_personal_data()
 
     # حفظ ملف الشركة على القرص عند تغيّره — لمن يملك تعديله وحده (13-3)
@@ -252,6 +255,170 @@ def _render_records():
     st.caption(t("rec.intro"))
     for registry in records.COMPANY_REGISTRIES:
         _render_registry(registry)
+
+
+# ─── مكتبة المحتوى المعتمد (14-4) ─────────────────────────────────────────────
+#
+# موضعها في ملف الشركة لا في المنافسة: الكتلة مِلك المنشأة تُعاد في كل عرض،
+# ونسخة منها لكل منافسة تُعيد المشكلة التي وُجدت المكتبة لحلّها.
+
+
+def _block_status_label(block: dict) -> str:
+    label = t("lib.status_" + block["status"])
+    if block["status"] == db.BLOCK_APPROVED and db.block_review_due(block):
+        return f"⚠️ {label}"
+    return {"draft": "📝", "approved": "✅", "retired": "🗄️"}.get(
+        block["status"], ""
+    ) + f" {label}"
+
+
+def _save_block_form(block: dict | None, may_edit: bool):
+    """نموذج كتلة — جديدة (`block is None`) أو قائمة."""
+    is_new = block is None
+    prefix = "libnew" if is_new else f"lib{block['id']}"
+
+    c_key, c_title = st.columns([1, 2])
+    with c_key:
+        key = st.text_input(t("lib.key"), value="" if is_new else block["key"],
+                            key=f"{prefix}_key", disabled=not may_edit or not is_new,
+                            help=t("lib.key_help"))
+    with c_title:
+        title = st.text_input(t("lib.block_title"),
+                              value="" if is_new else block["title"],
+                              key=f"{prefix}_title", disabled=not may_edit)
+
+    c_cat, c_sec, c_lang, c_rev = st.columns(4)
+    with c_cat:
+        category = st.text_input(t("lib.category"),
+                                 value="" if is_new else block["category"],
+                                 key=f"{prefix}_cat", disabled=not may_edit)
+    with c_sec:
+        sector = st.text_input(t("lib.sector"),
+                               value="" if is_new else block["sector"],
+                               key=f"{prefix}_sector", disabled=not may_edit)
+    with c_lang:
+        language = st.text_input(t("lib.language"),
+                                 value="" if is_new else block["language"],
+                                 key=f"{prefix}_lang", disabled=not may_edit)
+    with c_rev:
+        months = st.number_input(
+            t("lib.review_months"), min_value=0, max_value=120, step=1,
+            value=db.DEFAULT_REVIEW_MONTHS if is_new else int(block["review_months"]),
+            key=f"{prefix}_months", disabled=not may_edit,
+            help=t("lib.review_months_help"),
+        )
+
+    body = st.text_area(t("lib.body"), value="" if is_new else block["body"],
+                        height=180, key=f"{prefix}_body", disabled=not may_edit)
+
+    if not is_new:
+        st.caption(t("lib.edit_resets"))
+
+    if st.button(t("common.save_now"), key=f"{prefix}_save", type="primary",
+                 disabled=not may_edit):
+        if not key.strip() or not title.strip() or not body.strip():
+            st.warning(t("lib.key_required"))
+            return
+        if is_new and db.content_block_by_key(key.strip()) is not None:
+            st.warning(t("lib.key_taken"))
+            return
+        db.save_content_block(
+            key=key.strip(), title=title.strip(), body=body, category=category.strip(),
+            sector=sector.strip(), language=language.strip(),
+            review_months=int(months), updated_by=auth.display_name(),
+        )
+        audit.record(audit.BLOCK_EDIT, target=f"block:{key.strip()}",
+                     detail=title.strip())
+        st.success(t("lib.saved"))
+        st.rerun()
+
+
+def _render_content_library():
+    """
+    المكتبة: إنشاء الكتل واعتمادها ومراجعتها وسحبها.
+
+    الاعتماد خلف صلاحية مستقلة عن التحرير (`library.approve`): كاتب يعتمد نصّه
+    بنفسه يجعل «معتمد» توقيعاً على بياض — والغاية من الحالة أن تعني مراجعةً
+    جرت لا مربّعاً أُشّر.
+    """
+    may_edit = auth.can("library.manage")
+    may_approve = auth.can("library.approve")
+    stats = db.content_block_stats()
+
+    with st.expander(t("lib.title")):
+        st.caption(t("lib.intro"))
+        if not may_edit:
+            st.info(t("lib.read_only"))
+        st.caption(t("lib.stats", total=stats["total"],
+                     approved=stats[db.BLOCK_APPROVED], due=stats["due"]))
+
+        status_filter = st.selectbox(
+            t("lib.status"), ("",) + db.BLOCK_STATUSES,
+            format_func=lambda s: t("lib.any") if not s else t("lib.status_" + s),
+            key="lib_status_filter",
+        )
+        blocks = db.list_content_blocks(status=status_filter)
+
+        if not blocks:
+            st.info(t("lib.empty"))
+
+        for block in blocks:
+            header = f"{_block_status_label(block)} — {block['title'] or block['key']}"
+            with st.expander(header):
+                reviewed = block["reviewed_at"] or t("lib.never_reviewed")
+                st.caption(f"{t('lib.reviewed_at')}: {reviewed} · "
+                           + t("lib.used_count", count=int(block["used_count"] or 0)))
+                if block["status"] == db.BLOCK_APPROVED and db.block_review_due(block):
+                    st.warning(t("lib.review_due"))
+
+                _save_block_form(block, may_edit)
+
+                if not may_approve:
+                    st.caption(t("lib.cannot_approve"))
+
+                c_ap, c_rev, c_ret, c_del = st.columns(4)
+                with c_ap:
+                    if st.button(t("lib.approve"), key=f"lib_ap_{block['id']}",
+                                 width="stretch",
+                                 disabled=not may_approve
+                                 or block["status"] == db.BLOCK_APPROVED):
+                        db.set_block_status(block["id"], db.BLOCK_APPROVED,
+                                            auth.display_name())
+                        audit.record(audit.BLOCK_STATUS, target=f"block:{block['key']}",
+                                     detail=db.BLOCK_APPROVED)
+                        st.success(t("lib.approved_done"))
+                        st.rerun()
+                with c_rev:
+                    if st.button(t("lib.mark_reviewed"), key=f"lib_rv_{block['id']}",
+                                 width="stretch", disabled=not may_approve):
+                        db.mark_block_reviewed(block["id"], auth.display_name())
+                        audit.record(audit.BLOCK_REVIEW,
+                                     target=f"block:{block['key']}")
+                        st.success(t("lib.reviewed_done"))
+                        st.rerun()
+                with c_ret:
+                    retired = block["status"] == db.BLOCK_RETIRED
+                    if st.button(t("lib.to_draft") if retired else t("lib.retire"),
+                                 key=f"lib_rt_{block['id']}", width="stretch",
+                                 disabled=not may_approve):
+                        target = db.BLOCK_DRAFT if retired else db.BLOCK_RETIRED
+                        db.set_block_status(block["id"], target, auth.display_name())
+                        audit.record(audit.BLOCK_STATUS, target=f"block:{block['key']}",
+                                     detail=target)
+                        st.success(t("lib.retired_done"))
+                        st.rerun()
+                with c_del:
+                    if st.button(t("common.delete"), key=f"lib_del_{block['id']}",
+                                 width="stretch", disabled=not may_approve):
+                        db.delete_content_block(block["id"])
+                        audit.record(audit.BLOCK_DELETE,
+                                     target=f"block:{block['key']}")
+                        st.success(t("lib.deleted"))
+                        st.rerun()
+
+        st.divider()
+        st.markdown(f"**{t('lib.add')}**")
+        _save_block_form(None, may_edit)
 
 
 # ─── مستودع المعرفة ───────────────────────────────────────────────────────────

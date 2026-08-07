@@ -455,6 +455,8 @@ def render_settings():
         st.info(t("role.settings_admin_only"))
 
     _usage_section()
+    if auth.can("prompts.manage"):
+        _prompts_section()
     _my_account_section()
     if auth.can("users.manage"):
         _users_section()
@@ -476,6 +478,177 @@ def render_settings():
             format_func=lambda c: UI_LANGUAGES[c],
             key="ui_language",
         )
+
+
+def _render_prompt_trial(key: str, edited: str, sector: str, changed: bool,
+                         problem):
+    """
+    تجربة جنباً إلى جنب على المنافسة المفتوحة (14-3).
+
+    التجربة **لا تحفظ شيئاً**: النص المحرَّر يُمرَّر إلى النموذج مباشرةً، فيُرى
+    أثره قبل أن يسري على كل عرض تالٍ.
+    """
+    from utils import ai_engine
+
+    st.divider()
+    st.markdown(f"**{t('pt.title')}**")
+    st.caption(t("pt.hint"))
+
+    rfp = st.session_state.get("rfp_raw_text", "")
+    if not rfp:
+        st.info(t("pt.needs_project"))
+        return
+
+    fields = {}
+    defaults = ai_engine.trial_field_defaults(key)
+    if defaults:
+        with st.expander(t("pt.fields", n=len(defaults))):
+            st.caption(t("pt.fields_hint"))
+            for name, value in defaults.items():
+                fields[name] = st.text_area(
+                    name, value=value, height=70, key=f"pt_field_{key}_{name}",
+                )
+
+    model = _trial_model_picker(key)
+    tokens = ai_engine.trial_cost_estimate(key, edited, fields, rfp, sector)
+    st.caption(t("pt.cost", tokens=f"{tokens:,}"))
+
+    if st.button(t("pt.run"), key=f"pt_run_{key}", disabled=not changed,
+                 help=None if changed else t("pt.no_change")):
+        status = st.empty()
+        with st.spinner(t("pt.running")):
+            result = ai_engine.trial_prompt(
+                key, edited, model_choice=model, fields=fields, sector=sector,
+                rfp_context=rfp,
+                on_progress=lambda side: status.caption(t("pt.side_" + side)),
+            )
+        status.empty()
+        if result["problem"]:
+            st.error(t(result["problem"]))
+        else:
+            st.session_state[f"_pt_result_{key}"] = result
+            audit.record(audit.PROMPT_TRIAL, target=key, detail=sector or "all")
+
+    result = st.session_state.get(f"_pt_result_{key}")
+    if not result:
+        return
+
+    c_current, c_edited = st.columns(2)
+    with c_current:
+        st.markdown(f"**{t('pt.side_current')}**")
+        st.write(result["current"] or t("pt.no_output"))
+    with c_edited:
+        st.markdown(f"**{t('pt.side_edited')}**")
+        st.write(result["edited"] or t("pt.no_output"))
+    st.caption(t("pt.decide"))
+
+
+def _trial_model_picker(key: str) -> str:
+    from utils.ai_engine import default_model_name, model_names
+
+    options = model_names()
+    current = default_model_name()
+    return st.selectbox(
+        t("common.engine"), options,
+        index=options.index(current) if current in options else 0,
+        key=f"pt_model_{key}",
+    )
+
+
+def _prompts_section():
+    """
+    إدارة البرومبتات (14-1): تحرير تعليمات النموذج بلا إعادة تشغيل.
+
+    الافتراضي يبقى في الشيفرة، والجدول يحمل التجاوزات وحدها — فاستعادة
+    الافتراضي حذفُ تجاوز لا نسخُ نصّ.
+    """
+    from utils import ai_engine
+
+    catalog = ai_engine.editable_prompts()
+    with st.expander(t("pm.title")):
+        st.caption(t("pm.hint"))
+
+        c_key, c_sector = st.columns([3, 2])
+        with c_key:
+            key = st.selectbox(
+                t("pm.prompt"), sorted(catalog),
+                format_func=lambda k: f"{t('pm.agent_' + catalog[k][0])} · {k}",
+                key="pm_key",
+            )
+        with c_sector:
+            sector = st.text_input(
+                t("pm.sector"), key="pm_sector", placeholder=t("pm.sector_ph"),
+                help=t("pm.sector_help"),
+            ).strip()
+
+        agent, default_text = catalog[key]
+        override = db.prompt_override(key, sector)
+        current = (override or {}).get("text") or default_text
+
+        if override:
+            st.caption(t("pm.overridden",
+                         version=override["version"], who=override["updated_by"] or "—",
+                         when=override["updated_at"]))
+        else:
+            st.caption(t("pm.default_in_use"))
+
+        edited = st.text_area(t("pm.text"), value=current, height=320,
+                              key=f"pm_text_{key}_{sector}")
+
+        problem = ai_engine.prompt_problem(key, edited)
+        missing = ai_engine.missing_prompt_fields(key, edited)
+        if problem:
+            st.error(t(problem, fields=" · ".join(
+                sorted(ai_engine.prompt_fields(edited)
+                       - ai_engine.prompt_fields(default_text)))))
+        elif missing:
+            # حقل غاب يعني سياقاً لن يصل النموذج — تنبيه لا منع
+            st.warning(t("pm.missing_fields", fields=" · ".join(sorted(missing))))
+
+        # 14-3: التجربة قبل الاعتماد — لا يُعتمد نصّ لم يُرَ أثره على عرض حقيقي
+        _render_prompt_trial(key, edited, sector, changed=edited.strip() != current.strip(),
+                             problem=problem)
+
+        c_save, c_reset = st.columns(2)
+        with c_save:
+            if st.button(t("pm.save"), type="primary", key="pm_save",
+                         disabled=bool(problem) or edited.strip() == current.strip()):
+                user = auth.current_user() or {}
+                version = db.save_prompt(
+                    key, edited, agent=agent, sector=sector,
+                    updated_by=user.get("display_name") or user.get("username", ""),
+                )
+                audit.record(audit.PROMPT_EDIT, target=key,
+                             detail=f"{sector or 'all'}:v{version}")
+                st.success(t("pm.saved", version=version))
+                st.rerun()
+        with c_reset:
+            if st.button(t("pm.reset"), key="pm_reset", disabled=override is None):
+                db.delete_prompt(key, sector)
+                audit.record(audit.PROMPT_RESET, target=key, detail=sector or "all")
+                st.success(t("pm.reset_done"))
+                st.rerun()
+
+        # القواعد الثابتة: تُعرض ولا تُحرَّر (14-2)
+        st.divider()
+        st.markdown(f"**{t('pm.fixed_rules')}**")
+        st.caption(t("pm.fixed_rules_hint"))
+        st.code(ai_engine.FIXED_RULES.strip(), language="markdown")
+
+        overrides = db.list_prompts()
+        if overrides:
+            st.divider()
+            st.markdown(f"**{t('pm.overrides', n=len(overrides))}**")
+            st.dataframe(
+                pd.DataFrame([{
+                    t("pm.prompt"): row["key"],
+                    t("pm.sector"): row["sector"] or t("pm.all_sectors"),
+                    t("pm.version"): row["version"],
+                    t("ad2.col_who"): row["updated_by"] or "—",
+                    t("ad2.col_when"): row["updated_at"],
+                } for row in overrides]),
+                hide_index=True, width="stretch",
+            )
 
 
 def _audit_section():

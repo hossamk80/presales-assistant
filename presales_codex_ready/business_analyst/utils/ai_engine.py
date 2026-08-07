@@ -113,16 +113,24 @@ def is_rtl(language: str) -> bool:
 
 
 def build_prompt(prompt_key: str, language: str = DEFAULT_LANGUAGE, **fields) -> str:
-    """يملأ قالب تعليمات مع تعليمة اللغة المناسبة."""
-    return PROMPTS[prompt_key].format(
-        language_instruction=language_instruction(language), **fields
-    )
+    """
+    يملأ قالب تعليمات مع تعليمة اللغة المناسبة.
+
+    القالب هو النص الساري (14-1): تجاوز محرَّر إن وُجد، وإلا الافتراضي. ونصٌّ
+    محرَّر يفشل تنسيقه لا يُسقط التوليد — يُسقَط هو إلى الافتراضي.
+    """
+    values = {"language_instruction": language_instruction(language), **fields}
+    text = active_prompt(prompt_key, active_sector(), language)
+    try:
+        return text.format(**values)
+    except (KeyError, IndexError, ValueError):
+        return PROMPTS[prompt_key].format(**values)
 
 
 def outline_prompt(language: str = DEFAULT_LANGUAGE) -> str:
     """تعليمات اقتراح الهيكل مع الأقسام الإلزامية وتعليمة اللغة."""
     return (
-        EXTRACT_PROMPTS["outline"].format(
+        active_prompt("outline", active_sector(), language).format(
             mandatory_sections="\n".join(
                 f"   - {name}" for name in MANDATORY_OUTLINE_SECTIONS
             )
@@ -177,6 +185,91 @@ def apply_fixed_rules(prompt: str) -> str:
 
 def has_fixed_rules(text: str) -> bool:
     return FIXED_RULES_MARKER in str(text or "")
+
+
+# ─── تحرير البرومبتات (14-1) ──────────────────────────────────────────────────
+#
+# النصوص أدناه (`PROMPTS` · `EXTRACT_PROMPTS` · `REVIEW_LENSES`) هي **الافتراضي
+# ومصدره الوحيد**. الواجهة تحرّرها فيُحفظ التعديل تجاوزاً في جدول `prompts`،
+# ويُقرأ هنا في كل استدعاء — فالتعديل يسري بلا إعادة تشغيل، واستعادة الافتراضي
+# حذفُ التجاوز.
+#
+# **حاجزان لا يُتجاوزان**:
+#   · القواعد الثابتة (14-2) تُلحق في `_call` بعد هذا كله، فلا يُزيلها تحرير.
+#   · حقول القالب: نص محرَّر يستعمل حقلاً لا نعرفه يرفع `KeyError` وقت التوليد،
+#     فيُفحص قبل الحفظ، ويُسقَط إلى الافتراضي وقت الاستدعاء إن أفلت.
+
+# وكيل كل مفتاح — يُعرض في الواجهة ويُخزَّن مع التجاوز.
+AGENT_WRITE = "write"
+AGENT_EXTRACT = "extract"
+AGENT_REVIEW = "review"
+
+REVIEW_PROMPT_PREFIX = "review:"
+
+
+def editable_prompts() -> dict:
+    """كل ما يمكن تحريره: مفتاح ← (الوكيل، النص الافتراضي)."""
+    catalog = {key: (AGENT_WRITE, text) for key, text in PROMPTS.items()}
+    catalog.update({key: (AGENT_EXTRACT, text)
+                    for key, text in EXTRACT_PROMPTS.items()})
+    catalog.update({f"{REVIEW_PROMPT_PREFIX}{key}": (AGENT_REVIEW, lens["prompt"])
+                    for key, lens in REVIEW_LENSES.items()})
+    return catalog
+
+
+def default_prompt(key: str) -> str:
+    entry = editable_prompts().get(key)
+    return entry[1] if entry else ""
+
+
+def prompt_fields(text: str) -> set:
+    """حقول القالب `{...}` — أساس فحص أي نص محرَّر."""
+    import string
+
+    return {
+        name for _, name, _, _ in string.Formatter().parse(str(text or "")) if name
+    }
+
+
+def prompt_problem(key: str, text: str) -> Optional[str]:
+    """
+    يعيد مفتاح i18n إن كان النص المحرَّر غير صالح.
+
+    حقل لا يعرفه النظام يرفع `KeyError` وقت التوليد فيُفقد القسم — يُرفض هنا.
+    وحقل ناقص يُقبل مع تنبيه في الواجهة: قد يكون حذفه مقصوداً.
+    """
+    if not str(text or "").strip():
+        return "pm.err_empty"
+    unknown = prompt_fields(text) - prompt_fields(default_prompt(key))
+    if unknown:
+        return "pm.err_unknown_fields"
+    return None
+
+
+def missing_prompt_fields(key: str, text: str) -> set:
+    """حقول كانت في الافتراضي وغابت عن المحرَّر — سياق لن يصل النموذج."""
+    return prompt_fields(default_prompt(key)) - prompt_fields(text)
+
+
+def active_prompt(key: str, sector: str = "", language: str = "") -> str:
+    """
+    النص الساري: تجاوز مفعَّل إن وُجد، وإلا الافتراضي من الشيفرة.
+
+    القراءة في كل استدعاء لا عند الإقلاع — التعديل يسري بلا إعادة تشغيل.
+    وفشل القراءة (قاعدة مقفلة · جدول ناقص) يعود بالافتراضي لا بانهيار.
+    """
+    try:
+        from utils import db
+
+        override = db.prompt_override(key, sector, language)
+    except Exception:
+        override = None
+    return (override or {}).get("text") or default_prompt(key)
+
+
+def active_sector() -> str:
+    """قطاع المنافسة المفتوحة إن حُدِّد — مفتاح اختيار البرومبت الأخص."""
+    return str(st.session_state.get("project_sector", "") or "").strip()
 
 
 def estimate_tokens(text: str) -> int:
@@ -395,6 +488,84 @@ def ai_generate(
         on_progress,
     )
 
+
+
+# ─── تجربة برومبت قبل اعتماده (14-3) ──────────────────────────────────────────
+#
+# تحرير التعليمات (14-1) بلا تجربة قمار: النص الجديد يسري على كل عرض تالٍ،
+# وأثره لا يُعرف إلا في مخرَج عرض حقيقي. فالتجربة تُشغّل النصّين — الساري
+# والمحرَّر — على **المنافسة المفتوحة نفسها** وتعرض الناتجين جنباً إلى جنب،
+# **قبل أي حفظ**: النص المحرَّر يُمرَّر إلى النموذج مباشرةً ولا يلمس القاعدة.
+#
+# استدعاءان لا واحد: المقارنة بمخرَج محفوظ من تشغيل سابق تخلط أثر النص بأثر
+# تغيّر السياق بينهما.
+
+# قيم تُملأ تلقائياً لحقول القوالب من حالة الجلسة — ما يعرفه النظام يُملأ،
+# وما لا يعرفه يتركه للمجرِّب.
+def trial_field_defaults(key: str) -> dict:
+    """قيم مبدئية لحقول القالب من المنافسة المفتوحة وملف الشركة."""
+    from utils import state
+
+    known = {
+        "company_name": st.session_state.get("c_name", ""),
+        "company_overview": (st.session_state.get("c_overview")
+                             or st.session_state.get("c_name", "")),
+        "eval_weights": st.session_state.get("sum_eval", ""),
+        "compliance_summary": st.session_state.get("sum_comp", ""),
+        "project_context": state.project_context_block(),
+        "mandatory_sections": "\n".join(
+            f"   - {name}" for name in MANDATORY_OUTLINE_SECTIONS
+        ),
+    }
+    return {
+        name: str(known.get(name, "") or "")
+        for name in sorted(prompt_fields(default_prompt(key)) - {"language_instruction"})
+    }
+
+
+def trial_prompt(key: str, edited_text: str, model_choice: str = DEFAULT_MODEL,
+                 fields: Optional[dict] = None, language: str = DEFAULT_LANGUAGE,
+                 sector: str = "", rfp_context: str = "",
+                 on_progress: Optional[Callable[[str], None]] = None) -> dict:
+    """
+    يشغّل النص الساري والنص المحرَّر على السياق نفسه ويعيد الناتجين.
+
+    يعيد `{"current": …, "edited": …, "problem": …}` — و `problem` مفتاح i18n
+    إن رُفضت التجربة قبل إنفاق أي توكن.
+    """
+    problem = prompt_problem(key, edited_text)
+    if problem:
+        return {"current": None, "edited": None, "problem": problem}
+
+    values = {"language_instruction": language_instruction(language),
+              **{k: str(v or "") for k, v in (fields or {}).items()}}
+    current_text = active_prompt(key, sector, language)
+
+    outputs = {}
+    for label, template in (("current", current_text), ("edited", edited_text)):
+        try:
+            filled = template.format(**values)
+        except (KeyError, IndexError, ValueError):
+            # النص الساري قد يكون قديماً بحقول لم تعد تُملأ — لا تُسقط التجربة
+            outputs[label] = None
+            continue
+        if on_progress:
+            on_progress(label)
+        outputs[label] = ai_generate(
+            filled, model_choice=model_choice, rfp_context=rfp_context,
+            language=language,
+        )
+
+    return {"current": outputs.get("current"), "edited": outputs.get("edited"),
+            "problem": None}
+
+
+def trial_cost_estimate(key: str, edited_text: str, fields: Optional[dict] = None,
+                        rfp_context: str = "", sector: str = "") -> int:
+    """تقدير توكنات المُدخل للتجربة كاملةً — استدعاءان لا واحد."""
+    values = " ".join(str(v or "") for v in (fields or {}).values())
+    both = active_prompt(key, sector) + str(edited_text or "")
+    return estimate_tokens(both + values + (rfp_context or "") * 2)
 
 # ─── المخرجات المُهيكلة (JSON) ────────────────────────────────────────────────
 
