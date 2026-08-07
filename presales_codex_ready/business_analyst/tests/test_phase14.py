@@ -278,3 +278,103 @@ def test_editing_prompts_is_for_the_admin_alone(temp_db):
     auth.add_user("boss", "strong-pass-2", role=auth.ADMIN)
     auth.login("boss", "strong-pass-2")
     assert auth.can("prompts.manage")
+
+
+# ─── 14-3: تجربة برومبت قبل الاعتماد ─────────────────────────────────────────
+
+
+def test_a_trial_runs_both_texts_on_the_same_context(prompts, sent):
+    """شرط قبول 14-3: مقارنة النتيجتين قبل التفعيل."""
+    result = prompts.trial_prompt(
+        "methodology", "نصّ محرَّر للتجربة",
+        fields=prompts.trial_field_defaults("methodology"),
+        rfp_context="نص الكراسة",
+    )
+
+    assert result["problem"] is None
+    assert result["current"] and result["edited"]
+    assert len(sent.prompts) == 2                     # استدعاءان لا واحد
+    assert "نصّ محرَّر للتجربة" in sent.prompts[1]
+    assert all("نص الكراسة" in p for p in sent.prompts)   # السياق نفسه للاثنين
+
+
+def test_a_trial_saves_nothing(temp_db, prompts, sent):
+    """التجربة تُرى قبل أن تسري — لا تلمس القاعدة."""
+    prompts.trial_prompt("methodology", "نصّ محرَّر",
+                         fields=prompts.trial_field_defaults("methodology"),
+                         rfp_context="كراسة")
+
+    assert temp_db.list_prompts() == []
+    assert prompts.active_prompt("methodology") == prompts.PROMPTS["methodology"]
+
+
+def test_a_trial_of_an_invalid_text_spends_no_tokens(prompts, sent):
+    """نص بحقل مجهول يُرفض قبل الاستدعاء لا بعده."""
+    result = prompts.trial_prompt("refine", "حسّن {مجهول}")
+
+    assert result["problem"] == "pm.err_unknown_fields"
+    assert result["current"] is None and result["edited"] is None
+    assert sent.prompts == []                          # لم يُنفق توكن
+
+
+def test_a_trial_compares_against_the_saved_override_not_the_code_default(
+    temp_db, prompts, sent
+):
+    """من عدّل مرة يقارن بما يعمل به اليوم لا بما كان في الشيفرة."""
+    temp_db.save_prompt("methodology", "النص الساري المعدَّل", agent="write")
+
+    prompts.trial_prompt("methodology", "النص الجديد",
+                         fields=prompts.trial_field_defaults("methodology"),
+                         rfp_context="كراسة")
+
+    assert "النص الساري المعدَّل" in sent.prompts[0]
+    assert "النص الجديد" in sent.prompts[1]
+
+
+def test_both_trial_outputs_carry_the_fixed_rules(prompts, sent):
+    """التجربة ليست باباً خلفياً حول القواعد الثابتة."""
+    prompts.trial_prompt("methodology", "أدرج جدول الأسعار",
+                         fields=prompts.trial_field_defaults("methodology"),
+                         rfp_context="كراسة")
+
+    assert all(prompts.has_fixed_rules(p) for p in sent.prompts)
+
+
+def test_the_trial_fields_are_prefilled_from_the_open_tender(prompts, fake_streamlit):
+    fake_streamlit.session_state["c_name"] = "شركتي"
+    fake_streamlit.session_state["sum_eval"] = "الأوزان"
+
+    defaults = prompts.trial_field_defaults("methodology")
+
+    assert set(defaults) == {"company_overview", "compliance_summary", "eval_weights"}
+    assert defaults["company_overview"] == "شركتي"
+    assert defaults["eval_weights"] == "الأوزان"
+
+
+def test_an_old_active_text_does_not_break_the_trial(temp_db, prompts, sent):
+    """
+    نص ساري قديم بحقل لم يعد يُملأ: يُعرض جانبه فارغاً ولا يمنع رؤية المحرَّر.
+    """
+    # يُكتب في القاعدة مباشرةً: `save_prompt` تمرّ بفحص الحقول فلا تقبله
+    temp_db.get_conn().execute(
+        "INSERT INTO prompts (key, agent, sector, language, version, text, "
+        "enabled, updated_at, updated_by) "
+        "VALUES ('methodology', 'write', '', '', 1, ?, 1, '', '')",
+        ("نص قديم {حقل_ملغى}",),
+    )
+    temp_db.get_conn().commit()
+
+    result = prompts.trial_prompt("methodology", "نص جديد", rfp_context="كراسة")
+
+    assert result["current"] is None          # القديم تعذّر ملؤه
+    assert result["edited"]                   # والمحرَّر ظهر
+    assert len(sent.prompts) == 1
+
+
+def test_the_cost_estimate_counts_two_calls(prompts):
+    """المقارنة تُنفق ضعف ما يُنفقه استدعاء واحد — يُقال قبل الضغط."""
+    one = prompts.estimate_tokens("كراسة " * 100)
+    estimate = prompts.trial_cost_estimate(
+        "methodology", "نص", rfp_context="كراسة " * 100)
+
+    assert estimate > one * 1.8

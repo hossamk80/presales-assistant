@@ -1352,6 +1352,48 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "us.col_active": {"ar": "فعّال", "en": "Active"},
     "us.col_last_login": {"ar": "آخر دخول", "en": "Last sign-in"},
 
+    # ── تجربة برومبت قبل الاعتماد (14-3) / Prompt trial ──
+    "pt.title": {"ar": "🧪 تجربة قبل الاعتماد", "en": "🧪 Trial before adopting"},
+    "pt.hint": {
+        "ar": "يشغّل النصّين — الساري والمحرَّر — على المنافسة المفتوحة نفسها ويعرض "
+              "الناتجين. لا يُحفظ شيء قبل أن تقرّر.",
+        "en": "Runs both texts — the active one and your edit — on the same open tender "
+              "and shows both outputs. Nothing is saved until you decide.",
+    },
+    "pt.needs_project": {
+        "ar": "افتح منافسة فيها كراسة أولاً — التجربة على عرض حقيقي لا على نصّ مفترض.",
+        "en": "Open a tender with an RFP first — the trial runs on a real bid, not a "
+              "hypothetical one.",
+    },
+    "pt.fields": {"ar": "حقول القالب ({n})", "en": "Template fields ({n})"},
+    "pt.fields_hint": {
+        "ar": "مملوءة مما يعرفه النظام عن المنافسة المفتوحة، وقابلة للتعديل للتجربة وحدها.",
+        "en": "Pre-filled from what the system knows about the open tender, and editable "
+              "for the trial only.",
+    },
+    "pt.cost": {
+        "ar": "التجربة استدعاءان لا واحد — تقدير المُدخل: {tokens} توكن.",
+        "en": "A trial is two calls, not one — input estimate: {tokens} tokens.",
+    },
+    "pt.run": {"ar": "شغّل المقارنة", "en": "Run the comparison"},
+    "pt.running": {"ar": "جارٍ تشغيل النصّين…", "en": "Running both texts…"},
+    "pt.no_change": {
+        "ar": "لا فرق بين النصّين — عدّل النص أولاً.",
+        "en": "The two texts are identical — edit the text first.",
+    },
+    "pt.side_current": {"ar": "الناتج بالنص الساري", "en": "Output with the active text"},
+    "pt.side_edited": {"ar": "الناتج بالنص المحرَّر", "en": "Output with your edit"},
+    "pt.no_output": {
+        "ar": "لا ناتج — فشل الاستدعاء أو تعذّر ملء الحقول.",
+        "en": "No output — the call failed or the fields could not be filled.",
+    },
+    "pt.decide": {
+        "ar": "إن أقنعك الناتج المحرَّر فاحفظه أدناه؛ وإلا اترك الافتراضي كما هو.",
+        "en": "If the edited output convinces you, save it below; otherwise leave the "
+              "current text as it is.",
+    },
+    "audit.act_prompt.trial": {"ar": "تجربة تعليمات", "en": "Prompt trialled"},
+
     # ── إدارة البرومبتات (14-1) / Prompt management ──
     "pm.title": {"ar": "🧠 تعليمات النموذج", "en": "🧠 Model prompts"},
     "pm.hint": {
