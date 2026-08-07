@@ -852,3 +852,226 @@ def test_the_sample_category_is_offered_in_the_uploader(styled):
     assert styled.PROPOSAL_SAMPLE in styled.CATEGORIES
     assert styled.PROPOSAL_SAMPLE not in styled.CONTENT_CATEGORIES
     assert "cert" in styled.CONTENT_CATEGORIES
+
+
+# ─── 14-6: مسرد المصطلحات ─────────────────────────────────────────────────────
+#
+# «SLA» تخرج «اتفاقية مستوى الخدمة» في المنهجية و«مستوى الخدمة» في الدعم و«SLA»
+# في الملاحق — ثلاث صيغ في مستند واحد، وأسوأ من قراءتها ترجمةً غير مضبوطة أن
+# يظنّها المُقيّم ثلاثة مفاهيم لا واحداً.
+#
+# والتوحيد **شقّان لا شقّ**: تعليمة تسبق الكتابة، وفحص حسابي يرصد ما أفلت.
+# التعليمة وحدها رجاء موجَّه إلى نموذج احتمالي، وشرط القبول «صيغة واحدة في كل
+# العرض» لا «صيغة واحدة غالباً».
+
+
+@pytest.fixture()
+def glossary(temp_db):
+    """مسرد فيه مصطلحان بصيغهما المرفوضة."""
+    temp_db.save_glossary_term(
+        "SLA", preferred_ar="اتفاقية مستوى الخدمة",
+        preferred_en="Service Level Agreement",
+        variants=["مستوى الخدمة", "اتفاقيه مستوى الخدمه"],
+    )
+    temp_db.save_glossary_term(
+        "KPI", preferred_ar="مؤشر الأداء", preferred_en="KPI",
+        variants=["مؤشرات القياس"],
+    )
+    return temp_db
+
+
+def test_the_instruction_names_the_approved_form_and_the_rejected_ones(glossary):
+    """«اكتب كذا» أضعف من «اكتب كذا ولا تكتب كذا» — الثانية تمنع المرادف."""
+    from utils import ai_engine
+
+    block = ai_engine.glossary_instruction(glossary.list_glossary(), "ar")
+
+    assert "اتفاقية مستوى الخدمة" in block
+    assert "ولا تكتب" in block
+    assert "مؤشرات القياس" in block
+
+
+def test_the_approved_form_follows_the_output_language(glossary):
+    """العرض الإنجليزي لا يأخذ الصيغة العربية — واللغة لغة المخرجات لا الواجهة."""
+    from utils import ai_engine
+
+    entries = glossary.list_glossary()
+    assert "اتفاقية مستوى الخدمة" in ai_engine.glossary_instruction(entries, "ar")
+    assert "Service Level Agreement" in ai_engine.glossary_instruction(entries, "en")
+
+
+def test_a_half_filled_term_falls_back_to_the_other_language(glossary):
+    """مسرد نصف مملوء يوحّد ما استطاع بدل أن يصمت."""
+    glossary.save_glossary_term("DR", preferred_ar="التعافي من الكوارث")
+    entry = glossary.glossary_by_term("DR")
+
+    assert glossary.preferred_form(entry, "en") == "التعافي من الكوارث"
+    assert glossary.preferred_form(entry, "ar") == "التعافي من الكوارث"
+
+
+def test_only_terms_present_in_this_tender_are_injected(glossary):
+    """
+    مسرد بمئتي مصطلح في كل قسم يُبدّد نافذة السياق على ما لا يرد في المنافسة.
+    الترشيح بالورود: ما لن يُكتب لا يُحقن.
+    """
+    from utils import ai_engine
+
+    glossary.save_glossary_term("HSM", preferred_ar="وحدة أمن الأجهزة",
+                                variants=["الوحدة الأمنية"])
+    found = ai_engine.relevant_terms("يلتزم المورد بتوقيع SLA وتقارير KPI شهرية.")
+
+    assert {e["term"] for e in found} == {"SLA", "KPI"}
+
+
+def test_a_tender_using_the_wrong_form_still_matches_the_term(glossary):
+    """
+    الترشيح يطابق الصيغ المرفوضة أيضاً: كرّاس كتبها خطأً هو أحوج ما يكون إلى
+    التوحيد، وحصر المطابقة على الصيغة المعتمدة يُسقطه من المسرد تماماً.
+    """
+    from utils import ai_engine
+
+    found = ai_engine.relevant_terms("يُقاس مستوى الخدمة شهرياً وفق مؤشرات القياس.")
+
+    assert {e["term"] for e in found} == {"SLA", "KPI"}
+
+
+def test_the_injected_block_is_identical_across_proposals(glossary):
+    """
+    الترتيب أبجدي ثابت لا ترتيب ورود: كتلة تتغيّر بتغيّر مواضع الكلمات في
+    الكرّاس تنقض الغاية من هذا البند.
+    """
+    from utils import ai_engine
+
+    first = ai_engine.glossary_context_block("نص فيه SLA ثم KPI", "ar")
+    second = ai_engine.glossary_context_block("نص فيه KPI ثم SLA", "ar")
+
+    assert first == second
+    assert first.strip()
+
+
+def test_an_empty_glossary_injects_nothing(temp_db):
+    """بلا مسرد لا تُحقن كتلة — تعليمة فارغة تُبدّد سياقاً بلا مقابل."""
+    from utils import ai_engine
+
+    assert ai_engine.glossary_context_block("أي نص", "ar") == ""
+    assert ai_engine.glossary_instruction([], "ar") == ""
+
+
+def test_the_drift_check_finds_the_section_that_broke_the_rule(glossary):
+    """
+    **شرط قبول 14-6**: «SLA» بصيغة واحدة في كل العرض — ويُتحقَّق منه لا يُرجى.
+    """
+    from utils import consistency
+
+    findings = consistency.glossary_drift([
+        {"title": "المنهجية", "content": "نلتزم باتفاقية مستوى الخدمة المتفق عليها."},
+        {"title": "الدعم الفني", "content": "يُقاس مستوى الخدمة شهرياً."},
+    ], language="ar")
+
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "glossary_drift"
+    assert findings[0]["sections"] == ["الدعم الفني"]
+
+
+def test_the_approved_form_is_not_flagged_as_its_own_variant(glossary):
+    """
+    «مستوى الخدمة» صيغة مرفوضة، وهي في الوقت نفسه **جزء من** «اتفاقية مستوى
+    الخدمة» المعتمدة. بلا حجب المعتمدة قبل البحث يُبلَّغ عن كل قسم كتبها صحيحة —
+    وفحص يُنذر على الصواب يُهمَل كلّه.
+    """
+    from utils import consistency
+
+    findings = consistency.glossary_drift([
+        {"title": "المنهجية", "content": "نلتزم باتفاقية مستوى الخدمة ونراجعها."},
+    ], language="ar")
+
+    assert findings == []
+
+
+def test_a_consistent_proposal_raises_nothing(glossary):
+    from utils import consistency
+
+    assert consistency.glossary_drift([
+        {"title": "أ", "content": "اتفاقية مستوى الخدمة و مؤشر الأداء."},
+        {"title": "ب", "content": "نراجع مؤشر الأداء ربع سنوياً."},
+    ], language="ar") == []
+
+
+def test_drift_is_a_warning_not_a_critical_finding(glossary):
+    """
+    صيغة مرادفة لا تُخرج العرض من المنافسة كما يُخرجه رقم سعري أو مدة متناقضة.
+    رفعها إلى الحرج يُغرق اللوحة فيُهمَل ما يستحق التوقّف.
+    """
+    from utils import consistency
+
+    findings = consistency.glossary_drift(
+        [{"title": "الدعم", "content": "مستوى الخدمة شهرياً."}], language="ar")
+
+    assert findings[0]["severity"] == "تنبيه"
+    assert findings[0]["severity"] != "حرجة"
+
+
+def test_the_drift_check_rides_the_existing_consistency_pass(glossary):
+    """
+    الفحص يُضاف إلى `check` القائمة لا إلى مسار ثانٍ: نقطة عرض واحدة في لوحة
+    المراجعة، وتناقض المدد يبقى فوقه في الترتيب.
+    """
+    from utils import consistency
+
+    findings = consistency.check(
+        [{"title": "الدعم", "content": "مستوى الخدمة شهرياً."}], language="ar")
+
+    assert any(f["kind"] == "glossary_drift" for f in findings)
+
+
+def test_a_term_without_variants_instructs_but_cannot_be_checked(glossary):
+    """
+    بلا صيغ مرفوضة تُحقن التعليمة ولا يُرصد خروج عنها — تُقال للمستخدم في
+    الواجهة ولا تُخترع صيغ خاطئة نيابةً عنه.
+    """
+    from utils import ai_engine, consistency
+
+    glossary.save_glossary_term("RTO", preferred_ar="زمن الاستعادة الهدف")
+    entry = glossary.glossary_by_term("RTO")
+
+    assert entry["variants"] == []
+    assert "زمن الاستعادة الهدف" in ai_engine.glossary_instruction([entry], "ar")
+    assert consistency.glossary_drift(
+        [{"title": "أ", "content": "أي صياغة أخرى للاستعادة"}], language="ar") == []
+
+
+def test_the_approved_form_is_never_stored_as_a_rejected_one(glossary):
+    """مصطلح يرفض صيغته المعتمدة يجعل كل قسم مخالفاً لنفسه."""
+    glossary.save_glossary_term(
+        "SSO", preferred_ar="الدخول الموحّد", preferred_en="Single Sign-On",
+        variants=["الدخول الموحّد", "Single Sign-On", "SSO", "دخول موحد"],
+    )
+
+    assert glossary.glossary_by_term("SSO")["variants"] == ["دخول موحد"]
+
+
+def test_a_corrupt_variants_payload_does_not_break_the_glossary(glossary):
+    """صفٌّ تالف يُقرأ بلا صيغ ولا يُسقط المسرد كله."""
+    glossary.get_conn().execute(
+        "UPDATE glossary SET variants = 'ليست JSON' WHERE term = 'SLA'")
+    glossary.get_conn().commit()
+
+    entries = glossary.list_glossary()
+    assert len(entries) == 2
+    assert glossary.glossary_by_term("SLA")["variants"] == []
+
+
+def test_the_glossary_reaches_every_section_separately_from_the_style(glossary):
+    """
+    المسرد يوحّد **الكلمة** والبصمة توحّد **الشكل**: كتلتان منفصلتان لا واحدة،
+    فمصدرهما مختلف ودورة تحديثهما مختلفة، ودمجهما يجعل تعديل مصطلح يبدو
+    تغييراً في الأسلوب.
+    """
+    from utils import ai_engine
+    from views import doc_builder
+
+    doc_builder.st.session_state["rfp_raw_text"] = "يلتزم المورد بتوقيع SLA."
+    _rfp, extra = doc_builder._writing_context({"key": "sup", "title": "الدعم"})
+
+    assert ai_engine.has_glossary(extra)
+    assert ai_engine.GLOSSARY_MARKER != ai_engine.STYLE_MARKER

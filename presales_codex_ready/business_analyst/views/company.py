@@ -4,6 +4,8 @@ views/company.py — ملف الشركة ومستودع المعرفة
 ملف الشركة يُحفظ على القرص ويُشارَك بين كل المنافسات.
 مستودع المعرفة يُفهرس مستندات الشركة ليستند إليها الذكاء الاصطناعي عند الصياغة.
 """
+import re
+
 import pandas as pd
 import streamlit as st
 
@@ -141,6 +143,9 @@ def render():
 
     st.divider()
     _render_content_library()
+
+    st.divider()
+    _render_glossary()
 
     st.divider()
     _render_personal_data()
@@ -419,6 +424,94 @@ def _render_content_library():
         st.divider()
         st.markdown(f"**{t('lib.add')}**")
         _save_block_form(None, may_edit)
+
+
+# ─── مسرد المصطلحات (14-6) ────────────────────────────────────────────────────
+
+
+def _glossary_form(entry: dict | None, may_edit: bool):
+    """نموذج مصطلح — جديد (`entry is None`) أو قائم."""
+    is_new = entry is None
+    prefix = "glnew" if is_new else f"gl{entry['id']}"
+
+    c_term, c_ar, c_en = st.columns(3)
+    with c_term:
+        term = st.text_input(t("gl.term"), value="" if is_new else entry["term"],
+                             key=f"{prefix}_term", help=t("gl.term_help"),
+                             disabled=not may_edit or not is_new)
+    with c_ar:
+        pref_ar = st.text_input(t("gl.preferred_ar"),
+                                value="" if is_new else entry["preferred_ar"],
+                                key=f"{prefix}_ar", disabled=not may_edit)
+    with c_en:
+        pref_en = st.text_input(t("gl.preferred_en"),
+                                value="" if is_new else entry["preferred_en"],
+                                key=f"{prefix}_en", disabled=not may_edit)
+
+    variants = st.text_input(
+        t("gl.variants"),
+        value="" if is_new else " · ".join(entry["variants"]),
+        key=f"{prefix}_var", help=t("gl.variants_help"), disabled=not may_edit,
+    )
+    note = st.text_input(t("gl.note"), value="" if is_new else entry["note"],
+                         key=f"{prefix}_note", disabled=not may_edit)
+
+    if st.button(t("common.save_now"), key=f"{prefix}_save", type="primary",
+                 disabled=not may_edit):
+        if not term.strip() or not (pref_ar.strip() or pref_en.strip()):
+            st.warning(t("gl.term_required"))
+            return
+        if is_new and db.glossary_by_term(term.strip()) is not None:
+            st.warning(t("gl.term_taken"))
+            return
+        db.save_glossary_term(
+            term=term.strip(), preferred_ar=pref_ar, preferred_en=pref_en,
+            variants=[v for v in re.split(r"[·,;\n]", variants or "") if v.strip()],
+            note=note, updated_by=auth.display_name(),
+        )
+        audit.record(audit.GLOSSARY_EDIT, target=f"term:{term.strip()}")
+        st.success(t("gl.saved"))
+        st.rerun()
+
+
+def _render_glossary():
+    """
+    المسرد: مصطلح ← صيغته المعتمدة بكل لغة، وصيغه المرفوضة.
+
+    الصيغ المرفوضة ليست زينة: بها وحدها يصير التوحيد **قابلاً للفحص** — بلا
+    معرفة الخطأ لا يُرصد الانحراف، ويبقى «صيغة واحدة» رجاءً موجَّهاً إلى نموذج.
+    """
+    may_edit = auth.can("company.edit")
+    entries = db.list_glossary()
+
+    with st.expander(t("gl.title")):
+        st.caption(t("gl.intro"))
+        if not may_edit:
+            st.info(t("role.company_read_only"))
+
+        if not entries:
+            st.info(t("gl.empty"))
+        else:
+            st.caption(t("gl.count", n=len(entries)))
+
+        for entry in entries:
+            preferred = " / ".join(filter(None, [entry["preferred_ar"],
+                                                 entry["preferred_en"]]))
+            with st.expander(f"🔤 {entry['term']} — {preferred}"):
+                _glossary_form(entry, may_edit)
+                if not entry["variants"]:
+                    st.caption(t("gl.no_variants"))
+                if st.button(t("common.delete"), key=f"gl_del_{entry['id']}",
+                             disabled=not may_edit):
+                    db.delete_glossary_term(entry["id"])
+                    audit.record(audit.GLOSSARY_EDIT,
+                                 target=f"term:{entry['term']}", detail="delete")
+                    st.success(t("gl.deleted"))
+                    st.rerun()
+
+        st.divider()
+        st.markdown(f"**{t('gl.add')}**")
+        _glossary_form(None, may_edit)
 
 
 # ─── مستودع المعرفة ───────────────────────────────────────────────────────────

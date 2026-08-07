@@ -66,15 +66,76 @@ def execution_durations(text: str) -> list:
     return found
 
 
+def glossary_drift(sections: Optional[list] = None,
+                   language: str = "ar") -> list:
+    """
+    الأقسام التي كتبت مصطلحاً بصيغة مرفوضة بدل الصيغة المعتمدة (14-6).
+
+    هذا هو **شقّ التحقّق** من توحيد المصطلح: التعليمة المحقونة في التوليد تسبق
+    الكتابة، وهذه ترصد ما أفلت منها. بلا هذا الشقّ يبقى «صيغة واحدة في كل
+    العرض» رجاءً موجَّهاً إلى نموذج احتمالي لا شرطاً يُتحقَّق منه.
+
+    الملاحظة **تنبيه لا حرجة**: صيغة مرادفة لا تُخرج العرض من المنافسة كما
+    يُخرجه رقم سعري أو مدة متناقضة، ورفعها إلى الحرج يُغرق اللوحة فيُهمَل ما
+    يستحق التوقّف.
+    """
+    from utils import db
+
+    entries = db.list_glossary()
+    if not entries:
+        return []
+
+    findings = []
+    for entry in entries:
+        preferred = db.preferred_form(entry, language)
+        rejected = [v for v in entry["variants"] if v and v != preferred]
+        if not rejected:
+            continue
+
+        offending = {}
+        for section in sections or []:
+            body = str(section.get("content", "") or "")
+            if not body:
+                continue
+            # الصيغة المعتمدة تُحجب **قبل** البحث عن المرفوضة: «مستوى الخدمة»
+            # صيغة مرفوضة وهي في الوقت نفسه جزء من «اتفاقية مستوى الخدمة»
+            # المعتمدة، فبلا الحجب يُبلَّغ عن كل قسم كتبها صحيحة.
+            lowered = body.lower().replace(preferred.lower(), " ")
+            used = sorted({v for v in rejected if v.lower() in lowered})
+            if used:
+                offending[str(section.get("title", ""))] = used
+
+        if not offending:
+            continue
+
+        detail = " · ".join(
+            f"«{title}»: {' و '.join(used)}" for title, used in sorted(offending.items())
+        )
+        findings.append({
+            "kind": "glossary_drift",
+            "severity": "تنبيه",
+            "message": (
+                f"مصطلح «{entry['term']}» مكتوب بصيغة غير معتمدة — {detail}. "
+                f"المعتمد: {preferred}."
+            ),
+            "sections": sorted(offending),
+        })
+
+    return findings
+
+
 def check(sections: Optional[list] = None,
           timeline_df: Optional[pd.DataFrame] = None,
           project_context: Optional[dict] = None,
-          extracted_weeks=None) -> list:
+          extracted_weeks=None,
+          language: str = "ar") -> list:
     """
-    يقارن مدد التنفيذ المذكورة في الأقسام بالجدول الزمني وبمدة العقد.
+    يقارن مدد التنفيذ المذكورة في الأقسام بالجدول الزمني وبمدة العقد، ويرصد
+    انحراف المصطلحات عن المسرد المعتمد (14-6).
 
     Args:
         sections: [{"title", "content"}] — الأقسام المُدرَجة المكتوبة فعلاً.
+        language: لغة المخرجات — بها تُحدَّد الصيغة المعتمدة لكل مصطلح.
 
     Returns:
         قائمة ملاحظات [{"kind", "severity", "message", "sections"}].
@@ -136,6 +197,9 @@ def check(sections: Optional[list] = None,
                     ),
                     "sections": sorted(data["sections"]),
                 })
+
+    # 5) انحراف المصطلحات عن المسرد (14-6) — تنبيه في آخر القائمة بعد الحرِج
+    findings.extend(glossary_drift(sections, language))
 
     return findings
 

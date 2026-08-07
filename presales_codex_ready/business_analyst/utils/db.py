@@ -200,6 +200,32 @@ CREATE TABLE IF NOT EXISTS content_blocks (
 CREATE INDEX IF NOT EXISTS idx_content_blocks_status
     ON content_blocks(status);
 
+-- مسرد المصطلحات (14-6): ترجمة فنية واحدة عبر كل أقسام العرض.
+--
+-- المشكلة: «SLA» تخرج «اتفاقية مستوى الخدمة» في المنهجية و«مستوى الخدمة» في
+-- الدعم و«SLA» كما هي في الملاحق — ثلاث صيغ في مستند واحد. المُقيّم يقرأها
+-- ترجمةً غير مضبوطة، وأسوأ منها أن يظنّها ثلاثة مفاهيم لا واحداً.
+--
+-- `preferred_ar` و `preferred_en`: الصيغة المعتمدة لكل لغة مخرجات — لا عمود
+-- واحد، لأن العرض العربي والإنجليزي لا يتفقان على صيغة واحدة بطبيعتهما.
+--
+-- `variants` قائمة JSON بالصيغ **المرفوضة**. وجودها هو ما يجعل الفحص ممكناً:
+-- بلا معرفة الخطأ لا يُرصد الانحراف، وتبقى التوحيد رجاءً موجَّهاً إلى النموذج
+-- لا شرطاً يُتحقَّق منه. الفحص في `utils/consistency.py` حسابي بلا استدعاء.
+CREATE TABLE IF NOT EXISTS glossary (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    term         TEXT NOT NULL,
+    preferred_ar TEXT NOT NULL DEFAULT '',
+    preferred_en TEXT NOT NULL DEFAULT '',
+    variants     TEXT NOT NULL DEFAULT '[]',
+    note         TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL DEFAULT '',
+    updated_at   TEXT NOT NULL DEFAULT '',
+    updated_by   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_glossary_term ON glossary(term);
+
 -- إعدادات النظام (13-10): مفتاح ← قيمة. جدول واحد صغير بدل عمود لكل إعداد
 -- جديد، وأول ساكنيه سياسة البيانات الشخصية (أساس المعالجة ومدة الاحتفاظ).
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -1351,6 +1377,109 @@ def content_block_stats() -> dict:
                        if b["status"] == BLOCK_APPROVED and block_review_due(b))
     stats["used"] = sum(int(b["used_count"] or 0) for b in blocks)
     return stats
+
+
+# ─── مسرد المصطلحات (14-6) ────────────────────────────────────────────────────
+
+
+def _glossary_row(row) -> dict:
+    """يفكّ قائمة الصيغ المرفوضة. صفٌّ تالف يُقرأ بلا صيغ لا يُسقط المسرد كله."""
+    item = dict(row)
+    try:
+        variants = json.loads(item.get("variants") or "[]")
+    except (ValueError, TypeError):
+        variants = []
+    item["variants"] = [str(v).strip() for v in variants if str(v).strip()]
+    return item
+
+
+def list_glossary() -> list:
+    """
+    المسرد مرتّباً بالمصطلح.
+
+    الترتيب ثابت لا عشوائي: الكتلة المحقونة في التوليد تُبنى منه، وترتيب متغيّر
+    يعني كتلة مختلفة بين عرض وعرض — والغاية من هذا البند عكس ذلك تماماً.
+    """
+    rows = get_conn().execute(
+        "SELECT * FROM glossary ORDER BY term COLLATE NOCASE"
+    ).fetchall()
+    return [_glossary_row(r) for r in rows]
+
+
+def glossary_term(term_id: int) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM glossary WHERE id = ?", (int(term_id),)
+    ).fetchone()
+    return _glossary_row(row) if row is not None else None
+
+
+def glossary_by_term(term: str) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM glossary WHERE term = ?", ((term or "").strip(),)
+    ).fetchone()
+    return _glossary_row(row) if row is not None else None
+
+
+def save_glossary_term(term: str, preferred_ar: str = "", preferred_en: str = "",
+                       variants: Optional[list] = None, note: str = "",
+                       updated_by: str = "") -> Optional[int]:
+    """
+    ينشئ مصطلحاً أو يعدّله، ويعيد معرّفه (أو `None` لمصطلح فارغ).
+
+    الصيغة المعتمدة **تُستبعد من الصيغ المرفوضة** ولو كتبها المستخدم فيهما:
+    مصطلح يرفض صيغته المعتمدة يجعل كل قسم مخالفاً لنفسه.
+    """
+    term = (term or "").strip()
+    if not term:
+        return None
+
+    preferred = {(preferred_ar or "").strip(), (preferred_en or "").strip(), term}
+    cleaned = sorted({
+        str(v).strip() for v in (variants or [])
+        if str(v).strip() and str(v).strip() not in preferred
+    })
+    payload = json.dumps(cleaned, ensure_ascii=False)
+    now = _now()
+
+    existing = glossary_by_term(term)
+    with transaction() as conn:
+        if existing is None:
+            cur = conn.execute(
+                "INSERT INTO glossary (term, preferred_ar, preferred_en, variants, "
+                "note, created_at, updated_at, updated_by) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (term, (preferred_ar or "").strip(), (preferred_en or "").strip(),
+                 payload, note or "", now, now, updated_by),
+            )
+            return int(cur.lastrowid)
+        conn.execute(
+            "UPDATE glossary SET preferred_ar = ?, preferred_en = ?, variants = ?, "
+            "note = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+            ((preferred_ar or "").strip(), (preferred_en or "").strip(), payload,
+             note or "", now, updated_by, int(existing["id"])),
+        )
+    return int(existing["id"])
+
+
+def delete_glossary_term(term_id: int) -> bool:
+    with transaction() as conn:
+        cur = conn.execute("DELETE FROM glossary WHERE id = ?", (int(term_id),))
+        return cur.rowcount > 0
+
+
+def preferred_form(entry: dict, language: str) -> str:
+    """
+    الصيغة المعتمدة للغة المخرجات، وإلا الأخرى، وإلا المصطلح نفسه.
+
+    السقوط إلى الأخرى مقصود: مسرد نصف مملوء يوحّد ما استطاع بدل أن يصمت.
+    """
+    order = ("preferred_ar", "preferred_en") if str(language).startswith("ar") \
+        else ("preferred_en", "preferred_ar")
+    for key in order:
+        value = str(entry.get(key) or "").strip()
+        if value:
+            return value
+    return str(entry.get("term") or "").strip()
 
 
 # ─── سياسة البيانات الشخصية (13-10) ───────────────────────────────────────────

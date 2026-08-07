@@ -488,6 +488,23 @@ def _kb_context(sec: dict) -> str:
     return knowledge.build_context(query)
 
 
+def _glossary_context(sec: dict, full_rfp: str) -> str:
+    """
+    مصطلحات المسرد الواردة في هذه المنافسة (14-6).
+
+    الترشيح على **الكرّاس كاملاً** لا على المقاطع المسترجعة للقسم: القسم قد
+    يكتب مصطلحاً ورد في موضع آخر من الكرّاس، وحصر المسرد على ما استُرجع له
+    يجعل التوحيد يسقط في أول قسم لم يُسترجَع له المصطلح — وهو عين ما نعالجه.
+    """
+    from utils import ai_engine
+
+    scope = " ".join(filter(None, [
+        full_rfp, sec.get("title"), sec.get("guidance"),
+        " ".join(sec.get("key_points") or []),
+    ]))
+    return ai_engine.glossary_context_block(scope, _language())
+
+
 def _writing_context(sec: dict) -> tuple[str, str]:
     """
     سياق كتابة القسم: (نص الكراسة المُمرَّر، السياق الإضافي).
@@ -498,9 +515,14 @@ def _writing_context(sec: dict) -> tuple[str, str]:
 
     وبصمة الأسلوب (14-5) تدخل هنا لا في تعليمات القسم: فتصل **كل** قسم بالنص
     نفسه، وهو ما يجعل العرض كلّه بنبرة واحدة بدل قسم يتبع العيّنة وآخر لا.
+    ومسرد المصطلحات (14-6) كذلك — كتلة **منفصلة** عن الأسلوب لا مدموجة به.
     """
-    extra = _project_context_block() + _kb_context(sec) + knowledge.style_context_block()
     full_rfp = st.session_state.get("rfp_raw_text", "")
+    extra = (
+        _project_context_block() + _kb_context(sec)
+        + knowledge.style_context_block()
+        + _glossary_context(sec, full_rfp)
+    )
 
     if not st.session_state.get("compressed_context", True) \
             or not st.session_state.get("project_context"):
