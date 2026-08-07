@@ -41,6 +41,7 @@ from utils.state import (
     section_content_key,
     section_owner,
     section_status,
+    strategy_block,
     set_section_owner,
     set_section_status,
     set_sections,
@@ -516,10 +517,12 @@ def _writing_context(sec: dict) -> tuple[str, str]:
     وبصمة الأسلوب (14-5) تدخل هنا لا في تعليمات القسم: فتصل **كل** قسم بالنص
     نفسه، وهو ما يجعل العرض كلّه بنبرة واحدة بدل قسم يتبع العيّنة وآخر لا.
     ومسرد المصطلحات (14-6) كذلك — كتلة **منفصلة** عن الأسلوب لا مدموجة به.
+    واستراتيجية العرض (14-8): «لماذا نفوز» وحدها من حقول خطّ الأنابيب — أمّا
+    احتمال الفوز والمالك والمرحلة فلا تصل النموذج بأي مسار.
     """
     full_rfp = st.session_state.get("rfp_raw_text", "")
     extra = (
-        _project_context_block() + _kb_context(sec)
+        _project_context_block() + strategy_block() + _kb_context(sec)
         + knowledge.style_context_block()
         + _glossary_context(sec, full_rfp)
     )

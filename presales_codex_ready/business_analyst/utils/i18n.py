@@ -1917,6 +1917,51 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── خطّ الأنابيب واستراتيجية العرض (14-8) / Pipeline & win strategy ──
+    "pipe.title": {"ar": "خطّ الأنابيب واستراتيجية العرض",
+                   "en": "Pipeline & win strategy"},
+    "pipe.hint": {
+        "ar": "أين هذه المنافسة من دورة البيع، ومن يقودها، ولماذا نفوز بها.",
+        "en": "Where this tender sits in the sales cycle, who leads it, and why we win it.",
+    },
+    "pipe.stage": {"ar": "المرحلة", "en": "Stage"},
+    "pipe.owner": {"ar": "مالك المنافسة", "en": "Tender owner"},
+    "pipe.probability": {"ar": "احتمال الفوز (تقدير)", "en": "Win probability (forecast)"},
+    "pipe.probability_help": {
+        "ar": "تقديرك أنت قبل الحسم — لا يدخل قياس نسبة الفوز في اللوحة، فتلك "
+              "محسوبة من نتائج مسجَّلة لا من ظنّ.",
+        "en": "Your own forecast before the outcome — it never feeds the dashboard "
+              "win rate, which is computed from recorded outcomes, not opinion.",
+    },
+    "pipe.why": {"ar": "لماذا نفوز", "en": "Why we win"},
+    "pipe.why_ph": {
+        "ar": "ما يميّزنا في هذه المنافسة تحديداً — خبرة مطابقة، فريق محلي، "
+              "منهجية أثبتت نفسها عند هذه الجهة…",
+        "en": "What sets us apart in this specific tender — matching experience, "
+              "a local team, a methodology proven with this entity…",
+    },
+    "pipe.why_help": {
+        "ar": "الحقل الوحيد الذي يصل النموذج: يظهر أثره في اختيار ما تُبرزه "
+              "الأقسام، لا كجملة مكرَّرة في كل قسم.",
+        "en": "The only field the model sees: it shapes what each section "
+              "emphasises, rather than being repeated verbatim in every section.",
+    },
+    "pipe.only_why_reaches_model": {
+        "ar": "🔒 «لماذا نفوز» وحدها تصل النموذج. المرحلة والمالك واحتمال الفوز "
+              "بيانات داخلية لا تغادر إلى أي نص مولَّد.",
+        "en": "🔒 Only \"why we win\" reaches the model. Stage, owner and win "
+              "probability are internal and never leave for any generated text.",
+    },
+    "pipe.why_active": {
+        "ar": "✅ الاستراتيجية تُحقن مع كل قسم يُولَّد بعد الآن.",
+        "en": "✅ The strategy is injected into every section generated from now on.",
+    },
+    "pipe.why_empty": {
+        "ar": "بلا استراتيجية مكتوبة تُكتب الأقسام صحيحةً بلا حجّة تميّزها.",
+        "en": "With no strategy written, sections come out correct but with no "
+              "argument that sets them apart.",
+    },
+
     # ── مؤشرات الأداء (14-7) / Performance metrics ──
     "kpi.title": {"ar": "مؤشرات الأداء", "en": "Performance"},
     "kpi.hint": {
