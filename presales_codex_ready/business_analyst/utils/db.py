@@ -132,6 +132,33 @@ CREATE TABLE IF NOT EXISTS company_records (
 CREATE INDEX IF NOT EXISTS idx_company_records_registry
     ON company_records(registry);
 
+-- البرومبتات (14-1): تعليمات النموذج قابلة للتحرير من الواجهة بلا إعادة تشغيل.
+--
+-- الجدول يحمل **التجاوزات وحدها** لا نسخة من كل برومبت: النصوص الافتراضية تبقى
+-- في `ai_engine.py` مصدراً واحداً، وصفٌّ هنا يعني «هذا المفتاح عُدّل». وزرْع
+-- الجدول بنسخة من كل نصّ يبدو أنظف حتى يتغيّر الافتراضي في الشيفرة فيبقى
+-- المزروع قديماً صامتاً — والفرق لا يظهر إلا في جودة عرض خسر.
+--
+-- «استعادة الافتراضي» تحذف الصف فيعود النص من الشيفرة — لا نسخ ولا مقارنة.
+--
+-- `sector` و `language` فارغان يعنيان «لكل القطاعات وكل اللغات»، والأخص يغلب.
+-- والقواعد الثابتة (14-2) **ليست هنا ولا تُحرَّر**: تُلحق وقت الاستدعاء.
+CREATE TABLE IF NOT EXISTS prompts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    key        TEXT NOT NULL,
+    agent      TEXT NOT NULL DEFAULT '',
+    sector     TEXT NOT NULL DEFAULT '',
+    language   TEXT NOT NULL DEFAULT '',
+    version    INTEGER NOT NULL DEFAULT 1,
+    text       TEXT NOT NULL,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT '',
+    updated_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prompts_scope
+    ON prompts(key, sector, language);
+
 -- إعدادات النظام (13-10): مفتاح ← قيمة. جدول واحد صغير بدل عمود لكل إعداد
 -- جديد، وأول ساكنيه سياسة البيانات الشخصية (أساس المعالجة ومدة الاحتفاظ).
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -989,6 +1016,83 @@ def kb_stats() -> dict:
         "(SELECT COUNT(*) FROM kb_chunks) AS chunks"
     ).fetchone()
     return dict(row)
+
+
+# ─── البرومبتات (14-1) ────────────────────────────────────────────────────────
+
+
+def list_prompts(key: str = "") -> list:
+    sql = "SELECT * FROM prompts"
+    args: list[Any] = []
+    if key:
+        sql += " WHERE key = ?"
+        args.append(key)
+    sql += " ORDER BY key, sector, language"
+    return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
+
+
+def prompt_override(key: str, sector: str = "", language: str = "") -> Optional[dict]:
+    """
+    التجاوز الساري لهذا المفتاح، أو `None`.
+
+    **الأخص يغلب**: (قطاع ولغة) ← (قطاع) ← (لغة) ← (عام). فبرومبت كُتب لقطاع
+    الصحة لا يُزيحه عامٌّ كُتب قبله، ولا العكس.
+    """
+    for candidate in (
+        (sector, language), (sector, ""), ("", language), ("", ""),
+    ):
+        row = get_conn().execute(
+            "SELECT * FROM prompts WHERE key = ? AND sector = ? AND language = ? "
+            "AND enabled = 1",
+            (key, candidate[0], candidate[1]),
+        ).fetchone()
+        if row is not None:
+            return dict(row)
+    return None
+
+
+def save_prompt(key: str, text: str, agent: str = "", sector: str = "",
+                language: str = "", updated_by: str = "") -> int:
+    """يحفظ تجاوزاً ويعيد رقم إصداره. الإصدار يزيد مع كل حفظ."""
+    existing = get_conn().execute(
+        "SELECT version FROM prompts WHERE key = ? AND sector = ? AND language = ?",
+        (key, sector, language),
+    ).fetchone()
+    version = (int(existing["version"]) + 1) if existing else 1
+
+    with transaction() as conn:
+        conn.execute(
+            "INSERT INTO prompts (key, agent, sector, language, version, text, "
+            "enabled, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) "
+            "ON CONFLICT(key, sector, language) DO UPDATE SET "
+            "text = excluded.text, agent = excluded.agent, version = excluded.version, "
+            "enabled = 1, updated_at = excluded.updated_at, "
+            "updated_by = excluded.updated_by",
+            (key, agent, sector, language, version, text, _now(), updated_by),
+        )
+    return version
+
+
+def set_prompt_enabled(key: str, enabled: bool, sector: str = "",
+                       language: str = "") -> bool:
+    """تعطيل تجاوز يعيد العمل بالنص الافتراضي بلا فقد ما كُتب."""
+    with transaction() as conn:
+        cur = conn.execute(
+            "UPDATE prompts SET enabled = ? WHERE key = ? AND sector = ? "
+            "AND language = ?",
+            (1 if enabled else 0, key, sector, language),
+        )
+        return cur.rowcount > 0
+
+
+def delete_prompt(key: str, sector: str = "", language: str = "") -> bool:
+    """استعادة الافتراضي: يُحذف التجاوز فيعود النص من الشيفرة."""
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM prompts WHERE key = ? AND sector = ? AND language = ?",
+            (key, sector, language),
+        )
+        return cur.rowcount > 0
 
 
 # ─── سياسة البيانات الشخصية (13-10) ───────────────────────────────────────────

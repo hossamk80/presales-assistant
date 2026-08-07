@@ -81,6 +81,8 @@ PERMISSIONS: dict[str, tuple] = {
     "sections.write": (ADMIN, BID_MANAGER, WRITER),
     # 13-4: إسناد الأقسام لمُلّاكها — ومن يملكه يعدّل أي قسم بصرف النظر عن مالكه
     "sections.assign": (ADMIN, BID_MANAGER),
+    # 14-1: تحرير تعليمات النموذج — يمسّ كل مخرَج في النظام، فللمدير وحده
+    "prompts.manage": (ADMIN,),
     # 13-5: قراءة سجل التدقيق — يكشف من فعل ماذا، فليس لكل من يكتب
     "audit.view": (ADMIN, BID_MANAGER),
     # 13-8: سير الاعتماد قبل التسليم. لا دور «مالية» بين الأدوار الخمسة بعد،
