@@ -495,8 +495,11 @@ def _writing_context(sec: dict) -> tuple[str, str]:
     الوضع المضغوط (11-10): يستبدل نص الكراسة الكامل بالسياق الموحّد
     وموجز المصفوفة وبنود الكراسة المسترجعة للقسم (11-11) — فينخفض توكن
     الكتابة دون فقد المتطلبات. يعود للنص الكامل إن تعذّرت الفهرسة.
+
+    وبصمة الأسلوب (14-5) تدخل هنا لا في تعليمات القسم: فتصل **كل** قسم بالنص
+    نفسه، وهو ما يجعل العرض كلّه بنبرة واحدة بدل قسم يتبع العيّنة وآخر لا.
     """
-    extra = _project_context_block() + _kb_context(sec)
+    extra = _project_context_block() + _kb_context(sec) + knowledge.style_context_block()
     full_rfp = st.session_state.get("rfp_raw_text", "")
 
     if not st.session_state.get("compressed_context", True) \

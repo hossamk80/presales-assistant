@@ -529,6 +529,17 @@ def _render_knowledge_base():
             options=list(knowledge.CATEGORIES),
             format_func=lambda k: t(f"kbcat.{k}"),
         )
+        # 14-5: العيّنة تُقرأ أسلوباً لا مصدرَ وقائع — يُقال صراحةً عند الرفع
+        # كي لا يرفعها أحد ظنّاً أنه يغذّي المستودع بمحتوى.
+        if category == knowledge.PROPOSAL_SAMPLE:
+            st.info(t("sty.upload_hint"))
+            samples = knowledge.sample_stats()
+            if samples["documents"]:
+                st.caption(
+                    t("sty.ready", n=samples["documents"]) if samples["ready"]
+                    else t("sty.too_short", words=knowledge.MIN_SAMPLE_WORDS)
+                )
+
         # 13-10: السيرة الذاتية بيانات شخص بعينه — تُربط به عند الرفع، فحذف
         # بياناته لاحقاً لا يصير بحثاً بالاسم في أسماء الملفات.
         person = ""

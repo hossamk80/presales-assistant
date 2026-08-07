@@ -1933,7 +1933,30 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── بصمة الأسلوب من عرض سابق (14-5) / Style fingerprint ──
+    "sty.upload_hint": {
+        "ar": "يُقرأ من هذه العيّنة **شكل الكتابة وحده** — طول الجملة والفقرة "
+              "ونسبة النقاط وصيغة المخاطبة. لا يُنقل منها اسم عميل ولا رقم ولا "
+              "التزام، ولا تدخل مستودع الاسترجاع.",
+        "en": "Only the **writing form** is read from this sample — sentence and "
+              "paragraph length, list density, and voice. No client name, figure, "
+              "or commitment is carried over, and it never enters the retrieval pool.",
+    },
+    "sty.ready": {
+        "ar": "✅ {n} عيّنة — بصمة الأسلوب تُحقن في كل قسم.",
+        "en": "✅ {n} sample(s) — the style fingerprint is injected into every section.",
+    },
+    "sty.too_short": {
+        "ar": "⚠️ العيّنات أقصر من {words} كلمة — بصمة من فقرة واحدة أسوأ من لا بصمة، "
+              "فلن تُحقن.",
+        "en": "⚠️ The samples are shorter than {words} words — a fingerprint from a "
+              "single paragraph is worse than none, so it will not be injected.",
+    },
+
     # ── فئات المعرفة / KB categories ──
+    "kbcat.proposal_sample": {
+        "ar": "عروض سابقة (للأسلوب)", "en": "Past proposals (style only)",
+    },
     "kbcat.cv": {"ar": "السير الذاتية", "en": "CVs"},
     "kbcat.cert": {"ar": "الشهادات والاعتمادات", "en": "Certifications"},
     "kbcat.project": {"ar": "المشاريع السابقة", "en": "Past projects"},

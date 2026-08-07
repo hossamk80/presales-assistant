@@ -660,3 +660,195 @@ def test_deleting_a_block_leaves_the_sections_it_fed_untouched(library):
 
     assert library.content_block_by_key("quality") is None
     assert doc_builder.st.session_state["sec_s"] == "نلتزم بمعايير الأيزو."
+
+
+# ─── 14-5: بصمة الأسلوب من عرض سابق ───────────────────────────────────────────
+#
+# عرضان من الشركة نفسها يخرجان بنبرتين: الأول فقرات طويلة بصيغة المتكلم الجمع،
+# والثاني نقاط مقتضبة بالمبني للمجهول — فيبدوان صادرين عن جهتين.
+#
+# فما يُحرَس هنا ثلاثة: أن العيّنة **لا تُقرأ مصدرَ وقائع** فتُنسخ منها أرقام
+# منافسة أخرى، وأن البصمة **لا تنجرف** بين عرض وعرض (شرط القبول: نبرة واحدة لا
+# نبرتان متقاربتان)، وأن بناءها **لا يُنفق توكناً**.
+
+_PARA = (
+    "نحن شركة الحلول التقنية المتقدمة، ونقدّم خدمات التحول الرقمي للجهات. "
+    "لدينا فريق من المهندسين المعتمدين يغطي كامل دورة حياة المشروع بالكامل. "
+    "خبرتنا تمتد عبر مشاريع منجزة لجهات سيادية عديدة في المملكة العربية. "
+)
+
+SAMPLE = (
+    "# نبذة عن الشركة\n\n" + _PARA * 3
+    + "\n\n## منهجية التنفيذ\n\n" + _PARA * 3
+    + "\n\n- تحليل المتطلبات وتوثيقها\n- التصميم المعماري والمراجعة\n"
+    "- التطوير والاختبار والتكامل\n"
+)
+
+# عيّنة تحمل وقائع تخصّ منافسة أخرى — ما يجب ألّا يتسرّب منها شيء.
+SAMPLE_WITH_FACTS = SAMPLE + (
+    "\n\nنفّذنا لصالح هيئة الغذاء والدواء العقد رقم 4400123456 بقيمة "
+    "مليونين وثلاثمئة ألف ريال، وسلّمنا في 2019 نظام تتبّع المستودعات.\n"
+)
+
+
+@pytest.fixture()
+def styled(temp_db, monkeypatch):
+    """قاعدة فيها عيّنة أسلوب ومستند محتوى، وتضمين وهمي بلا شبكة."""
+    from utils import knowledge
+
+    def _store(name, category, text, vector):
+        doc_id = temp_db.add_kb_document(name, category, len(text))
+        temp_db.add_kb_chunks(
+            doc_id, [(0, text, 3, knowledge._pack(vector))],
+            embed_model="fake",
+        )
+
+    _store("عرض سابق.docx", knowledge.PROPOSAL_SAMPLE, SAMPLE_WITH_FACTS, [1.0, 0.0, 0.0])
+    _store("شهادة الأيزو.pdf", "cert", "الشركة حاصلة على شهادة الأيزو 9001.",
+           [1.0, 0.0, 0.0])
+
+    monkeypatch.setattr(knowledge, "active_embed_model", lambda: "fake")
+    monkeypatch.setattr(knowledge, "embed_texts", lambda texts, task_type: [[1.0, 0.0, 0.0]])
+    return knowledge
+
+
+def test_a_proposal_sample_never_surfaces_in_retrieval(styled):
+    """
+    **الحارس الأهم في هذا البند**: العرض السابق مليء بأسماء عملاء وأرقام عقود
+    تخصّ منافسة أخرى. لو دخل مجمّع الاسترجاع لنسخ النموذج تلك الوقائع إلى عرض
+    جديد — وهو ما تمنعه القاعدتان 3 و 4 من القواعد الثابتة (14-2).
+
+    التضمين هنا مطابق تماماً للمستندين، فلو كانت الفئة مسموحة لظهرت العيّنة.
+    """
+    hits = styled.search("خبرة الشركة وشهاداتها")
+
+    categories = {h["category"] for h in hits}
+    assert hits, "الاسترجاع لم يُرجع شيئاً — الاختبار لا يفحص شيئاً"
+    assert styled.PROPOSAL_SAMPLE not in categories
+    assert "cert" in categories
+
+
+def test_the_sample_is_absent_from_the_injected_knowledge_block(styled):
+    """وما لا يظهر في البحث لا يظهر في كتلة السياق المحقونة."""
+    block = styled.build_context("خبرة الشركة وشهاداتها")
+
+    assert "4400123456" not in block
+    assert "هيئة الغذاء والدواء" not in block
+
+
+def test_the_style_block_carries_no_fact_from_the_sample(styled):
+    """
+    البصمة أرقام مجرّدة عن الشكل، فهي عاجزة **بطبيعتها** عن حمل واقعة — ولا
+    تعتمد على تعليمة تطلب من النموذج ألّا ينقل.
+    """
+    block = styled.style_context_block()
+
+    assert block
+    for leak in ("4400123456", "هيئة الغذاء والدواء", "2019", "الحلول التقنية"):
+        assert leak not in block, leak
+
+
+def test_two_proposals_share_one_voice(styled):
+    """
+    **شرط قبول 14-5**: عرضان لنفس الشركة بنبرة واحدة.
+
+    الكتلة المحقونة **متطابقة حرفاً بحرف** بين عرضين — لأنها محسوبة لا مستخرجة
+    بالنموذج. استخراجها بالنموذج يعطي وصفين متقاربين في كل مرة، فيخرج العرضان
+    بنبرتين متشابهتين لا واحدة.
+    """
+    first = styled.style_context_block()
+    styled.st.session_state["_project_id"] = 2      # عرض آخر، الشركة نفسها
+    second = styled.style_context_block()
+
+    assert first == second
+    assert first.strip()
+
+
+def test_building_the_fingerprint_makes_no_model_call(styled, monkeypatch):
+    """
+    البصمة تُحسب حسابياً: بلا توكن وبلا انجراف. يُحرَس بتفجير كل مَعبر إلى
+    طبقة الموفّرين.
+    """
+    from utils import ai_engine
+
+    def explode(*a, **k):
+        raise AssertionError("بناء البصمة استدعى النموذج")
+
+    for name in ("_call", "_call_json", "ai_generate", "ai_generate_json"):
+        monkeypatch.setattr(ai_engine, name, explode, raising=False)
+
+    assert styled.style_context_block()
+
+
+def test_the_fingerprint_measures_form_not_content(styled):
+    """كل قيمة في البصمة عدد أو نسبة — لا سلسلة منقولة من العيّنة."""
+    fingerprint = styled.style_fingerprint(SAMPLE_WITH_FACTS)
+
+    assert fingerprint
+    for key, value in fingerprint.items():
+        assert isinstance(value, (int, bool, list)), (key, value)
+        if isinstance(value, list):
+            assert all(isinstance(v, int) for v in value), key
+
+
+def test_a_sample_too_short_yields_no_fingerprint(styled):
+    """بصمة من فقرة واحدة تصف نفسها لا أسلوب الشركة — أسوأ من لا بصمة."""
+    assert styled.style_fingerprint("نحن نلتزم بالجودة. لدينا فريق.") == {}
+
+
+def test_no_sample_means_no_style_instruction(temp_db, monkeypatch):
+    """
+    تعليمة أسلوب مبنية على لا شيء تدفع النموذج إلى نبرة مخترعة — الفراغ أصدق.
+    """
+    from utils import knowledge
+
+    assert knowledge.company_style() == {}
+    assert knowledge.style_context_block() == ""
+
+
+def test_the_instruction_is_a_pure_function_of_the_fingerprint(styled):
+    """
+    الصياغة لا تعرف كيف قِيست البصمة، والقياس لا يعرف النموذج. فبصمتان
+    متساويتان تعطيان النصّ نفسه أيّاً كان مصدرهما.
+    """
+    from utils import ai_engine
+
+    fingerprint = styled.style_fingerprint(SAMPLE)
+    assert ai_engine.style_instruction(dict(fingerprint)) == \
+        ai_engine.style_instruction(fingerprint)
+    assert ai_engine.style_instruction({}) == ""
+
+
+def test_a_bullet_heavy_sample_reads_differently_from_a_prose_one(styled):
+    """البصمة تُفرّق فعلاً بين أسلوبين — وإلا كانت تعليمة ثابتة لا بصمة."""
+    from utils import ai_engine
+
+    prose = ai_engine.style_instruction(styled.style_fingerprint(_PARA * 8))
+    bullets = ai_engine.style_instruction(styled.style_fingerprint(
+        "# عنوان\n\n" + "".join(f"- بند رقم {i} في قائمة طويلة من البنود المتتابعة\n"
+                                for i in range(40))
+    ))
+
+    assert prose != bullets
+    assert "فقرات متصلة" in prose
+    assert "نقاط" in bullets
+
+
+def test_the_style_reaches_every_section_through_the_writing_context(styled):
+    """
+    البصمة تدخل من `_writing_context` لا من تعليمات القسم: فتصل **كل** قسم
+    بالنص نفسه، وإلّا خرج قسم متبعاً العيّنة وآخر لا — وهو عين ما نعالجه.
+    """
+    from utils import ai_engine
+    from views import doc_builder
+
+    _rfp, extra = doc_builder._writing_context({"key": "intro", "title": "المقدمة"})
+
+    assert ai_engine.has_style_instruction(extra)
+
+
+def test_the_sample_category_is_offered_in_the_uploader(styled):
+    """الفئة تظهر في قائمة الرفع، وتبقى خارج فئات المحتوى."""
+    assert styled.PROPOSAL_SAMPLE in styled.CATEGORIES
+    assert styled.PROPOSAL_SAMPLE not in styled.CONTENT_CATEGORIES
+    assert "cert" in styled.CONTENT_CATEGORIES
