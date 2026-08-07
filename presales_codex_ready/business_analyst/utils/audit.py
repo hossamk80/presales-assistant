@@ -48,6 +48,11 @@ PD_ERASE = "pd.erase"
 PROMPT_EDIT = "prompt.edit"
 PROMPT_RESET = "prompt.reset"
 PROMPT_TRIAL = "prompt.trial"
+BLOCK_EDIT = "block.edit"
+BLOCK_STATUS = "block.status"
+BLOCK_REVIEW = "block.review"
+BLOCK_DELETE = "block.delete"
+BLOCK_INSERT = "block.insert"
 USER_ADD = "user.add"
 USER_ROLE = "user.role"
 USER_ACTIVE = "user.active"
@@ -62,12 +67,16 @@ ACTIONS = (
     SECTION_STATUS, OUTLINE_PROPOSE, EXPORT_BUILD, APPROVAL_DECISION,
     BACKUP_CREATE, BACKUP_RESTORE, PD_POLICY, PD_ERASE,
     PROMPT_EDIT, PROMPT_RESET, PROMPT_TRIAL,
+    BLOCK_EDIT, BLOCK_STATUS, BLOCK_REVIEW, BLOCK_DELETE, BLOCK_INSERT,
     USER_ADD, USER_ROLE, USER_ACTIVE, USER_DELETE, USER_PASSWORD, AUTH_LOGIN,
 )
 
 # الأحداث التي تُغيّر نص قسم — منها وحدها يُستنتج مصدر الفقرة.
+#
+# 14-4: إدراج كتلة معتمدة حدثٌ من هذه: يغيّر النصّ، ومصدره **إنسان** لا نموذج —
+# نصّ كتبه ثم اعتمده بشر لا يصير مسؤولية النموذج لأنّ زرّاً أدرجه.
 _CONTENT_ACTIONS = (SECTION_GENERATE, SECTION_REFINE, SECTION_EDIT,
-                    SECTION_RESTORE)
+                    SECTION_RESTORE, BLOCK_INSERT)
 
 
 def _actor() -> tuple:

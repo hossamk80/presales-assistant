@@ -1845,6 +1845,94 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "en": "The last active administrator's role — and your own — cannot be changed.",
     },
 
+    # ── مكتبة المحتوى المعتمد (14-4) / Approved content library ──
+    "lib.title": {"ar": "مكتبة المحتوى المعتمد", "en": "Approved content library"},
+    "lib.intro": {
+        "ar": "كتل نصّية جاهزة تُدرَج في أقسام العرض كما هي — بلا استدعاء نموذج "
+              "وبلا كلفة توكن. المعتمد وحده يُدرَج.",
+        "en": "Ready-made text blocks inserted into proposal sections as-is — no "
+              "model call and no token cost. Only approved blocks can be inserted.",
+    },
+    "lib.read_only": {
+        "ar": "دورك يقرأ المكتبة ولا يحرّرها.",
+        "en": "Your role can read the library but not edit it.",
+    },
+    "lib.empty": {
+        "ar": "المكتبة فارغة. أضِف كتلة أولى ليُعاد استخدامها في كل عرض.",
+        "en": "The library is empty. Add a first block to reuse across proposals.",
+    },
+    "lib.add": {"ar": "كتلة جديدة", "en": "New block"},
+    "lib.key": {"ar": "المفتاح", "en": "Key"},
+    "lib.key_help": {
+        "ar": "معرّف ثابت لا يتغيّر — به تُعرَف الكتلة ولو تغيّر عنوانها.",
+        "en": "A stable identifier — it names the block even if the title changes.",
+    },
+    "lib.key_taken": {"ar": "❌ المفتاح مستعمل.", "en": "❌ Key already in use."},
+    "lib.key_required": {
+        "ar": "❌ المفتاح والعنوان والنصّ مطلوبة.",
+        "en": "❌ Key, title and body are required.",
+    },
+    "lib.block_title": {"ar": "العنوان", "en": "Title"},
+    "lib.body": {"ar": "نصّ الكتلة", "en": "Block body"},
+    "lib.category": {"ar": "التصنيف", "en": "Category"},
+    "lib.sector": {"ar": "القطاع", "en": "Sector"},
+    "lib.language": {"ar": "اللغة", "en": "Language"},
+    "lib.any": {"ar": "الكل", "en": "Any"},
+    "lib.status": {"ar": "الحالة", "en": "Status"},
+    "lib.status_draft": {"ar": "مسودّة", "en": "Draft"},
+    "lib.status_approved": {"ar": "معتمدة", "en": "Approved"},
+    "lib.status_retired": {"ar": "مسحوبة", "en": "Retired"},
+    "lib.review_months": {"ar": "دورة المراجعة (أشهر)", "en": "Review cycle (months)"},
+    "lib.review_months_help": {
+        "ar": "صفر = بلا دورة معلنة فلا تتأخّر الكتلة.",
+        "en": "Zero means no declared cycle, so the block never falls due.",
+    },
+    "lib.reviewed_at": {"ar": "آخر مراجعة", "en": "Last reviewed"},
+    "lib.never_reviewed": {"ar": "لم تُراجَع", "en": "Never reviewed"},
+    "lib.review_due": {
+        "ar": "⚠️ تأخّرت عن مراجعتها — راجِع نصّها قبل الاعتماد عليه.",
+        "en": "⚠️ Review overdue — check the text before relying on it.",
+    },
+    "lib.mark_reviewed": {"ar": "راجعتُها ولم تتغيّر", "en": "Reviewed, unchanged"},
+    "lib.reviewed_done": {"ar": "✅ جُدّد تاريخ المراجعة.", "en": "✅ Review date renewed."},
+    "lib.approve": {"ar": "اعتماد", "en": "Approve"},
+    "lib.approved_done": {"ar": "✅ اعتُمدت الكتلة.", "en": "✅ Block approved."},
+    "lib.retire": {"ar": "سحب", "en": "Retire"},
+    "lib.retired_done": {"ar": "✅ سُحبت الكتلة.", "en": "✅ Block retired."},
+    "lib.to_draft": {"ar": "إعادة إلى المسودّة", "en": "Back to draft"},
+    "lib.cannot_approve": {
+        "ar": "الاعتماد لمدير العطاءات ومدير النظام — الكاتب يقترح ولا يعتمد نصّه.",
+        "en": "Approval is for bid managers and administrators — a writer proposes "
+              "but does not approve their own text.",
+    },
+    "lib.saved": {"ar": "✅ حُفظت الكتلة.", "en": "✅ Block saved."},
+    "lib.deleted": {"ar": "✅ حُذفت الكتلة.", "en": "✅ Block deleted."},
+    "lib.edit_resets": {
+        "ar": "⚠️ تغيير النصّ يُسقط الاعتماد إلى مسودّة — المعتمَد هو النصّ الذي قُرئ.",
+        "en": "⚠️ Changing the body drops approval back to draft — what was approved "
+              "is the text that was read.",
+    },
+    "lib.used_count": {"ar": "أُدرجت {count} مرة", "en": "Inserted {count} time(s)"},
+    "lib.stats": {
+        "ar": "{total} كتلة · {approved} معتمدة · {due} متأخّرة عن المراجعة",
+        "en": "{total} blocks · {approved} approved · {due} overdue for review",
+    },
+
+    # ── إدراج كتلة في قسم (14-4) / Inserting a block ──
+    "lib.insert_title": {"ar": "إدراج كتلة معتمدة", "en": "Insert an approved block"},
+    "lib.insert_help": {
+        "ar": "تُلحَق بنصّ القسم كما هي — بلا استدعاء نموذج.",
+        "en": "Appended to the section text as-is — with no model call.",
+    },
+    "lib.pick": {"ar": "الكتلة", "en": "Block"},
+    "lib.insert": {"ar": "إدراج", "en": "Insert"},
+    "lib.inserted": {"ar": "✅ أُدرجت الكتلة في القسم.", "en": "✅ Block inserted into the section."},
+    "lib.none_approved": {
+        "ar": "لا كتلة معتمدة تناسب هذا القسم بعد — تُضاف من ملف الشركة.",
+        "en": "No approved block fits this section yet — add one from the company file.",
+    },
+    "lib.preview": {"ar": "معاينة", "en": "Preview"},
+
     # ── فئات المعرفة / KB categories ──
     "kbcat.cv": {"ar": "السير الذاتية", "en": "CVs"},
     "kbcat.cert": {"ar": "الشهادات والاعتمادات", "en": "Certifications"},
