@@ -64,8 +64,11 @@ def _revision() -> int | None:
 
 def _write(project_id: int, snapshot: dict):
     """يحفظ حفظاً مشروطاً، ويدمج إن سبقته جلسة أخرى."""
+    # 14-7: القطاع يعيش في الحمولة (فيعود مع فتح المنافسة) **وفي عمود** يُجمَّع
+    # عليه قياس الفوز. العمود يُحدَّث مع كل حفظ فلا ينحرف عن الحمولة.
     new_revision = db.save_project(
-        project_id, snapshot, expected_revision=_revision()
+        project_id, snapshot, expected_revision=_revision(),
+        sector=str(snapshot.get("project_sector", "") or "").strip(),
     )
     if new_revision is None:
         new_revision = _merge_and_write(project_id, snapshot)
@@ -392,6 +395,10 @@ def render():
                 entity = st.text_input(t("proj.entity"), placeholder="…")
             with c2:
                 reference = st.text_input(t("proj.reference"), placeholder="2026-…")
+                # 14-7: القطاع يُجمَّع عليه قياس الفوز، و 14-1 يُخصّص به
+                # البرومبتات. كان `project_sector` يُقرأ ولا يُكتب في أي مكان.
+                sector = st.text_input(t("proj.sector"), placeholder="…",
+                                       help=t("proj.sector_help"))
                 carry = st.checkbox(
                     t("proj.carry"), value=False,
                 )
@@ -403,8 +410,10 @@ def render():
                     save_current()
                     if not carry:
                         _clear_project_state()
+                    st.session_state["project_sector"] = sector.strip()
                     new_id = db.create_project(
-                        name.strip(), get_project_snapshot(), reference.strip(), entity.strip()
+                        name.strip(), get_project_snapshot(), reference.strip(),
+                        entity.strip(), sector.strip()
                     )
                     st.session_state["_project_id"] = new_id
                     st.session_state["_project_name"] = name.strip()

@@ -738,6 +738,10 @@ STATE_SCHEMA = {
     "ai_cache_enabled": True,
     # الموجز المضغوط بدل الكراسة الخام عند كتابة الأقسام (11-10)
     "compressed_context": True,
+    # قطاع المنافسة: يُخصَّص به البرومبت (14-1) ويُجمَّع عليه قياس الفوز (14-7).
+    # كان يُقرأ في `ai_engine.active_sector` ولا يُكتب في أي مكان، فبقيت
+    # البرومبتات المخصَّصة لقطاع بلا قطاع يفعّلها.
+    "project_sector": "",
     "output_language": DEFAULT_LANGUAGE,
     "ui_language": DEFAULT_UI_LANGUAGE,
 
