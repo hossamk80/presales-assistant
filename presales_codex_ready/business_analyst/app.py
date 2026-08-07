@@ -134,25 +134,24 @@ if nav == "dashboard":
         tones=["ok" if _api_ok else "error", None, None, None],
     )
 
-    # ── مسار العمل ──
-    st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-    theme.block_title(t("dash.workflow"), bi_icon="signpost-split")
-    theme.step_cards([
-        ("gear", t("dash.step1"), t("dash.step1d")),
-        ("cloud-arrow-up", t("dash.step2"), t("dash.step2d")),
-        ("cpu", t("dash.step3"), t("dash.step3d")),
-        ("file-earmark-plus", t("dash.step4"), t("dash.step4d")),
-        ("check2-all", t("dash.step5"), t("dash.step5d")),
-    ])
+    # ── مؤشرات الأداء (14-7) ──
+    #
+    # هنا كانت بطاقات «القدرات» تقول ما يفعله النظام. من فتح اللوحة مئة مرة لا
+    # يحتاج التعريف — يحتاج أن يعرف كيف يبلي قسم العطاءات. وخطوات البدء تبقى
+    # لمن لا منافسة عنده بعد: اللوحة تعرض **قياساً حين يوجد قياس، وإرشاداً حين
+    # لا يوجد** — لا صفراً في كل خانة يوهم بأداء سيّئ بدل تركيب جديد.
+    from views.dashboard import render_performance
 
-    # ── القدرات ──
     st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-    theme.block_title(t("dash.capabilities"), bi_icon="stars")
-    theme.capability_cards([
-        ("lightning-charge", t("dash.cap1"), t("dash.cap1d")),
-        ("bullseye", t("dash.cap2"), t("dash.cap2d")),
-        ("magic", t("dash.cap3"), t("dash.cap3d")),
-    ])
+    if not render_performance():
+        theme.block_title(t("dash.workflow"), bi_icon="signpost-split")
+        theme.step_cards([
+            ("gear", t("dash.step1"), t("dash.step1d")),
+            ("cloud-arrow-up", t("dash.step2"), t("dash.step2d")),
+            ("cpu", t("dash.step3"), t("dash.step3d")),
+            ("file-earmark-plus", t("dash.step4"), t("dash.step4d")),
+            ("check2-all", t("dash.step5"), t("dash.step5d")),
+        ])
 
 
 # ── Projects ──────────────────────────────────────────────────────────────────

@@ -339,6 +339,11 @@ _ADDED_COLUMNS = (
     # 13-1: الشركة صارت صفاً من صفوف لا صفاً وحيداً، فلها اسم وتاريخ إنشاء.
     ("company", "name", "TEXT NOT NULL DEFAULT ''"),
     ("company", "created_at", "TEXT NOT NULL DEFAULT ''"),
+    # 14-7: القطاع عموداً لا حقلاً في الحمولة — نسبة الفوز تُجمَّع عليه، وتجميع
+    # يفكّ حمولة كل منافسة لقراءة حقل واحد لا يُحتمل. وكان `project_sector`
+    # يُقرأ في `ai_engine` (14-1) ولا يُكتب في أي مكان، فبقيت البرومبتات
+    # المخصَّصة لقطاع بلا قطاع يفعّلها.
+    ("projects", "sector", "TEXT NOT NULL DEFAULT ''"),
 )
 
 # أعمدة جدول الشركة بترتيبها في المخطط الحالي — يستعملها الترحيل لنقل ما
@@ -522,7 +527,7 @@ def _now() -> str:
 
 def list_projects() -> list:
     rows = get_conn().execute(
-        "SELECT id, name, reference, entity, created_at, updated_at, "
+        "SELECT id, name, reference, entity, sector, created_at, updated_at, "
         "outcome, outcome_note FROM projects ORDER BY updated_at DESC"
     ).fetchall()
     return [dict(r) for r in rows]
@@ -537,12 +542,13 @@ def set_outcome(project_id: int, outcome: str, note: str = ""):
         )
 
 
-def create_project(name: str, payload: dict, reference: str = "", entity: str = "") -> int:
+def create_project(name: str, payload: dict, reference: str = "", entity: str = "",
+                   sector: str = "") -> int:
     with transaction() as conn:
         cur = conn.execute(
-            "INSERT INTO projects (name, reference, entity, created_at, updated_at, payload) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (name, reference, entity, _now(), _now(),
+            "INSERT INTO projects (name, reference, entity, sector, created_at, "
+            "updated_at, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (name, reference, entity, sector, _now(), _now(),
              json.dumps(payload, ensure_ascii=False)),
         )
         return cur.lastrowid
@@ -568,7 +574,8 @@ def project_revision(project_id: int) -> Optional[int]:
 
 def save_project(project_id: int, payload: dict, name: Optional[str] = None,
                  reference: Optional[str] = None, entity: Optional[str] = None,
-                 expected_revision: Optional[int] = None) -> Optional[int]:
+                 expected_revision: Optional[int] = None,
+                 sector: Optional[str] = None) -> Optional[int]:
     """
     يحفظ المنافسة ويعيد رقم مراجعتها الجديد.
 
@@ -581,7 +588,8 @@ def save_project(project_id: int, payload: dict, name: Optional[str] = None,
     """
     sets = ["updated_at = ?", "payload = ?", "revision = revision + 1"]
     args: list[Any] = [_now(), json.dumps(payload, ensure_ascii=False)]
-    for column, value in (("name", name), ("reference", reference), ("entity", entity)):
+    for column, value in (("name", name), ("reference", reference),
+                          ("entity", entity), ("sector", sector)):
         if value is not None:
             sets.append(f"{column} = ?")
             args.append(value)
@@ -1377,6 +1385,21 @@ def content_block_stats() -> dict:
                        if b["status"] == BLOCK_APPROVED and block_review_due(b))
     stats["used"] = sum(int(b["used_count"] or 0) for b in blocks)
     return stats
+
+
+def project_costs() -> dict:
+    """
+    كلفة إعداد كل منافسة بالدولار: `{project_id: cost}` (14-7).
+
+    تُقرأ من `ai_usage` لا تُقدَّر: كل استدعاء سُجّلت كلفته وقت وقوعه (11-8).
+    منافسة بلا استدعاء **لا ترد هنا أصلاً** ولا ترد بصفر — الصفر كلفة مقيسة،
+    والغياب غياب قياس، والخلط بينهما يهبط بالمتوسّط بمنافسات لم تُعالَج بعد.
+    """
+    rows = get_conn().execute(
+        "SELECT project_id, SUM(cost) AS cost FROM ai_usage "
+        "WHERE project_id IS NOT NULL GROUP BY project_id"
+    ).fetchall()
+    return {int(r["project_id"]): float(r["cost"] or 0.0) for r in rows}
 
 
 # ─── مسرد المصطلحات (14-6) ────────────────────────────────────────────────────

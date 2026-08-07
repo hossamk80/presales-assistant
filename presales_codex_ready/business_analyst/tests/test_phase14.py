@@ -1075,3 +1075,225 @@ def test_the_glossary_reaches_every_section_separately_from_the_style(glossary):
 
     assert ai_engine.has_glossary(extra)
     assert ai_engine.GLOSSARY_MARKER != ai_engine.STYLE_MARKER
+
+
+# ─── 14-7: مؤشرات الأداء ──────────────────────────────────────────────────────
+#
+# لوحة البداية كانت تعرض **تعريفاً**: بطاقات تقول ما يفعله النظام. من فتحها مئة
+# مرة يحتاج أن يعرف كيف يبلي قسم العطاءات لا ما يفعله البرنامج.
+#
+# وثلاث قواعد تحكم كل رقم هنا، وهي ما تُحرَس:
+#   1. غياب القياس ليس صفراً — الصفر يقول «لم نفز قط» والغياب يقول «لا نعرف».
+#   2. العيّنة الصغيرة لا تصير نسبة — «75%» من أربع منافسات تدّعي دقّة موهومة.
+#   3. الوسيط لا المتوسّط في الزمن — منافسة مهجورة تجرّ المتوسّط وحده.
+
+
+@pytest.fixture()
+def metrics(fake_streamlit):
+    from utils import history
+    return history
+
+
+def _p(pid, outcome="", entity="", sector="", created="", updated=""):
+    return {"id": pid, "outcome": outcome, "entity": entity, "sector": sector,
+            "created_at": created, "updated_at": updated}
+
+
+def test_an_unsubmitted_tender_is_not_a_loss(metrics):
+    """
+    عطاء لم نتقدّم له لم نخسره: إدخاله المقام يخفض النسبة **بقرار كان لنا لا
+    علينا**، فيبدو الأداء أسوأ ممّا هو كلّما أحسنّا الفرز.
+    """
+    stats = metrics.win_rate([
+        _p(1, metrics.OUTCOME_WON),
+        _p(2, metrics.OUTCOME_LOST),
+        _p(3, metrics.OUTCOME_NOT_SUBMITTED),
+        _p(4, metrics.OUTCOME_NOT_SUBMITTED),
+    ])
+
+    assert stats["decided"] == 2
+    assert stats["rate"] == 50
+
+
+def test_a_pending_tender_does_not_count_against_us(metrics):
+    """«قيد التقييم» لم تُحسم — إدخالها المقام يخفض النسبة بما لم يقع بعد."""
+    stats = metrics.win_rate([
+        _p(1, metrics.OUTCOME_WON), _p(2, metrics.OUTCOME_PENDING),
+        _p(3, metrics.OUTCOME_UNSET),
+    ])
+
+    assert stats["decided"] == 1
+    assert stats["rate"] == 100
+
+
+def test_no_decided_tender_yields_no_rate_not_zero(metrics):
+    """
+    **القاعدة الأولى**: الصفر يقول «لم نفز قط»، والغياب يقول «لا نعرف» —
+    والفرق بينهما قرار استثمار في قسم عطاءات.
+    """
+    stats = metrics.win_rate([_p(1, metrics.OUTCOME_PENDING)])
+
+    assert stats["rate"] is None
+    assert stats["rate"] != 0
+
+
+def test_a_small_sample_is_not_called_a_rate(metrics):
+    """**القاعدة الثانية**: دون الحدّ تُعرض النسبة عدّاً خاماً لا مئوية."""
+    small = metrics.win_rate([_p(i, metrics.OUTCOME_WON) for i in range(3)])
+    big = metrics.win_rate([_p(i, metrics.OUTCOME_WON)
+                            for i in range(metrics.MIN_DECIDED)])
+
+    assert small["enough"] is False
+    assert big["enough"] is True
+
+
+def test_the_same_entity_spelled_differently_is_one_entity(metrics):
+    """
+    «وزارة الصحة» و«وزاره الصحه» جهة واحدة. عدّهما جهتين يشتّت أهم إشارة في
+    اللوحة — وتوحيدهما مستعمل أصلاً في ذاكرة العطاءات، فلا قاعدة ثانية له.
+    """
+    rows = metrics.win_rate_by([
+        _p(1, metrics.OUTCOME_WON, entity="وزارة الصحة"),
+        _p(2, metrics.OUTCOME_LOST, entity="وزاره الصحه "),
+    ], "entity")
+
+    assert len(rows) == 1
+    assert rows[0]["decided"] == 2
+
+
+def test_a_group_with_no_decided_tender_is_dropped(metrics):
+    """صفٌّ بلا نسبة ولا عدّ ليس قياساً — لا يُعرض."""
+    rows = metrics.win_rate_by([
+        _p(1, metrics.OUTCOME_WON, sector="صحة"),
+        _p(2, metrics.OUTCOME_PENDING, sector="نقل"),
+    ], "sector")
+
+    assert [r["label"] for r in rows] == ["صحة"]
+
+
+def test_the_busiest_group_leads(metrics):
+    """جهة تقدّمنا لها مرة لا تتصدّر لوحةً على جهة تقدّمنا لها عشرين."""
+    projects = [_p(1, metrics.OUTCOME_WON, entity="نادرة")]
+    projects += [_p(i + 10, metrics.OUTCOME_LOST, entity="متكرّرة") for i in range(4)]
+
+    rows = metrics.win_rate_by(projects, "entity")
+
+    assert rows[0]["label"] == "متكرّرة"
+
+
+def test_the_cycle_time_uses_the_median_not_the_mean(metrics):
+    """
+    **القاعدة الثالثة**: منافسة هُجرت وبقيت مفتوحة أشهراً تجرّ المتوسّط إلى رقم
+    لا يصف أي منافسة حقيقية. الوسيط لا يتحرّك بها.
+    """
+    projects = [
+        _p(1, created="2026-01-01 00:00:00", updated="2026-01-06 00:00:00"),   # 5
+        _p(2, created="2026-01-01 00:00:00", updated="2026-01-08 00:00:00"),   # 7
+        _p(3, created="2026-01-01 00:00:00", updated="2026-01-10 00:00:00"),   # 9
+        _p(4, created="2026-01-01 00:00:00", updated="2026-09-01 00:00:00"),   # 243
+    ]
+
+    median = metrics.median_cycle_days(projects)
+    mean = sum(metrics.cycle_days(projects)) / 4
+
+    assert median == 8
+    assert mean > 60
+
+
+def test_a_negative_span_is_dropped(metrics):
+    """قاعدة مستعادة أو ساعة نظام عُدّلت تُنتج مدة سالبة — لا تُحسب."""
+    assert metrics.cycle_days([
+        _p(1, created="2026-05-01 00:00:00", updated="2026-01-01 00:00:00"),
+    ]) == []
+
+
+def test_an_unparsable_timestamp_does_not_crash_the_dashboard(metrics):
+    assert metrics.median_cycle_days([_p(1, created="ليس تاريخاً", updated="")]) is None
+
+
+def test_a_tender_with_no_calls_is_absent_not_free(metrics):
+    """
+    منافسة لم تُعالَج بعد ليست منافسة رخيصة. إدخالها بصفر يهبط بالوسيط ويجعل
+    كلفة الإعداد تبدو أقل ممّا هي كلّما أُنشئت منافسة جديدة.
+    """
+    projects = [_p(1), _p(2), _p(3)]
+    cost = metrics.preparation_cost(projects, {1: 2.0, 2: 4.0})
+
+    assert cost["projects"] == 2
+    assert cost["median"] == 3.0
+    assert cost["total"] == 6.0
+
+
+def test_no_usage_means_no_cost_measurement(metrics):
+    assert metrics.preparation_cost([_p(1)], {})["median"] is None
+
+
+def test_reuse_comes_from_the_content_library_not_a_second_source(metrics):
+    """عدّاد إدراج الكتل المعتمدة (14-4) هو قياس إعادة الاستخدام — لا مصدر ثانٍ."""
+    out = metrics.performance([_p(1)], reuse={"used": 7, "approved": 3})
+
+    assert out["reuse"] == {"insertions": 7, "approved": 3}
+
+
+def test_a_fresh_install_shows_guidance_not_zeros(metrics):
+    """
+    **شرط قبول 14-7 من الجهة الأخرى**: تركيب بلا منافسة واحدة لا يُعرض له صفر
+    في كل خانة — الصفر أداء مقيس، وعرضه مكان الغياب يوهم بأداء سيّئ لا وجود له.
+    """
+    assert metrics.has_measurements(metrics.performance([])) is False
+    assert metrics.has_measurements(metrics.performance([_p(1)])) is True
+
+
+def test_the_dashboard_shows_measurement_once_a_tender_exists(temp_db, fake_streamlit):
+    """
+    شرط القبول: لوحة البداية تعرض **قياساً لا تعريفاً**. والقياس يُقرأ من
+    القاعدة فعلاً — لا من ثوابت في الشاشة.
+    """
+    from views import dashboard
+
+    temp_db.create_project("منافسة", {}, entity="وزارة الصحة", sector="صحة")
+    project = temp_db.list_projects()[0]
+    temp_db.set_outcome(project["id"], "فاز")
+
+    assert dashboard.render_performance() is True
+    assert dashboard._metrics()["win"]["won"] == 1
+
+
+def test_an_empty_database_hands_the_dashboard_back_to_the_steps(temp_db, fake_streamlit):
+    from views import dashboard
+
+    assert dashboard.render_performance() is False
+
+
+def test_the_sector_is_stored_as_a_column_not_only_in_the_payload(temp_db):
+    """
+    التجميع على القطاع يفكّ حمولة كل منافسة لولا العمود — وقراءة JSON لكل صفّ
+    لحقل واحد لا تُحتمل مع نموّ القاعدة.
+    """
+    pid = temp_db.create_project("م", {}, entity="جهة", sector="صحة")
+
+    assert temp_db.list_projects()[0]["sector"] == "صحة"
+    temp_db.save_project(pid, {}, sector="نقل")
+    assert temp_db.list_projects()[0]["sector"] == "نقل"
+
+
+def test_an_older_project_reads_its_missing_sector_without_crashing(temp_db):
+    """قاعدة أُنشئت قبل هذا البند: العمود يُضاف فارغاً ولا يُسقط اللوحة."""
+    from utils import history
+
+    pid = temp_db.create_project("م", {})
+    temp_db.set_outcome(pid, "فاز")
+
+    out = history.performance(temp_db.list_projects())
+    assert out["by_sector"] == []
+    assert out["win"]["won"] == 1
+
+
+def test_the_cost_reads_recorded_usage_not_an_estimate(temp_db):
+    """الكلفة مقيسة وقت وقوع الاستدعاء (11-8) — لا تُقدَّر من عدد الأقسام."""
+    pid = temp_db.create_project("م", {})
+    for cost in (0.25, 0.75):
+        temp_db.log_ai_usage(pid, "م", "write", "gemini", "flash", 100, 0, 50,
+                             cost, 900, "ok", "2026-08")
+
+    assert temp_db.project_costs() == {pid: 1.0}

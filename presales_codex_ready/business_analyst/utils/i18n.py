@@ -115,7 +115,6 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "dash.company_name": {"ar": "اسم الشركة", "en": "Company"},
     "dash.sections_done": {"ar": "الأقسام المكتملة", "en": "Sections drafted"},
     "dash.workflow": {"ar": "خطوات سير العمل", "en": "Workflow"},
-    "dash.capabilities": {"ar": "قدرات المنصة", "en": "Capabilities"},
     "dash.tokens_unit": {"ar": "توكن", "en": "tokens"},
     "dash.not_loaded": {"ar": "لم تُحمَّل", "en": "Not loaded"},
     "dash.step1": {"ar": "١. الإعداد الأولي", "en": "1. Initial setup"},
@@ -142,21 +141,6 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "dash.step5d": {
         "ar": "راجع من ثلاث زوايا وصدّر Word أو PDF.",
         "en": "Three-lens review, then export Word or PDF.",
-    },
-    "dash.cap1": {"ar": "تحليل ذكي شامل", "en": "Full AI analysis"},
-    "dash.cap1d": {
-        "ar": "Go/No-Go · مصفوفة التقييم · فجوات الامتثال",
-        "en": "Go/No-Go · evaluation matrix · compliance gaps",
-    },
-    "dash.cap2": {"ar": "منشئ الوثائق", "en": "Document builder"},
-    "dash.cap2d": {
-        "ar": "هيكل مقترح · حقن القوالب · تصدير Word و PDF",
-        "en": "Proposed outline · template injection · Word & PDF",
-    },
-    "dash.cap3": {"ar": "مراجعة ثلاثية", "en": "Three-lens review"},
-    "dash.cap3d": {
-        "ar": "فنية · تجارية · قانونية · تطبيق بنقرة",
-        "en": "Technical · commercial · legal · one-click apply",
     },
 
     # ── المنافسات / Tenders ──
@@ -1932,6 +1916,58 @@ UI_STRINGS: dict[str, dict[str, str]] = {
         "en": "No approved block fits this section yet — add one from the company file.",
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
+
+    # ── مؤشرات الأداء (14-7) / Performance metrics ──
+    "kpi.title": {"ar": "مؤشرات الأداء", "en": "Performance"},
+    "kpi.hint": {
+        "ar": "مقيسة من منافساتك المسجَّلة ومن استهلاك النماذج — لا تقديرات.",
+        "en": "Measured from your recorded tenders and model usage — not estimates.",
+    },
+    "kpi.win_rate": {"ar": "نسبة الفوز", "en": "Win rate"},
+    "kpi.win_raw": {
+        "ar": "{won} من {decided} محسومة",
+        "en": "{won} of {decided} decided",
+    },
+    "kpi.cycle": {"ar": "زمن الإعداد (وسيط)", "en": "Preparation time (median)"},
+    "kpi.days": {"ar": "{n} يوماً", "en": "{n} day(s)"},
+    "kpi.cost": {"ar": "كلفة الإعداد", "en": "Preparation cost"},
+    "kpi.cost_value": {
+        "ar": "${median} للمنافسة · ${total} إجمالاً",
+        "en": "${median} per tender · ${total} total",
+    },
+    "kpi.reuse": {"ar": "إعادة الاستخدام", "en": "Reuse"},
+    "kpi.reuse_value": {
+        "ar": "{n} إدراجاً من {blocks} كتلة معتمدة",
+        "en": "{n} insertion(s) from {blocks} approved block(s)",
+    },
+    "kpi.no_measure": {"ar": "لا قياس بعد", "en": "Not measured yet"},
+    "kpi.no_outcomes": {
+        "ar": "لم تُسجَّل نتيجة أي منافسة بعد. سجّل «فاز» أو «خسر» في صفحة "
+              "المنافسات لتبدأ نسبة الفوز في القياس.",
+        "en": "No tender outcome recorded yet. Mark tenders as won or lost on the "
+              "tenders page to start measuring the win rate.",
+    },
+    "kpi.small_sample": {
+        "ar": "العدّ خام لا نسبة: النسبة تحتاج {n} منافسات محسومة على الأقل — "
+              "دونها تدّعي دقّة لا وجود لها.",
+        "en": "Shown as a raw count, not a rate: a rate needs at least {n} decided "
+              "tenders — below that it claims a precision it does not have.",
+    },
+    "kpi.by_entity": {"ar": "حسب الجهة", "en": "By entity"},
+    "kpi.by_sector": {"ar": "حسب القطاع", "en": "By sector"},
+    "kpi.no_entity": {
+        "ar": "لا جهة لها منافسة محسومة بعد.",
+        "en": "No entity has a decided tender yet.",
+    },
+    "kpi.no_sector": {
+        "ar": "لا قطاع مسجَّل بعد — أضِف القطاع عند إنشاء المنافسة.",
+        "en": "No sector recorded yet — set it when creating a tender.",
+    },
+    "proj.sector": {"ar": "القطاع", "en": "Sector"},
+    "proj.sector_help": {
+        "ar": "يُجمَّع عليه قياس الفوز، وتُخصَّص به تعليمات النموذج لهذا القطاع.",
+        "en": "Win rate is grouped by it, and model instructions can be scoped to it.",
+    },
 
     # ── مسرد المصطلحات (14-6) / Glossary ──
     "gl.title": {"ar": "مسرد المصطلحات", "en": "Terminology glossary"},
