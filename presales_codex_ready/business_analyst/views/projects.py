@@ -14,6 +14,7 @@ from utils.state import (
     STATE_SCHEMA,
     DEFAULT_COMPLIANCE_DF,
     DEFAULT_BOQ_DF,
+    PIPELINE_STAGES as STATE_SCHEMA_PIPELINE_STAGES,
     get_project_snapshot,
     load_state_snapshot,
     reset_sections,
@@ -220,6 +221,57 @@ def close_project():
     st.session_state.pop("_saved_fingerprint", None)
 
 
+def _render_pipeline():
+    """
+    خطّ الأنابيب واستراتيجية العرض (14-8) للمنافسة المفتوحة.
+
+    الحقول أربعة، و**واحد منها فقط يصل النموذج**: «لماذا نفوز». المرحلة والمالك
+    واحتمال الفوز إدارة داخلية — واحتمال الفوز خصوصاً رقم لا يُكتب في عرض أبداً،
+    فمنعه بنيوي في `state.strategy_block` لا تعليمة نرجو أن يتبعها النموذج.
+    """
+    may_edit = auth.can("projects.edit")
+
+    with st.expander(t("pipe.title"), expanded=False):
+        st.caption(t("pipe.hint"))
+
+        c_stage, c_owner, c_prob = st.columns(3)
+        with c_stage:
+            stages = list(STATE_SCHEMA_PIPELINE_STAGES)
+            current = st.session_state.get("pipeline_stage", "")
+            st.session_state["pipeline_stage"] = st.selectbox(
+                t("pipe.stage"), stages,
+                index=stages.index(current) if current in stages else 0,
+                format_func=lambda s: s or t("common.not_set"),
+                disabled=not may_edit,
+            )
+        with c_owner:
+            st.session_state["pipeline_owner"] = st.text_input(
+                t("pipe.owner"),
+                value=str(st.session_state.get("pipeline_owner", "") or ""),
+                disabled=not may_edit,
+            )
+        with c_prob:
+            st.session_state["win_probability"] = st.slider(
+                t("pipe.probability"), min_value=0, max_value=100, step=5,
+                value=int(st.session_state.get("win_probability", 0) or 0),
+                disabled=not may_edit, help=t("pipe.probability_help"),
+            )
+
+        st.session_state["why_we_win"] = st.text_area(
+            t("pipe.why"),
+            value=str(st.session_state.get("why_we_win", "") or ""),
+            height=110, placeholder=t("pipe.why_ph"), help=t("pipe.why_help"),
+            disabled=not may_edit,
+        )
+        # يُقال صراحةً أيّ حقل يغادر إلى النموذج وأيّها لا — لئلا يكتب أحد
+        # معلومة داخلية في الخانة الوحيدة التي تصل العرض.
+        st.caption(t("pipe.only_why_reaches_model"))
+        if str(st.session_state.get("why_we_win", "") or "").strip():
+            st.success(t("pipe.why_active"))
+        else:
+            st.info(t("pipe.why_empty"))
+
+
 def _render_history(projects: list, pid):
     """
     ذاكرة العطاءات: سجل النتائج، والمنافسات السابقة المشابهة للمفتوحة الآن.
@@ -368,6 +420,10 @@ def render():
                 st.rerun()
     else:
         st.info(t("proj.none_open"))
+
+    # 14-8: خطّ الأنابيب واستراتيجية العرض — للمنافسة المفتوحة وحدها
+    if pid is not None:
+        _render_pipeline()
 
     notice = st.session_state.pop("_merge_notice", None)
     if notice:

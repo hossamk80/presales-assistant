@@ -1297,3 +1297,152 @@ def test_the_cost_reads_recorded_usage_not_an_estimate(temp_db):
                              cost, 900, "ok", "2026-08")
 
     assert temp_db.project_costs() == {pid: 1.0}
+
+
+# ─── 14-8: خطّ الأنابيب واستراتيجية العرض ─────────────────────────────────────
+#
+# المنافسة كانت إمّا مفتوحة أو مغلقة بلا موضع بينهما، وكل قسم يُكتب بمعزل عن
+# الحجّة التي تُميّزنا — فيخرج العرض صحيحاً بلا سبب يجعل الجهة تختارنا.
+#
+# وما يُحرَس هنا قبل كل شيء **الفصل**: من الحقول الأربعة حقل واحد يصل النموذج.
+# احتمال الفوز رقم لا يُكتب في عرض أبداً، والمالك اسم موظف، والمرحلة إدارة
+# داخلية. المنع بنيوي — لا يصل أصلاً — لا تعليمة نرجو أن يتبعها نموذج احتمالي.
+
+
+@pytest.fixture()
+def pipeline(fake_streamlit):
+    from utils import state
+
+    state.st.session_state.update({
+        "why_we_win": "فريق محلي معتمد، ومنهجية نفّذناها لهذه الجهة مرتين.",
+        "pipeline_stage": "الإعداد",
+        "pipeline_owner": "أحمد الغامدي",
+        "win_probability": 40,
+    })
+    return state
+
+
+def test_the_strategy_reaches_the_model(pipeline):
+    """**شرط قبول 14-8**: حقل الاستراتيجية يظهر أثره في نص الأقسام."""
+    block = pipeline.strategy_block()
+
+    assert "فريق محلي معتمد" in block
+    assert "استراتيجية العرض" in block
+
+
+def test_the_win_probability_never_reaches_the_model(pipeline):
+    """
+    **الحارس الأهم في هذا البند.** تسريب «احتمال فوزنا 40٪» إلى نصّ يقرأه
+    المُقيّم كارثة لا تُصلَح. والنموذج لا يُؤتمن على تمييز ما يُذكر ممّا لا
+    يُذكر حين يصله كلاهما في سياق واحد — فالمنع بنيوي: لا يصل أصلاً.
+    """
+    block = pipeline.strategy_block()
+
+    assert "40" not in block
+    assert "احتمال" not in block
+
+
+def test_the_owner_and_stage_stay_internal(pipeline):
+    """المالك اسم موظف، والمرحلة إدارة داخلية لا تخصّ الجهة."""
+    block = pipeline.strategy_block()
+
+    assert "أحمد الغامدي" not in block
+    assert "الإعداد" not in block
+
+
+def test_every_internal_field_is_absent_from_the_block(pipeline):
+    """
+    الحارس نفسه معمّماً على القائمة المعلنة، فإضافة حقل داخلي جديد لاحقاً
+    يسقط هنا إن سُرّب — بدل أن يُكتشف في عرض سُلّم.
+    """
+    block = pipeline.strategy_block()
+
+    for field in pipeline.INTERNAL_PIPELINE_FIELDS:
+        value = str(pipeline.st.session_state.get(field, "") or "").strip()
+        if value and value != "0":
+            assert value not in block, field
+
+
+def test_no_strategy_means_no_injected_block(pipeline):
+    """بلا استراتيجية مكتوبة لا تُحقن كتلة — ترويسة فارغة تُبدّد سياقاً."""
+    pipeline.st.session_state["why_we_win"] = "   "
+
+    assert pipeline.strategy_block() == ""
+
+
+def test_the_block_asks_for_effect_not_repetition(pipeline):
+    """
+    نسخ جملة الاستراتيجية حرفياً في كل قسم يجعل العرض يكرّر شعاراً. المطلوب أن
+    ينعكس المعنى في اختيار ما يُبرَز.
+    """
+    block = pipeline.strategy_block()
+
+    assert "لا تنسخها" in block
+    assert "الأثر مطلوب لا الترديد" in block
+
+
+def test_the_strategy_cannot_license_an_unsupported_claim(pipeline):
+    """
+    حجّة الفوز ليست إذناً بادّعاء ما لا دليل عليه — القاعدة الثالثة من القواعد
+    الثابتة (14-2) تبقى فوقها، وتُذكَّر هنا صراحةً لأن هذا الحقل يغري بها.
+    """
+    block = pipeline.strategy_block()
+
+    assert "لا يسنده دليل" in block
+
+
+def test_the_strategy_reaches_the_section_writer(pipeline):
+    """
+    الحقن من `_writing_context` فيصل **كل** قسم — لا قسم يتبع الاستراتيجية
+    وآخر لا.
+    """
+    from views import doc_builder
+
+    _rfp, extra = doc_builder._writing_context({"key": "intro", "title": "المقدمة"})
+
+    assert "فريق محلي معتمد" in extra
+    assert "40" not in extra.replace("4400", "")   # لا احتمال فوز في السياق
+
+
+def test_the_pipeline_fields_survive_a_save_and_reopen(temp_db, fake_streamlit):
+    """
+    الحقول الأربعة في `STATE_SCHEMA`، فتُحفظ مع المنافسة وتعود بفتحها — وإلا
+    كُتبت الاستراتيجية مرة وضاعت عند أول إغلاق.
+    """
+    from utils import state
+
+    for key in ("pipeline_stage", "pipeline_owner", "win_probability", "why_we_win"):
+        assert key in state.STATE_SCHEMA, key
+
+    state.st.session_state.update({
+        "why_we_win": "حجّتنا", "pipeline_stage": "المراجعة",
+        "pipeline_owner": "سارة", "win_probability": 60,
+    })
+    snapshot = state.get_project_snapshot()
+    assert snapshot["why_we_win"] == "حجّتنا"
+
+    state.st.session_state["why_we_win"] = ""
+    state.load_state_snapshot(snapshot)
+    assert state.st.session_state["why_we_win"] == "حجّتنا"
+    assert state.st.session_state["win_probability"] == 60
+
+
+def test_the_forecast_does_not_feed_the_measured_win_rate(temp_db, fake_streamlit):
+    """
+    احتمال الفوز **تقدير بشري**، ونسبة الفوز في 14-7 **محسوبة من نتائج مسجَّلة**.
+    خلطهما يجعل لوحة القياس تعرض ظنّاً بلباس رقم — وهو نقض لبند 14-7 كلّه.
+    """
+    from utils import history
+
+    pid = temp_db.create_project("م", {"win_probability": 90})
+    metrics = history.performance(temp_db.list_projects())
+
+    assert metrics["win"]["rate"] is None      # لا نتيجة مسجَّلة ⇒ لا قياس
+    assert metrics["win"]["decided"] == 0
+
+
+def test_a_stage_outside_the_list_does_not_break_the_panel(pipeline):
+    """قيمة قديمة أو محرَّفة تعود إلى «غير محددة» ولا تُسقط الشاشة."""
+    assert "" in pipeline.PIPELINE_STAGES
+    assert "الإعداد" in pipeline.PIPELINE_STAGES
+    assert pipeline.PIPELINE_STAGES[0] == ""
