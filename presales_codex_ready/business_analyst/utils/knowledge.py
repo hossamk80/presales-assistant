@@ -9,6 +9,7 @@ utils/knowledge.py — مستودع معرفة الشركة + فهرسة الك�
   ما يخصّه من بنودها بدل النص الكامل.
 """
 import hashlib
+import re
 import struct
 import streamlit as st
 from typing import Optional
@@ -24,12 +25,24 @@ EMBED_DIMS = 768
 CHUNK_CHARS = 1800
 CHUNK_OVERLAP = 200
 
+# فئة عرض سابق يُستخرج منه **الأسلوب وحده** (14-5). انظر القسم في آخر الملف.
+PROPOSAL_SAMPLE = "proposal_sample"
+
 CATEGORIES = {
     "cv": "السير الذاتية",
     "cert": "الشهادات والاعتمادات",
     "project": "المشاريع السابقة",
+    PROPOSAL_SAMPLE: "عروض سابقة (للأسلوب)",
     "other": "مستندات أخرى",
 }
+
+# الفئات التي تصلح **مصدر حقائق** يُحقن في التوليد.
+#
+# العرض السابق ليس منها عمداً: هو مليء بأسماء عملاء وأرقام والتزامات تخصّ
+# **منافسة أخرى**، فلو دخل مجمع الاسترجاع لنسخ النموذج تلك الوقائع إلى عرض
+# جديد — وهو ما تمنعه القاعدتان 3 و 4 من القواعد الثابتة (لا اختراع · لا ادّعاء
+# حيازة). منه يُؤخذ **شكل الكتابة** لا مضمونها.
+CONTENT_CATEGORIES = [key for key in CATEGORIES if key != PROPOSAL_SAMPLE]
 
 # أقصى عدد مقاطع تُحقن في تعليمات توليد قسم واحد
 DEFAULT_TOP_K = 6
@@ -189,8 +202,11 @@ def search(query: str, top_k: int = DEFAULT_TOP_K,
     """
     يبحث في المستودع عن المقاطع الأقرب للاستعلام.
     يُرجع [{text, doc_name, category, score}] مرتّبة تنازلياً.
+
+    بلا فئات مطلوبة يبحث في **فئات المحتوى وحدها**: العروض السابقة (14-5) خارج
+    المجمع دائماً — تُقرأ أسلوباً لا مصدرَ وقائع.
     """
-    rows = db.all_kb_chunks(categories)
+    rows = db.all_kb_chunks(categories or CONTENT_CATEGORIES)
     if not rows:
         return []
 
@@ -344,3 +360,137 @@ def rfp_context_for(text: str, query: str, top_k: int = RFP_TOP_K) -> str:
         "\n\n--- بنود كراسة الشروط ذات الصلة بهذا القسم (مسترجعة لفظياً) ---\n"
         + focused
     )
+
+
+# ─── بصمة الأسلوب من عرض سابق (14-5) ──────────────────────────────────────────
+#
+# المشكلة: عرضان من الشركة نفسها يخرجان بنبرتين. الأول يكتب فقرات طويلة بصيغة
+# المتكلم الجمع، والثاني نقاطاً مقتضبة بصيغة المبني للمجهول — فيبدوان صادرين
+# عن جهتين. لجنة الفحص لا تقيس هذا، لكن القارئ يشعر به.
+#
+# **البصمة تُحسب حسابياً لا بالنموذج**، وهذا قرار لا اختصار:
+#
+# 1. **لا تُنفق توكناً**: استخراجها بالنموذج يعني استدعاءً إضافياً لكل عرض.
+# 2. **لا تنجرف**: استدعاءان لنموذج على النص نفسه يعطيان وصفين مختلفين قليلاً،
+#    فيخرج العرضان بنبرتين متقاربتين لا واحدة — وشرط قبول هذا البند «نبرة
+#    واحدة» لا «نبرتان متشابهتان». الحساب يعطي الرقم نفسه دائماً.
+# 3. **لا تُسرّب واقعة**: مقياس عددي لطول الجملة لا يحمل اسم عميل ولا رقم عقد،
+#    بينما وصفٌ حرّ يكتبه النموذج عن عرض سابق قد يحمل الاثنين.
+#
+# وتحليل البنية مأخوذ من `document_blocks.parse_blocks` القائمة — هي أصلاً تعرف
+# العناوين والقوائم والجداول، فلا داعي لمحلّل ثانٍ.
+
+# أدنى عدد كلمات في عيّنة يُعتد ببصمتها. نصّ أقصر من ذلك يصف نفسه لا أسلوب
+# الشركة، وبصمة من فقرة واحدة أسوأ من لا بصمة.
+MIN_SAMPLE_WORDS = 120
+
+# ضمائر المتكلم الجمع في اللغتين — بها يُقاس «نحن نلتزم» مقابل «يُلتزم».
+_FIRST_PERSON = (
+    "نحن", "نلتزم", "نقدّم", "نقدم", "سنقوم", "سنقدّم", "سنقدم", "لدينا",
+    "خبرتنا", "فريقنا", "منهجيتنا", "we ", "our ", "we'll", "we will",
+)
+
+
+def _words(text: str) -> list:
+    return [w for w in re.split(r"\s+", text or "") if w]
+
+
+def _sentences(text: str) -> list:
+    parts = re.split(rf"[{re.escape('.؟!?')}]+", text or "")
+    return [p.strip() for p in parts if p.strip()]
+
+
+def style_fingerprint(text: str) -> dict:
+    """
+    يقيس **شكل** النص لا مضمونه. يعيد `{}` لعيّنة أقصر من أن تصف أسلوباً.
+
+    كل قيمة هنا عدد أو نسبة — لا سلسلة حرّة منقولة من العيّنة. فما يخرج من هذه
+    الدالة لا يمكن أن يحمل اسم عميل ولا رقم عقد ولا التزاماً من منافسة أخرى،
+    ولو كانت العيّنة مليئة بالثلاثة.
+    """
+    from utils.document_blocks import parse_blocks
+
+    body = (text or "").strip()
+    if len(_words(body)) < MIN_SAMPLE_WORDS:
+        return {}
+
+    blocks = list(parse_blocks(body))
+    paragraphs = [b for b in blocks if b["type"] == "paragraph"]
+    bullets = [b for b in blocks if b["type"] in ("bullets", "numbered")]
+    headings = [b for b in blocks if b["type"] == "heading"]
+    tables = [b for b in blocks if b["type"] == "table"]
+
+    sentences = []
+    for para in paragraphs:
+        sentences.extend(_sentences(para["text"]))
+
+    sentence_words = (
+        round(sum(len(_words(s)) for s in sentences) / len(sentences))
+        if sentences else 0
+    )
+    para_sentences = (
+        round(len(sentences) / len(paragraphs)) if paragraphs else 0
+    )
+    list_items = sum(len(b.get("items") or []) for b in bullets)
+
+    prose_units = len(paragraphs) + len(bullets)
+    bullet_share = round(100 * len(bullets) / prose_units) if prose_units else 0
+
+    lowered = body.lower()
+    first_person = sum(lowered.count(marker.lower()) for marker in _FIRST_PERSON)
+    # نسبة إلى عدد الجمل لا إلى الطول: نصّ طويل ليس أكثر «نحن» بالضرورة
+    first_person_share = (
+        round(100 * min(first_person, len(sentences)) / len(sentences))
+        if sentences else 0
+    )
+
+    return {
+        "sentence_words": sentence_words,
+        "paragraph_sentences": max(para_sentences, 1) if paragraphs else 0,
+        "bullet_share": bullet_share,
+        "list_items": list_items,
+        "heading_levels": sorted({b["level"] for b in headings}),
+        "uses_tables": bool(tables),
+        "first_person_share": first_person_share,
+    }
+
+
+def _sample_texts() -> list:
+    """نصوص العيّنات من المستودع — مقاطعها بترتيب تخزينها."""
+    rows = db.all_kb_chunks([PROPOSAL_SAMPLE])
+    return [row["text"] for row in rows]
+
+
+def company_style() -> dict:
+    """
+    بصمة أسلوب الشركة من كل عيّناتها مجتمعة، أو `{}` إن لم تُرفع عيّنة.
+
+    العيّنات تُدمج نصّاً واحداً قبل القياس لا تُقاس كلٌّ على حدة ثم يُؤخذ
+    متوسّطها: المتوسّط يعطي عرضاً قصيراً وزنَ عرض ضخم، والأسلوب السائد هو ما
+    نريد لا الأسلوب المتوسّط.
+    """
+    texts = _sample_texts()
+    if not texts:
+        return {}
+    return style_fingerprint("\n\n".join(texts))
+
+
+def style_context_block() -> str:
+    """
+    البصمة مصاغةً تعليماتٍ تُحقن مع كل قسم — أو نصاً فارغاً إن لا عيّنة.
+
+    **الفراغ عند غياب العيّنة مقصود**: تعليمة أسلوب مبنية على لا شيء تدفع
+    النموذج إلى نبرة مخترعة، وهي أسوأ من تركه على افتراضه.
+
+    ولأن البصمة تُحسب حسابياً، هذه الكتلة **متطابقة حرفاً بحرف** بين عرضين ما
+    دامت العيّنات نفسها — وهذا هو شرط قبول 14-5: نبرة واحدة لا نبرتان متقاربتان.
+    """
+    from utils import ai_engine
+
+    return ai_engine.style_instruction(company_style())
+
+
+def sample_stats() -> dict:
+    """كم عيّنة رُفعت وهل تكفي لبصمة — تعرضهما الواجهة."""
+    docs = [d for d in db.list_kb_documents() if d["category"] == PROPOSAL_SAMPLE]
+    return {"documents": len(docs), "ready": bool(company_style())}
