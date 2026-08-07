@@ -256,6 +256,96 @@ def has_style_instruction(text: str) -> bool:
     return STYLE_MARKER in str(text or "")
 
 
+# ─── مسرد المصطلحات (14-6) ────────────────────────────────────────────────────
+#
+# «SLA» تخرج «اتفاقية مستوى الخدمة» في المنهجية و«مستوى الخدمة» في الدعم و«SLA»
+# في الملاحق — ثلاث صيغ في مستند واحد. الأسوأ من قراءتها ترجمةً غير مضبوطة أن
+# يظنّها المُقيّم ثلاثة مفاهيم لا واحداً.
+#
+# **المسرد يوحّد الكلمة، وبصمة الأسلوب (14-5) توحّد الشكل** — كتلتان منفصلتان
+# لا واحدة: مصدرهما مختلف (جدول يحرّره إنسان مقابل قياس يُحسب من عيّنة)، ودورة
+# تحديثهما مختلفة، ودمجهما يجعل تعديل مصطلح يبدو تغييراً في الأسلوب.
+#
+# **والتوحيد شقّان لا شقّ**: تعليمة تسبق الكتابة (هنا)، وفحص حسابي يرصد ما أفلت
+# بعدها (`utils/consistency.py`). التعليمة وحدها رجاء موجَّه إلى نموذج احتمالي،
+# وشرط قبول هذا البند «صيغة واحدة في كل العرض» لا «صيغة واحدة غالباً».
+
+GLOSSARY_MARKER = "مسرد المصطلحات المعتمد"
+
+# أقصى عدد مصطلحات تُحقن مع قسم واحد. مسرد بمئتي مصطلح في كل قسم يُبدّد نافذة
+# السياق على ما لا يرد في هذه المنافسة أصلاً.
+GLOSSARY_TOP_N = 25
+
+
+def relevant_terms(text: str, limit: int = GLOSSARY_TOP_N) -> list:
+    """
+    مصطلحات المسرد التي **ترد فعلاً** في نصّ هذه المنافسة.
+
+    الترشيح بالورود لا بالتشابه: مصطلح لا يذكره الكرّاس ولا عنوان القسم لن
+    يُكتب، وحقنه إنفاق بلا مقابل. ويُطابَق المصطلح أو أيٌّ من صيغه المرفوضة —
+    فكرّاس كتبها بالصيغة الخاطئة هو أحوج ما يكون إلى التوحيد.
+
+    الترتيب من `list_glossary` (أبجدي ثابت) لا من ترتيب الورود: كتلة تتغيّر
+    بتغيّر مواضع الكلمات في الكرّاس تنقض الغاية من هذا البند.
+    """
+    from utils import db
+
+    haystack = str(text or "").lower()
+    if not haystack:
+        return []
+
+    found = []
+    for entry in db.list_glossary():
+        forms = [entry["term"], entry.get("preferred_ar", ""),
+                 entry.get("preferred_en", "")] + list(entry["variants"])
+        if any(f.strip() and f.strip().lower() in haystack for f in forms):
+            found.append(entry)
+        if len(found) >= limit:
+            break
+    return found
+
+
+def glossary_instruction(entries: list, language: str = DEFAULT_LANGUAGE) -> str:
+    """
+    المصطلحات مصاغةً تعليمات — أو نصاً فارغاً لمسرد فارغ.
+
+    الصيغ المرفوضة تُذكر صراحةً لا الصيغة المعتمدة وحدها: «اكتب كذا» أضعف من
+    «اكتب كذا ولا تكتب كذا»، والثانية هي ما يمنع النموذج من مرادف يراه أفصح.
+    """
+    if not entries:
+        return ""
+
+    from utils import db
+
+    lines = [
+        f"\n\n--- {GLOSSARY_MARKER} (صيغة واحدة في كل أقسام العرض) ---",
+        "استعمل هذه الصيغ حرفياً، ولا تستبدل بها مرادفاً ولو بدا أفصح:",
+    ]
+    for entry in entries:
+        preferred = db.preferred_form(entry, language)
+        line = f"- «{entry['term']}» ← اكتبها: {preferred}"
+        rejected = [v for v in entry["variants"] if v != preferred]
+        if rejected:
+            line += " · ولا تكتب: " + " · ".join(f"«{v}»" for v in rejected)
+        if entry.get("note"):
+            line += f" ({entry['note']})"
+        lines.append(line)
+
+    lines.append(
+        "توحيد المصطلح عبر الأقسام مقصود: صيغتان لمفهوم واحد تُقرآن مفهومين."
+    )
+    return "\n".join(lines)
+
+
+def glossary_context_block(text: str, language: str = DEFAULT_LANGUAGE) -> str:
+    """كتلة المسرد الجاهزة للحقن، مرشّحةً بما يرد في هذه المنافسة."""
+    return glossary_instruction(relevant_terms(text), language)
+
+
+def has_glossary(text: str) -> bool:
+    return GLOSSARY_MARKER in str(text or "")
+
+
 # ─── تحرير البرومبتات (14-1) ──────────────────────────────────────────────────
 #
 # النصوص أدناه (`PROMPTS` · `EXTRACT_PROMPTS` · `REVIEW_LENSES`) هي **الافتراضي

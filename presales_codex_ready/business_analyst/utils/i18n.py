@@ -1933,6 +1933,50 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── مسرد المصطلحات (14-6) / Glossary ──
+    "gl.title": {"ar": "مسرد المصطلحات", "en": "Terminology glossary"},
+    "gl.intro": {
+        "ar": "يوحّد ترجمة المصطلح الفني عبر كل أقسام العرض: صيغة معتمدة واحدة "
+              "تُحقن في التوليد، وفحص حسابي يرصد ما خالفها في لوحة المراجعة.",
+        "en": "Unifies each technical term across every section: one approved form "
+              "is injected into generation, and a calculated check flags anything "
+              "that deviates, in the review panel.",
+    },
+    "gl.empty": {
+        "ar": "المسرد فارغ. أضِف أول مصطلح — «SLA» مثلاً — ليخرج بصيغة واحدة.",
+        "en": "The glossary is empty. Add a first term — \"SLA\", say — so it "
+              "comes out in a single form.",
+    },
+    "gl.count": {"ar": "{n} مصطلحاً في المسرد.", "en": "{n} term(s) in the glossary."},
+    "gl.add": {"ar": "مصطلح جديد", "en": "New term"},
+    "gl.term": {"ar": "المصطلح", "en": "Term"},
+    "gl.term_help": {
+        "ar": "الصيغة المصدر كما ترد في الكرّاس — «SLA» أو «KPI».",
+        "en": "The source form as it appears in the tender — \"SLA\" or \"KPI\".",
+    },
+    "gl.preferred_ar": {"ar": "الصيغة المعتمدة (عربي)", "en": "Approved form (Arabic)"},
+    "gl.preferred_en": {"ar": "الصيغة المعتمدة (إنجليزي)", "en": "Approved form (English)"},
+    "gl.variants": {"ar": "الصيغ المرفوضة", "en": "Rejected forms"},
+    "gl.variants_help": {
+        "ar": "افصل بينها بـ · أو فاصلة. بها وحدها يصير التوحيد قابلاً للفحص — "
+              "بلا معرفة الخطأ لا يُرصد الانحراف.",
+        "en": "Separate with · or commas. These alone make the rule checkable — "
+              "without knowing the wrong form, drift cannot be detected.",
+    },
+    "gl.no_variants": {
+        "ar": "بلا صيغ مرفوضة: التعليمة تُحقن، لكن لا يُرصد خروج عنها.",
+        "en": "No rejected forms: the instruction is injected, but deviations "
+              "cannot be flagged.",
+    },
+    "gl.note": {"ar": "ملاحظة", "en": "Note"},
+    "gl.term_required": {
+        "ar": "❌ المصطلح وصيغة معتمدة واحدة على الأقل مطلوبان.",
+        "en": "❌ The term and at least one approved form are required.",
+    },
+    "gl.term_taken": {"ar": "❌ المصطلح موجود في المسرد.", "en": "❌ Term already in the glossary."},
+    "gl.saved": {"ar": "✅ حُفظ المصطلح.", "en": "✅ Term saved."},
+    "gl.deleted": {"ar": "✅ حُذف المصطلح.", "en": "✅ Term deleted."},
+
     # ── بصمة الأسلوب من عرض سابق (14-5) / Style fingerprint ──
     "sty.upload_hint": {
         "ar": "يُقرأ من هذه العيّنة **شكل الكتابة وحده** — طول الجملة والفقرة "

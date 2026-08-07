@@ -302,6 +302,8 @@ def _render_consistency(sections: list):
             st.session_state.get("df_timeline"),
             st.session_state.get("project_context"),
             st.session_state.get("timeline_contract_weeks"),
+            # 14-6: الصيغة المعتمدة تتبع لغة المخرجات لا لغة الواجهة
+            language=st.session_state.get("output_language", "ar"),
         )
         if not findings:
             st.success(t("cs.ok"))
