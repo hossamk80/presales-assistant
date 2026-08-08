@@ -785,6 +785,12 @@ STATE_SCHEMA = {
     "embed_model": "gemini-embedding-001",
     # حدّ الإنفاق الشهري بالدولار — 0 يعني بلا حدّ (11-9)
     "ai_month_budget": 0.0,
+    # بيانات اعتماد الموصّلات الخارجية (14-10). تُعامَل معاملة مفاتيح
+    # الموفّرين: إعداد للمنشأة لا للمنافسة، ولا تصل النموذج بأي مسار.
+    "cn_odoo_url": "",
+    "cn_odoo_db": "",
+    "cn_odoo_username": "",
+    "cn_odoo_api_key": "",
     # ذاكرة نتائج الاستدعاءات (11-13)
     "ai_cache_enabled": True,
     # الموجز المضغوط بدل الكراسة الخام عند كتابة الأقسام (11-10)
@@ -1002,11 +1008,18 @@ def load_company_snapshot(data: dict):
 
 
 def get_project_snapshot() -> dict:
-    """حالة المنافسة وحدها — بلا ملف الشركة وبلا مفاتيح الـ API."""
+    """
+    حالة المنافسة وحدها — بلا ملف الشركة وبلا أي بيانات اعتماد.
+
+    `api_` مفاتيح الموفّرين، و `cn_` بيانات اعتماد الموصّلات الخارجية (14-10).
+    كلاهما إعداد للمنشأة لا للمنافسة، وإدخالهما الحمولة يعني أن **كل** منافسة
+    محفوظة تحمل نسخة من المفتاح — فتُنسخ مع تكرار المنافسة وتُصدَّر مع نسخة
+    مساحة العمل، ويكفي أن يغادر ملفٌّ واحدٌ الجهاز.
+    """
     snapshot = get_state_snapshot()
     for key in COMPANY_KEYS:
         snapshot.pop(key, None)
     for key in list(snapshot):
-        if key.startswith("api_"):
+        if key.startswith(("api_", "cn_")):
             snapshot.pop(key)
     return snapshot

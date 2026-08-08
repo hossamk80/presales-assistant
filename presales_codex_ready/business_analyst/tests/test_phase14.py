@@ -1923,3 +1923,239 @@ def test_the_summary_separates_what_awaits_a_decision(deliver):
 
     assert deliver.summary(items) == {
         "total": 3, "unconfirmed": 1, "open": 1, "done": 1, "from_matrix": 2}
+
+
+# ─── 14-10: الموصّلات الخارجية (سحب فقط) ──────────────────────────────────────
+#
+# كل ما سبق في هذا النظام مغلق داخله. الموصّل **أول شيء يفتح قناة إلى خادم لا
+# نملكه** — فقواعده ليست تفصيلاً تقنياً بل حدود ما يغادر جهاز العميل.
+#
+# ما يُحرَس هنا: **لا دفع** · **لا شيء يغادر بلا تفعيل لهذه المنافسة** ·
+# **الفشل يُقال ولا يُبتلع** · **بيانات الأشخاص تدخل تحت سياستها**.
+
+
+@pytest.fixture()
+def odoo(fake_streamlit):
+    from utils.connectors import odoo as module
+
+    return module
+
+
+@pytest.fixture()
+def connected(odoo):
+    return odoo.OdooConnector({
+        "url": "https://x.odoo.com", "db": "d", "username": "u", "api_key": "k",
+    })
+
+
+def test_the_layer_has_no_push_path_at_all(fake_streamlit):
+    """
+    **القرار المركزي**: الدفع غير موجود في الشيفرة — لا جذعاً يرفع
+    `NotImplementedError`. الجذع دعوةٌ لملئه لاحقاً بلا إعادة اتّخاذ القرار،
+    والدفع يكتب في نظام العميل المحاسبي.
+    """
+    from utils.connectors import base, odoo
+
+    for name in ("push", "create", "write", "send", "export"):
+        assert not hasattr(base.Connector, name), name
+        assert not hasattr(odoo.OdooConnector, name), name
+
+
+def test_every_pull_declares_where_the_data_goes(connected):
+    """ما يغادر يُعلَن **قبل** خروجه، ووجهته حرفيةً لا وصفاً عاماً."""
+    notice = connected.egress_notice("customers")
+
+    assert notice["endpoint"] == "https://x.odoo.com"
+    assert notice["direction"] == "pull"
+
+
+def test_an_unknown_resource_never_reaches_the_server(connected, monkeypatch):
+    """
+    القائمة **مغلقة**: اسم لا نعرفه يُرفض قبل مغادرة أي طلب — والقائمة المفتوحة
+    تصير قناة استعلام حرّة على نظام العميل.
+    """
+    from utils.connectors import base
+
+    def explode(*a, **k):
+        raise AssertionError("غادر طلبٌ إلى الخادم")
+
+    monkeypatch.setattr(connected, "_read", explode)
+
+    with pytest.raises(base.ConnectorError):
+        connected.fetch("payroll")
+
+
+def test_an_unconfigured_connector_sends_nothing(odoo, monkeypatch):
+    from utils.connectors import base
+
+    connector = odoo.OdooConnector({})
+
+    def explode(*a, **k):
+        raise AssertionError("غادر طلبٌ بلا إعداد")
+
+    monkeypatch.setattr(connector, "_read", explode)
+    assert connector.configured() is False
+    with pytest.raises(base.ConnectorError):
+        connector.fetch("customers")
+
+
+def test_a_failure_is_raised_not_swallowed(connected, monkeypatch):
+    """
+    «لا نتائج» و«تعذّر الاتصال» حالتان مختلفتان. إعادة قائمة فارغة عند الفشل
+    تجعل جدولاً فارغاً يبدو **حقيقةً مقيسة** — ويُبنى عليه قرار.
+    """
+    from utils.connectors import base
+
+    def fail(*a, **k):
+        raise base.ConnectorError("تعذّر الاتصال: الشبكة")
+
+    monkeypatch.setattr(connected, "_read", fail)
+
+    with pytest.raises(base.ConnectorError):
+        connected.fetch("customers")
+
+
+def test_bad_credentials_are_not_reported_as_a_network_failure(connected, monkeypatch):
+    """رفض الدخول يُقال كما هو: من يبحث عن خطأ شبكة لا يجد مفتاحاً منتهياً."""
+    class _Common:
+        def authenticate(self, *a, **k):
+            return False
+
+    monkeypatch.setattr("utils.connectors.odoo._proxy", lambda url, path: _Common())
+    ok, message = connected.test_connection()
+
+    assert ok is False
+    assert "رُفض الدخول" in message
+
+
+def test_the_channel_is_closed_until_enabled_for_this_tender(temp_db, fake_streamlit):
+    """
+    **الافتراض لا.** قناة مفتوحة بلا قرار تُخرج بيانات منافسة لم يقصد أحد
+    ربطها، وأول من يعلم بذلك قد يكون مالك البيانات.
+    """
+    from utils import connectors
+
+    assert connectors.enabled_for("odoo", 1) is False
+    connectors.set_enabled("odoo", 1, True)
+    assert connectors.enabled_for("odoo", 1) is True
+    # ولا تنتقل العدوى إلى منافسة أخرى
+    assert connectors.enabled_for("odoo", 2) is False
+
+
+def test_no_project_means_no_channel(temp_db, fake_streamlit):
+    from utils import connectors
+
+    assert connectors.enabled_for("odoo", None) is False
+
+
+def test_employees_are_flagged_as_personal_data(connected):
+    """
+    سحب الموظفين يُدخل النظام في نطاق سياسة البيانات الشخصية (13-10) — يُقال
+    للمستخدم قبل السحب لا بعده.
+    """
+    from utils.connectors import base
+
+    assert connected.egress_notice("employees")["personal"] is True
+    assert connected.egress_notice("customers")["personal"] is False
+    assert base.RESOURCE_EMPLOYEES in base.PERSONAL_RESOURCES
+
+
+def test_a_pulled_employee_carries_a_declared_legal_basis(odoo):
+    """
+    صفٌّ بلا أساس معالجة يُفلت من سياسة البيانات الشخصية صامتاً. «عقد» هو
+    الأساس الوحيد الذي يصحّ افتراضه للموظف؛ ما عداه قرار بشري.
+    """
+    row = odoo._normalise("employees", {"name": "سارة", "job_title": "مهندسة"})
+
+    assert row["legal_basis"] == "contract"
+    assert row["name"] == "سارة"
+
+
+def test_an_unset_odoo_field_does_not_become_the_word_false(odoo):
+    """
+    أوديو يعيد `False` لا `None` للحقل غير المضبوط، والتحويل النصّي المباشر
+    يكتب «False» في خانة القطاع فتُقرأ بيانات.
+    """
+    row = odoo._normalise("customers", {"name": "جهة", "industry_id": False,
+                                        "email": False, "phone": False})
+
+    assert row["sector"] == ""
+    assert row["contacts"] == ""
+    assert "False" not in str(row)
+
+
+def test_a_linked_field_keeps_its_name_not_its_id(odoo):
+    """أوديو يعيد المرتبط `[id, name]` — الرقم وحده لا يقول شيئاً لقارئ."""
+    row = odoo._normalise("customers", {"name": "جهة", "industry_id": [7, "صحة"]})
+
+    assert row["sector"] == "صحة"
+
+
+def test_pulled_rows_match_the_registry_schema(odoo):
+    """
+    الصفّ يدخل بالشكل الذي تُطابَق به المتطلبات (المرحلة 12) — لا نصّاً حرّاً
+    يُعاد تفسيره لاحقاً.
+    """
+    from utils import connectors, records
+
+    pairs = {
+        "customers": "entities",
+        "products": "vendors",
+        "employees": "people",
+    }
+    for resource, registry in pairs.items():
+        assert connectors.RESOURCE_REGISTRY[resource] == registry
+        row = odoo._normalise(resource, {"name": "س"})
+        expected = {c["key"] for c in records.columns_of(registry)}
+        assert set(row) == expected, resource
+
+
+def test_the_connector_registry_builds_by_name(fake_streamlit):
+    """إضافة موصّل سطرٌ في `available` وملفٌّ في المجلد — لا مساس بما حوله."""
+    from utils import connectors
+
+    assert "odoo" in connectors.available()
+    assert connectors.build("odoo", {}) is not None
+    assert connectors.build("لا يوجد", {}) is None
+
+
+def test_the_connector_needs_no_extra_dependency(app_dir):
+    """
+    حزمة إضافية لموصّل اختياري تُثقّل كل تركيب ولو لم يُفعَّل — والواجهة
+    الخارجية لأوديو تعمل بـ `xmlrpc` من المكتبة القياسية.
+    """
+    requirements = (app_dir / "requirements.txt").read_text(encoding="utf-8")
+
+    assert "odoo" not in requirements.lower()
+    assert "xmlrpc" not in requirements.lower()
+
+
+def test_credentials_never_enter_the_project_snapshot(fake_streamlit):
+    """
+    بيانات اعتماد الموصّل إعداد للمنشأة لا للمنافسة — ولا تُحفظ في حمولة
+    منافسة تُصدَّر أو تُنسخ.
+    """
+    from utils import state
+
+    for key in ("cn_odoo_url", "cn_odoo_db", "cn_odoo_username", "cn_odoo_api_key"):
+        assert key in state.STATE_SCHEMA, key
+
+    state.st.session_state["cn_odoo_api_key"] = "سرّ"
+    snapshot = state.get_project_snapshot()
+
+    assert "سرّ" not in str(snapshot)
+
+
+def test_switching_tenders_does_not_wipe_the_credentials(fake_streamlit):
+    """
+    تبديل المنافسة يمسح حالة المنافسة لا إعدادات المنشأة — ولولا الاستثناء
+    لفقد المستخدم مفتاحه مع كل فتح منافسة.
+    """
+    from views import projects
+
+    projects.st.session_state["cn_odoo_api_key"] = "سرّ"
+    projects.st.session_state["cn_odoo_url"] = "https://x"
+    projects._clear_project_state()
+
+    assert projects.st.session_state["cn_odoo_api_key"] == "سرّ"
+    assert projects.st.session_state["cn_odoo_url"] == "https://x"
