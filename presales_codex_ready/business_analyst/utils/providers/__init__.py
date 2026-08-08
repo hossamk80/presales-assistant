@@ -8,7 +8,7 @@ utils/providers — طبقة تجريد الموفّرين (المرحلة 11)
 import hashlib
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 import streamlit as st
 
@@ -234,6 +234,86 @@ def run(model_id: str, prompt: str, schema: Optional[dict] = None,
 
     if cache_on and payload:
         db.ai_cache_put(fp, provider_name, model_id, payload)
+    return result
+
+
+def run_stream(model_id: str, prompt: str, task: str = "write",
+               on_chunk: Optional[Callable[[str], None]] = None) -> GenResult:
+    """
+    استدعاء نصّي **يُعرض تدريجياً** (ب-2). يعيد `GenResult` كاملاً في النهاية.
+
+    كان انتظار القسم دقيقةً بلا أي إشارة يجعل المستخدم يظنّ النظام معلَّقاً
+    فيعيد الضغط — **فتُنفَق توكنات مرّتين على قسم واحد**. البثّ يُري النصّ وهو
+    يُكتب فيزول السبب.
+
+    **وكل ضمانات المسار العادي تبقى:**
+
+    · **الذاكرة أولاً** (11-13): نتيجة محفوظة تُسلَّم فوراً بلا استدعاء ولا
+      بثّ — البثّ لإخفاء انتظار، ولا انتظار هنا.
+    · **حدّ الإنفاق يُفحَص قبل أول مقطع** (11-9)، لا بعد أن يبدأ الدفق.
+    · **الاستهلاك يُسجَّل من عدّادات الموفّر** في آخر الدفق لا من تقديرٍ محلي.
+    · **الفشل في منتصف الدفق يرفع** ولا يُسلِّم النصّ الناقص كأنه تامّ: قسمٌ
+      مبتور يبدو مكتوباً هو ما يصل الجهة. والناقص **لا يُخزَّن في الذاكرة**
+      كذلك، وإلا سُلِّم كاملاً في المرة القادمة بلا استدعاء.
+
+    وموفّر لا يدعم البثّ يسقط إلى `run` العادية — النتيجة نفسها دفعةً واحدة.
+    """
+    provider_name = provider_for_model(model_id)
+    temperature = st.session_state.get("ai_temperature") \
+        if st.session_state.get("ai_temperature_enabled") else None
+    max_tokens = st.session_state.get("ai_max_tokens") or None
+
+    cache_on = bool(st.session_state.get("ai_cache_enabled", True))
+    fp = fingerprint(provider_name, model_id, prompt, None, temperature)
+    if cache_on:
+        cached = db.ai_cache_get(fp)
+        if cached is not None:
+            result = GenResult(provider=provider_name, model=model_id, text=cached)
+            _log(result, task, status="cache")
+            if on_chunk:
+                on_chunk(cached)
+            return result
+
+    check_budget()
+
+    provider = get_provider(provider_name)
+    if not getattr(provider, "streams", False):
+        result = run(model_id, prompt, schema=None, task=task)
+        if on_chunk and result.text:
+            on_chunk(result.text)
+        return result
+
+    chunks: list[str] = []
+
+    def _collect():
+        # `yield from` تلتقط ما يعيده المولِّد في `StopIteration.value`
+        return (yield from provider.generate_stream(
+            model_id, prompt, temperature=temperature, max_tokens=max_tokens))
+
+    stream = _collect()
+    result = None
+    while True:
+        try:
+            piece = next(stream)
+        except StopIteration as done:
+            result = done.value
+            break
+        if not piece:
+            continue
+        chunks.append(piece)
+        if on_chunk:
+            on_chunk("".join(chunks))
+
+    text = "".join(chunks)
+    if result is None:
+        result = GenResult(provider=provider_name, model=model_id)
+    result.text = result.text or text
+    result.provider = result.provider or provider_name
+    result.model = result.model or model_id
+
+    _log(result, task, status="ok")
+    if cache_on and result.text:
+        db.ai_cache_put(fp, provider_name, model_id, result.text)
     return result
 
 

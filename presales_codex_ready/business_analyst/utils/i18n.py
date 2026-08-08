@@ -1917,6 +1917,12 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── البثّ التدريجي (ب-2) / Streaming ──
+    "db.streaming": {
+        "ar": "⏳ يُكتب الآن… (معاينة مؤقّتة — النصّ يُحفظ عند اكتماله)",
+        "en": "⏳ Writing… (live preview — the text is saved only once complete)",
+    },
+
     # ── نماذج الجهات (ب-4) / Per-entity Word templates ──
     "et.title": {"ar": "نماذج الجهات", "en": "Entity form templates"},
     "et.hint": {

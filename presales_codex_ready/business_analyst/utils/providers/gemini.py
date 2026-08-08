@@ -21,6 +21,7 @@ def _client(api_key: str):
 
 
 class GeminiProvider(Provider):
+    streams = True
     name = "gemini"
 
     def _get_client(self):
@@ -66,6 +67,32 @@ class GeminiProvider(Provider):
         return GenResult(
             text=response.text, provider=self.name, model=model_id,
             usage=self._usage(response),
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+        )
+
+    def generate_stream(self, model_id, prompt, temperature=None, max_tokens=None):
+        """
+        بثّ تدريجي عبر `generate_content_stream` (ب-2).
+
+        العدّادات تصل في **آخر** مقطع من الدفق لا في أوّله، فنحتفظ بآخر استجابة
+        تحمل `usage_metadata` ونبني منها النتيجة: الفوترة تُبنى على ما أرجعه
+        الموفّر لا على تقدير محلي (11-7).
+        """
+        client = self._get_client()
+        started = time.monotonic()
+        last = None
+        for chunk in client.models.generate_content_stream(
+            model=model_id, contents=prompt,
+            config=self._config(temperature, max_tokens),
+        ):
+            if getattr(chunk, "usage_metadata", None):
+                last = chunk
+            piece = getattr(chunk, "text", None)
+            if piece:
+                yield piece
+        return GenResult(
+            provider=self.name, model=model_id,
+            usage=self._usage(last) if last is not None else Usage(),
             elapsed_ms=int((time.monotonic() - started) * 1000),
         )
 
