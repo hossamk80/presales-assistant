@@ -187,7 +187,7 @@ def _clear_project_state():
     from utils.state import COMPANY_KEYS
 
     for key, default in STATE_SCHEMA.items():
-        if key in COMPANY_KEYS or key.startswith("api_"):
+        if key in COMPANY_KEYS or key.startswith(("api_", "cn_")):
             continue
         st.session_state[key] = default
     for key in [k for k in list(st.session_state) if k.startswith(("sec_ai_", "steer_", "ta_", "de_", "inc_"))]:
@@ -271,6 +271,87 @@ def _render_pipeline():
             st.success(t("pipe.why_active"))
         else:
             st.info(t("pipe.why_empty"))
+
+
+# ─── الموصّلات الخارجية: سحب لكل منافسة (14-10) ────────────────────────────────
+#
+# **التفعيل لكل منافسة على حدة** لا مفتاح عامّ: قناة مفتوحة دائماً تُخرج بيانات
+# منافسة لم يقصد أحد ربطها بنظام خارجي، وأول من يعلم بذلك قد يكون مالك البيانات.
+#
+# و**تحذير خروج البيانات يُعرض عند القرار** لا في صفحة إعدادات تُقرأ مرة وتُنسى.
+
+
+def _render_connectors(project: dict):
+    """سحب من نظام خارجي إلى سجلات الأدلة — سحب فقط، بلا دفع."""
+    from utils import connectors
+
+    pid = project["id"]
+    may_edit = auth.can("tables.edit")
+
+    with st.expander(t("cn.pull_title"), expanded=False):
+        st.caption(t("cn.pull_hint"))
+
+        name = st.selectbox(
+            t("cn.connector"), list(connectors.available()),
+            format_func=lambda n: n.capitalize(), key=f"cn_pick_{pid}",
+        )
+        from views.settings import _connector_config
+
+        connector = connectors.build(name, _connector_config(name))
+        if connector is None or not connector.configured():
+            st.info(t("cn.not_configured"))
+            return
+
+        enabled = st.checkbox(
+            t("cn.enable_for_tender"),
+            value=connectors.enabled_for(name, pid),
+            key=f"cn_on_{pid}", disabled=not may_edit,
+            help=t("cn.enable_help"),
+        )
+        if enabled != connectors.enabled_for(name, pid):
+            connectors.set_enabled(name, pid, enabled)
+
+        if not enabled:
+            st.caption(t("cn.disabled_note"))
+            return
+
+        resource = st.selectbox(
+            t("cn.resource"), list(connectors.RESOURCES),
+            format_func=lambda r: t("cn.res_" + r), key=f"cn_res_{pid}",
+        )
+
+        # ما يغادر الجهاز يُعلَن **قبل** خروجه، ووجهته حرفيةً
+        notice = connector.egress_notice(resource)
+        st.warning(t("cn.egress_now", host=notice["endpoint"] or "—",
+                     resource=t("cn.res_" + resource)))
+        if notice["personal"]:
+            # 13-10: سحب أشخاص يُدخل النظام في نطاق سياسة البيانات الشخصية
+            st.error(t("cn.personal_warning"))
+
+        if st.button(t("cn.pull"), type="primary", disabled=not may_edit):
+            try:
+                rows = connector.fetch(resource)
+            except connectors.ConnectorError as e:
+                # الفشل يُقال ولا يُبتلع: جدول فارغ بعد فشل يبدو حقيقةً مقيسة
+                st.error(t("cn.failed", error=e))
+                return
+
+            registry = connectors.RESOURCE_REGISTRY[resource]
+            existing = db.list_records(registry)
+            # الدمج بالاسم: سحب ثانٍ لا يُضاعف الصفوف، والقائم لا يُدهَس —
+            # ما عدّله إنسان أولى ممّا يعيده نظام خارجي
+            key = "name" if registry != "vendors" else "vendor"
+            seen = {str(r.get(key, "")).strip() for r in existing}
+            added = [r for r in rows if str(r.get(key, "")).strip() not in seen]
+            db.save_records(registry, existing + added)
+
+            audit.record(audit.CONNECTOR_PULL, project_id=pid,
+                         detail=f"{name}:{resource}:{len(added)}")
+            st.success(t("cn.pulled", n=len(added), skipped=len(rows) - len(added),
+                         registry=t("rec." + registry)))
+            st.rerun()
+
+        st.caption(t("cn.pull_only"))
 
 
 # ─── تحويل الفائز إلى مشروع (14-11) ───────────────────────────────────────────
@@ -563,7 +644,8 @@ def render():
         # 14-11: وتحويلها إلى مشروع تنفيذ حين تفوز
         _open = next((p for p in db.list_projects() if p["id"] == pid), None)
         if _open is not None:
-            _render_delivery(_open)
+            _render_connectors(_open)     # 14-10
+            _render_delivery(_open)       # 14-11
 
     notice = st.session_state.pop("_merge_notice", None)
     if notice:

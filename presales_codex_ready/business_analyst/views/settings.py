@@ -451,6 +451,7 @@ def render_settings():
         _task_models_section()
         _embedding_section()
         _budget_section()
+        _connectors_section()
     else:
         st.info(t("role.settings_admin_only"))
 
@@ -478,6 +479,57 @@ def render_settings():
             format_func=lambda c: UI_LANGUAGES[c],
             key="ui_language",
         )
+
+
+# ─── الموصّلات الخارجية (14-10) ────────────────────────────────────────────────
+#
+# **بيانات الاعتماد لمدير النظام وحده** (`settings.manage`)، وهي الشرط الذي
+# وُضع عليه هذا القسم هنا لا في ملف الشركة: مفتاح واجهة أوديو وصولٌ إلى نظام
+# العميل المحاسبي كلّه، لا إلى منافسة.
+#
+# ولا تصل النموذج بأي مسار — كمفاتيح الموفّرين تماماً.
+
+
+def _connectors_section():
+    """إعداد الموصّلات واختبار الاتصال. لا سحب هنا — السحب لكل منافسة."""
+    from utils import connectors
+
+    with st.expander(t("cn.title"), expanded=False):
+        st.caption(t("cn.hint"))
+        st.warning(t("cn.egress_warning"))
+
+        name = st.selectbox(
+            t("cn.connector"), list(connectors.available()),
+            format_func=lambda n: n.capitalize(), key="cn_pick",
+        )
+
+        c_url, c_db = st.columns(2)
+        with c_url:
+            st.text_input(t("cn.url"), key=f"cn_{name}_url",
+                          placeholder="https://example.odoo.com")
+        with c_db:
+            st.text_input(t("cn.db"), key=f"cn_{name}_db")
+        c_user, c_key = st.columns(2)
+        with c_user:
+            st.text_input(t("cn.username"), key=f"cn_{name}_username")
+        with c_key:
+            st.text_input(t("cn.api_key"), key=f"cn_{name}_api_key",
+                          type="password", help=t("cn.api_key_help"))
+
+        if st.button(t("cn.test"), key="cn_test"):
+            connector = connectors.build(name, _connector_config(name))
+            ok, message = connector.test_connection()
+            (st.success if ok else st.error)(message)
+
+        st.caption(t("cn.pull_only"))
+
+
+def _connector_config(name: str) -> dict:
+    """بيانات اعتماد الموصّل من الجلسة — لا تُمرَّر إلى أي طبقة أخرى."""
+    return {
+        field: str(st.session_state.get(f"cn_{name}_{field}", "") or "").strip()
+        for field in ("url", "db", "username", "api_key")
+    }
 
 
 def _render_prompt_trial(key: str, edited: str, sector: str, changed: bool,

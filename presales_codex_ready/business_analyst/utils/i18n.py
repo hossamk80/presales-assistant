@@ -1917,6 +1917,86 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── الموصّلات الخارجية (14-10) / External connectors ──
+    "cn.title": {"ar": "الموصّلات الخارجية", "en": "External connectors"},
+    "cn.hint": {
+        "ar": "ربط بنظام خارجي لسحب العملاء والمنتجات والموظفين إلى سجلات الأدلة.",
+        "en": "Connect an external system to pull customers, products and employees "
+              "into the evidence registries.",
+    },
+    "cn.egress_warning": {
+        "ar": "⚠️ هذه أول قناة تُخرج بيانات من جهازك إلى خادم لا نملكه. "
+              "بيانات الاعتماد لمدير النظام وحده، ولا تصل النموذج بأي مسار.",
+        "en": "⚠️ This is the first channel that sends data from your machine to a "
+              "server we do not own. Credentials are for administrators only, and "
+              "never reach the model by any path.",
+    },
+    "cn.pull_only": {
+        "ar": "🔒 **سحب فقط.** الدفع (تحويل الفائزة إلى أمر بيع) غير موجود في "
+              "الشيفرة — يكتب في نظامك المحاسبي، فقراره يُتّخذ مرة بوعي.",
+        "en": "🔒 **Pull only.** Push (turning a won tender into a sales order) does "
+              "not exist in the code — it writes into your accounting system, so "
+              "that decision is taken once, deliberately.",
+    },
+    "cn.connector": {"ar": "الموصّل", "en": "Connector"},
+    "cn.url": {"ar": "عنوان الخادم", "en": "Server URL"},
+    "cn.db": {"ar": "قاعدة البيانات", "en": "Database"},
+    "cn.username": {"ar": "المستخدم", "en": "Username"},
+    "cn.api_key": {"ar": "مفتاح الواجهة", "en": "API key"},
+    "cn.api_key_help": {
+        "ar": "مفتاح واجهة لا كلمة سر الحساب — يُلغى وحده إن لزم.",
+        "en": "An API key, not the account password — it can be revoked on its own.",
+    },
+    "cn.test": {"ar": "اختبار الاتصال", "en": "Test connection"},
+    "cn.not_configured": {
+        "ar": "الموصّل غير مُعدّ — أعدّه في الإعدادات أولاً.",
+        "en": "The connector is not configured — set it up in Settings first.",
+    },
+
+    "cn.pull_title": {"ar": "سحب من نظام خارجي", "en": "Pull from an external system"},
+    "cn.pull_hint": {
+        "ar": "يُضاف المسحوب إلى سجلات الأدلة فيصير صفوفاً تُطابَق بها المتطلبات.",
+        "en": "What is pulled joins the evidence registries as rows that "
+              "requirements can be matched against.",
+    },
+    "cn.enable_for_tender": {
+        "ar": "فعّل القناة لهذه المنافسة",
+        "en": "Enable the channel for this tender",
+    },
+    "cn.enable_help": {
+        "ar": "التفعيل لكل منافسة على حدة — لا مفتاح عامّ. قناة مفتوحة دائماً "
+              "تُخرج بيانات منافسة لم يقصد أحد ربطها.",
+        "en": "Enabled per tender — there is no global switch. An always-open "
+              "channel sends out data from tenders nobody meant to connect.",
+    },
+    "cn.disabled_note": {
+        "ar": "القناة مغلقة لهذه المنافسة — لا شيء يغادر.",
+        "en": "The channel is closed for this tender — nothing leaves.",
+    },
+    "cn.resource": {"ar": "المورد", "en": "Resource"},
+    "cn.res_customers": {"ar": "العملاء", "en": "Customers"},
+    "cn.res_products": {"ar": "المنتجات", "en": "Products"},
+    "cn.res_employees": {"ar": "الموظفون", "en": "Employees"},
+    "cn.egress_now": {
+        "ar": "⚠️ سيتّصل النظام بـ **{host}** لسحب: {resource}.",
+        "en": "⚠️ The system will connect to **{host}** to pull: {resource}.",
+    },
+    "cn.personal_warning": {
+        "ar": "🔴 الموظفون **بيانات أشخاص**: سحبهم يُدخلهم في نطاق سياسة البيانات "
+              "الشخصية — يُسجَّل أساس المعالجة «عقد»، ولكل شخص حقّ الحذف من صفحة "
+              "ملف الشركة.",
+        "en": "🔴 Employees are **personal data**: pulling them brings them under "
+              "the personal-data policy — the legal basis is recorded as "
+              "\"contract\", and each person keeps the right to erasure from the "
+              "company page.",
+    },
+    "cn.pull": {"ar": "اسحب الآن", "en": "Pull now"},
+    "cn.pulled": {
+        "ar": "✅ أُضيف {n} صفاً إلى {registry} · وتُخطّي {skipped} موجوداً أصلاً.",
+        "en": "✅ Added {n} row(s) to {registry} · skipped {skipped} already present.",
+    },
+    "cn.failed": {"ar": "❌ تعذّر السحب: {error}", "en": "❌ Pull failed: {error}"},
+
     # ── تحويل الفائز إلى مشروع (14-11) / Won tender → delivery project ──
     "dlv.title": {"ar": "مشروع التنفيذ والتزاماته", "en": "Delivery project & commitments"},
     "dlv.hint": {
