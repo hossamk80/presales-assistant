@@ -489,6 +489,22 @@ def _kb_context(sec: dict) -> str:
     return knowledge.build_context(query)
 
 
+def _clarification_answers() -> str:
+    """
+    أجوبة الجهة على استفساراتنا (14-9) — **المُجاب وحده**.
+
+    جواب الجهة الرسمي يعلو على فهمنا للبند الغامض، فحقنه ثمرة السؤال كلّه. أمّا
+    المعلَّق فلا يُحقن بأي صيغة: تمريره ولو موسوماً بـ«بانتظار الجواب» يجعل
+    النموذج يبني عليه — والغائب لا يُفترَض.
+    """
+    from utils import clarifications as clarify, db
+
+    project_id = st.session_state.get("_project_id")
+    if project_id is None:
+        return ""
+    return clarify.answers_block(db.list_clarifications(project_id))
+
+
 def _glossary_context(sec: dict, full_rfp: str) -> str:
     """
     مصطلحات المسرد الواردة في هذه المنافسة (14-6).
@@ -522,7 +538,8 @@ def _writing_context(sec: dict) -> tuple[str, str]:
     """
     full_rfp = st.session_state.get("rfp_raw_text", "")
     extra = (
-        _project_context_block() + strategy_block() + _kb_context(sec)
+        _project_context_block() + strategy_block() + _clarification_answers()
+        + _kb_context(sec)
         + knowledge.style_context_block()
         + _glossary_context(sec, full_rfp)
     )

@@ -1917,6 +1917,88 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── وحدة الاستفسارات (14-9) / Clarifications ──
+    "cl.title": {"ar": "الاستفسارات للجهة", "en": "Clarifications to the entity"},
+    "cl.hint": {
+        "ar": "الغموض المرصود في المصفوفة يصير سؤالاً له موعد وجواب — لا ملاحظة "
+              "في بريد تُنسى. وغياب الجواب أخطر من ورودِه مخالفاً لتوقّعنا.",
+        "en": "An ambiguity spotted in the matrix becomes a question with a due "
+              "date and an answer — not a note in an email that gets forgotten. A "
+              "missing answer is more dangerous than one that contradicts you.",
+    },
+    "cl.needs_project": {
+        "ar": "افتح منافسة أولاً — الاستفسار يخصّ منافسةً بعينها.",
+        "en": "Open a tender first — a clarification belongs to a specific tender.",
+    },
+    "cl.empty": {
+        "ar": "لا استفسار بعد. أضِف أول سؤال من متطلب غامض في المصفوفة.",
+        "en": "No clarification yet. Add the first question from an ambiguous "
+              "requirement in the matrix.",
+    },
+    "cl.m_total": {"ar": "الاستفسارات", "en": "Clarifications"},
+    "cl.m_unsent": {"ar": "لم تُرسَل", "en": "Not sent"},
+    "cl.m_overdue": {"ar": "متأخّرة", "en": "Overdue"},
+    "cl.m_answered": {"ar": "أُجيبت", "en": "Answered"},
+    "cl.req": {"ar": "المتطلب", "en": "Requirement"},
+    "cl.req_none": {"ar": "غير مرتبط بمتطلب", "en": "Not linked to a requirement"},
+    "cl.req_unlinked": {
+        "ar": "⚠️ المعرّف لم يعد في المصفوفة — السؤال باقٍ لأنّه أُرسل فعلاً",
+        "en": "⚠️ The identifier is no longer in the matrix — the question stays "
+              "because it was actually sent",
+    },
+    "cl.due": {"ar": "موعد الجواب", "en": "Answer due"},
+    "cl.due_help": {
+        "ar": "ميلادي أو هجري — يُقرأ التقويمان، وتاريخ تعذّرت قراءته لا يُعدّ "
+              "فائتاً ولا قائماً.",
+        "en": "Gregorian or Hijri — both are read, and a date that cannot be "
+              "parsed counts as neither passed nor pending.",
+    },
+    "cl.due_unreadable": {"ar": "تاريخ لم يُقرأ", "en": "date not parsed"},
+    "cl.days_left": {"ar": "{n} يوماً", "en": "{n} day(s)"},
+    "cl.question": {"ar": "السؤال", "en": "Question"},
+    "cl.question_ph": {
+        "ar": "ما المقصود بـ«خبرة مماثلة» في البند 4-2: قيمة العقد أم نطاقه؟",
+        "en": "What does \"similar experience\" in clause 4-2 mean: contract value "
+              "or scope?",
+    },
+    "cl.question_required": {"ar": "❌ نصّ السؤال مطلوب.", "en": "❌ The question text is required."},
+    "cl.add": {"ar": "إضافة استفسار", "en": "Add clarification"},
+    "cl.added": {"ar": "✅ سُجّل الاستفسار كمسودّة — أرسله ثم علّم إرساله.",
+                 "en": "✅ Saved as a draft — send it, then mark it as sent."},
+    "cl.status_draft": {"ar": "📝 مسودّة", "en": "📝 Draft"},
+    "cl.status_sent": {"ar": "📤 أُرسل", "en": "📤 Sent"},
+    "cl.status_answered": {"ar": "✅ أُجيب", "en": "✅ Answered"},
+    "cl.status_closed": {"ar": "🗄️ مُغلق", "en": "🗄️ Closed"},
+    "cl.mark_sent": {"ar": "علّم: أُرسل", "en": "Mark as sent"},
+    "cl.close": {"ar": "إغلاق", "en": "Close"},
+    "cl.answer": {"ar": "جواب الجهة", "en": "Entity's answer"},
+    "cl.save_answer": {"ar": "حفظ الجواب", "en": "Save answer"},
+    "cl.answer_saved": {"ar": "✅ حُفظ الجواب.", "en": "✅ Answer saved."},
+    "cl.answer_required": {
+        "ar": "❌ جواب فارغ لا يُغلق سؤالاً: «أُجيب» حالة تُبنى عليها قرارات امتثال.",
+        "en": "❌ An empty answer cannot close a question: \"answered\" is a state "
+              "that compliance decisions rest on.",
+    },
+    "cl.answer_reaches_model": {
+        "ar": "🔗 هذا الجواب يُحقن في كتابة الأقسام ويعلو على ظاهر نص الكرّاس. "
+              "المعلَّق لا يُحقن بأي صيغة.",
+        "en": "🔗 This answer is injected into section writing and overrides the "
+              "literal clause. Pending questions are never injected.",
+    },
+    "cl.risks": {
+        "ar": "⚠️ {n} استفساراً يحتاج متابعة:",
+        "en": "⚠️ {n} clarification(s) need follow-up:",
+    },
+    "cl.risks_critical": {
+        "ar": "🚨 {n} استفساراً على متطلب **حرج** بلا جواب — الغائب لا يُفترَض:",
+        "en": "🚨 {n} clarification(s) on a **critical** requirement with no answer "
+              "— a missing answer must not be assumed:",
+    },
+    "cl.no_risks": {
+        "ar": "✅ لا استفسار معلَّق ولا متأخّر.",
+        "en": "✅ No pending or overdue clarification.",
+    },
+
     # ── خطّ الأنابيب واستراتيجية العرض (14-8) / Pipeline & win strategy ──
     "pipe.title": {"ar": "خطّ الأنابيب واستراتيجية العرض",
                    "en": "Pipeline & win strategy"},
