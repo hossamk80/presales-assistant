@@ -66,6 +66,128 @@ def execution_durations(text: str) -> list:
     return found
 
 
+# ─── تطابق النسختين في وضع «كليهما» (ب-3) ─────────────────────────────────────
+#
+# وضع «كليهما» يُخرج القسم مرتين: بالعربية ثم بالإنجليزية. والمظروف الواحد يحمل
+# النسختين، والمُقيّم يقرأ واحدة — فاختلافهما في **رقم** أو **التزام** مأخذٌ على
+# المورّد لا خطأ مطبعي: «مدة الضمان سنتان» عربياً و«three years» إنجليزياً
+# تعهّدان مختلفان في مستند واحد.
+#
+# **الفحص حسابي لا نموذجي** كبقية هذه الوحدة: مقارنة النسختين باستدعاء نموذج
+# تكلّف توكناً في كل مراجعة وتعطي حكماً لا يُفسَّر سطراً سطراً.
+#
+# **وما يُقارَن هو الأرقام وحدها.** طول النصّ وعدد الجمل وصياغتها تختلف بين
+# لغتين بطبيعتها — مقارنتها تُنتج تحذيرات كاذبة تُفقد الفحص مصداقيته فيُهمَل،
+# ويُهمَل معه ما كان يستحقّ التوقّف.
+
+# فاصل النسختين كما تطلبه تعليمة «كليهما» في `ai_engine.LANGUAGES`.
+_ENGLISH_HEADING = re.compile(r"^\s*#{1,6}\s*English\s+Version\s*$",
+                              re.IGNORECASE | re.MULTILINE)
+_HR_SPLIT = re.compile(r"^\s*-{3,}\s*$", re.MULTILINE)
+
+# الأرقام: خانات عربية-هندية تُطبَّع إلى لاتينية، والفاصلة العشرية العربية معها.
+# «١٢» و «12» رقم واحد، ومقارنتهما نصّاً تجعل كل رقم في العرض مخالفاً لنظيره.
+_ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩٫٬", "0123456789.,")
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+
+# أرقام لا تُقارَن: ترقيم القوائم والعناوين بنية لا محتوى، وهي متطابقة بطبيعتها
+# فلا تضيف شيئاً — لكن سنة أو نسبة تُقارَن.
+_LIST_MARKER_RE = re.compile(r"^\s*\d+[.)]\s", re.MULTILINE)
+
+
+def split_bilingual(text: str) -> tuple:
+    """
+    يفصل قسماً مكتوباً بوضع «كليهما» إلى (عربي، إنجليزي).
+
+    يُجرَّب عنوان `## English Version` أولاً لأنه المطلوب صراحةً في التعليمة،
+    وإلا فالفاصل `---`. وبلا فاصل يُعاد `(النصّ، "")` — نصٌّ بلا نسخة ثانية
+    حالةٌ تُبلَّغ لا تُخمَّن.
+    """
+    body = str(text or "")
+    if not body.strip():
+        return "", ""
+
+    match = _ENGLISH_HEADING.search(body)
+    if match:
+        return body[:match.start()].strip(), body[match.end():].strip()
+
+    parts = _HR_SPLIT.split(body)
+    if len(parts) >= 2:
+        # أول فاصل هو الحدّ؛ ما بعده كلّه النسخة الثانية ولو حوى فواصل أخرى
+        return parts[0].strip(), "\n".join(parts[1:]).strip()
+    return body.strip(), ""
+
+
+def _numbers(text: str):
+    """الأرقام في نصّ، مطبَّعةً، بلا ترقيم القوائم."""
+    from collections import Counter
+
+    body = str(text or "").translate(_ARABIC_DIGITS)
+    body = _LIST_MARKER_RE.sub(" ", body)
+    return Counter(_NUMBER_RE.findall(body))
+
+
+def bilingual_parity(sections: Optional[list] = None,
+                     language: str = "ar") -> list:
+    """
+    يقارن نسختَي كل قسم في وضع «كليهما». فارغة في أي وضع آخر.
+
+    حالتان:
+
+    · **نسخة ناقصة** ⇒ `حرجة`. المظروف يَعِد بنسختين وفيه واحدة — عيبٌ في
+      المُخرَج نفسه، وبلا احتمال إنذار كاذب.
+    · **أرقام مختلفة** ⇒ `تنبيه`. رقمٌ في نسخة وليس في الأخرى قد يكون فرقاً
+      حقيقياً وقد يكون رقماً كُتب بالحروف في إحداهما («خمسة عشر» مقابل «15»).
+      فيُعرض للمراجعة البشرية ولا يُحكَم عليه — ورفعه إلى الحرج مع هذا الاحتمال
+      يُغرق اللوحة فيُهمَل ما يستحقّ التوقّف.
+    """
+    if str(language or "") != "both":
+        return []
+
+    findings = []
+    for section in sections or []:
+        title = str(section.get("title", "") or "")
+        arabic, english = split_bilingual(section.get("content", ""))
+        if not arabic.strip():
+            continue
+
+        if not english.strip():
+            findings.append({
+                "kind": "bilingual_missing",
+                "severity": "حرجة",
+                "message": (
+                    f"«{title}» مكتوب بلغة واحدة والمخرجات مضبوطة على النسختين — "
+                    "المظروف يَعِد بنسختين وفيه واحدة."
+                ),
+                "sections": [title],
+            })
+            continue
+
+        only_ar = _numbers(arabic) - _numbers(english)
+        only_en = _numbers(english) - _numbers(arabic)
+        if not only_ar and not only_en:
+            continue
+
+        detail = []
+        if only_ar:
+            detail.append("في العربية وحدها: " + " · ".join(sorted(only_ar)))
+        if only_en:
+            detail.append("في الإنجليزية وحدها: " + " · ".join(sorted(only_en)))
+        findings.append({
+            "kind": "bilingual_numbers",
+            "severity": "تنبيه",
+            "message": (
+                f"«{title}» — أرقام لا تتطابق بين النسختين. "
+                + " · ".join(detail)
+                + ". راجِعها: قد يكون رقماً كُتب بالحروف في إحداهما، وقد يكون "
+                  "تعهّداً مختلفاً في مستند واحد."
+            ),
+            "sections": [title],
+        })
+
+    return findings
+
+
 def glossary_drift(sections: Optional[list] = None,
                    language: str = "ar") -> list:
     """
@@ -131,11 +253,13 @@ def check(sections: Optional[list] = None,
           language: str = "ar") -> list:
     """
     يقارن مدد التنفيذ المذكورة في الأقسام بالجدول الزمني وبمدة العقد، ويرصد
-    انحراف المصطلحات عن المسرد المعتمد (14-6).
+    انحراف المصطلحات عن المسرد المعتمد (14-6)، وتفاوت النسختين في وضع
+    «كليهما» (ب-3).
 
     Args:
         sections: [{"title", "content"}] — الأقسام المُدرَجة المكتوبة فعلاً.
-        language: لغة المخرجات — بها تُحدَّد الصيغة المعتمدة لكل مصطلح.
+        language: لغة المخرجات — بها تُحدَّد الصيغة المعتمدة لكل مصطلح، وبها
+            وحدها يُشغَّل فحص النسختين.
 
     Returns:
         قائمة ملاحظات [{"kind", "severity", "message", "sections"}].
@@ -198,7 +322,10 @@ def check(sections: Optional[list] = None,
                     "sections": sorted(data["sections"]),
                 })
 
-    # 5) انحراف المصطلحات عن المسرد (14-6) — تنبيه في آخر القائمة بعد الحرِج
+    # 5) تطابق النسختين في وضع «كليهما» (ب-3) — قبل التنبيهات، فيه حرِج
+    findings.extend(bilingual_parity(sections, language))
+
+    # 6) انحراف المصطلحات عن المسرد (14-6) — تنبيه في آخر القائمة بعد الحرِج
     findings.extend(glossary_drift(sections, language))
 
     return findings

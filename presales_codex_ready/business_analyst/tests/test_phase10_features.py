@@ -533,3 +533,142 @@ def test_proposed_outline_keeps_the_timeline_section(fake_streamlit):
     ])
     kinds = [s["kind"] for s in get_sections()]
     assert "table_timeline" in kinds
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  تطابق النسختين في وضع «كليهما» (ب-3)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# المظروف الواحد يحمل النسختين، والمُقيّم يقرأ واحدة — فاختلافهما في رقم مأخذٌ
+# على المورّد لا خطأ مطبعي: «مدة الضمان سنتان» عربياً و«three years» إنجليزياً
+# تعهّدان مختلفان في مستند واحد.
+
+_BOTH_OK = """نلتزم بمدة ضمان 24 شهراً وفريق من 5 مهندسين.
+
+---
+
+## English Version
+
+We commit to a 24-month warranty and a team of 5 engineers."""
+
+_BOTH_DRIFT = """نلتزم بمدة ضمان 24 شهراً.
+
+## English Version
+
+We commit to a 36-month warranty."""
+
+
+def test_matching_versions_raise_nothing(cs):
+    assert cs.bilingual_parity(
+        [{"title": "الضمان", "content": _BOTH_OK}], language="both") == []
+
+
+def test_a_number_that_differs_between_versions_is_flagged(cs):
+    """
+    **شرط قبول ب-3**: تعهّدان مختلفان في مستند واحد يُرصدان قبل التسليم.
+    """
+    findings = cs.bilingual_parity(
+        [{"title": "الضمان", "content": _BOTH_DRIFT}], language="both")
+
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "bilingual_numbers"
+    assert "24" in findings[0]["message"]
+    assert "36" in findings[0]["message"]
+
+
+def test_arabic_indic_digits_are_the_same_number(cs):
+    """
+    «٢٤» و «24» رقم واحد. مقارنتهما نصّاً تجعل **كل** رقم في العرض مخالفاً
+    لنظيره، فيصير الفحص ضجيجاً يُهمَل — وهو المزلق الأول في هذا البند.
+    """
+    text = "مدة الضمان ٢٤ شهراً.\n\n---\n\n## English Version\n\nA 24-month warranty."
+
+    assert cs.bilingual_parity(
+        [{"title": "الضمان", "content": text}], language="both") == []
+
+
+def test_an_arabic_decimal_separator_is_read_as_a_decimal(cs):
+    """«١٫٥» و «1.5» رقم واحد كذلك."""
+    text = "نسبة ١٫٥ بالمئة.\n\n## English Version\n\nA rate of 1.5 percent."
+
+    assert cs.bilingual_parity(
+        [{"title": "النسبة", "content": text}], language="both") == []
+
+
+def test_a_missing_second_version_is_critical(cs):
+    """
+    المظروف يَعِد بنسختين وفيه واحدة — عيبٌ في المُخرَج نفسه، وبلا احتمال
+    إنذار كاذب، فدرجته حرجة لا تنبيه.
+    """
+    findings = cs.bilingual_parity(
+        [{"title": "الضمان", "content": "نصّ عربي وحده بلا نسخة ثانية إطلاقاً."}],
+        language="both")
+
+    assert findings[0]["kind"] == "bilingual_missing"
+    assert findings[0]["severity"] == "حرجة"
+
+
+def test_a_number_gap_is_a_warning_not_a_verdict(cs):
+    """
+    رقمٌ في نسخة وليس في الأخرى قد يكون كُتب بالحروف في إحداهما. يُعرض للمراجعة
+    البشرية ولا يُحكَم عليه — ورفعه إلى الحرج مع هذا الاحتمال يُغرق اللوحة.
+    """
+    findings = cs.bilingual_parity(
+        [{"title": "الضمان", "content": _BOTH_DRIFT}], language="both")
+
+    assert findings[0]["severity"] == "تنبيه"
+
+
+def test_the_check_runs_only_in_both_mode(cs):
+    """عرض بلغة واحدة ليس فيه نسختان تُقارَنان — والفحص لا يخترع لها ثانيةً."""
+    section = [{"title": "الضمان", "content": _BOTH_DRIFT}]
+
+    assert cs.bilingual_parity(section, language="ar") == []
+    assert cs.bilingual_parity(section, language="en") == []
+    assert cs.bilingual_parity(section, language="both")
+
+
+def test_list_numbering_is_structure_not_content(cs):
+    """ترقيم القوائم متطابق بطبيعته — مقارنته تضيف ضجيجاً بلا معنى."""
+    text = ("1. البند الأول\n2. البند الثاني\n\n---\n\n"
+            "## English Version\n\n1. First item\n2. Second item")
+
+    assert cs.bilingual_parity(
+        [{"title": "النطاق", "content": text}], language="both") == []
+
+
+def test_both_split_markers_are_understood(cs):
+    """
+    التعليمة تطلب `---` **ثم** عنوان `English Version`. النموذج قد يكتب أحدهما،
+    وفحصٌ يعرف واحداً فقط يُبلّغ عن نسخة ناقصة موجودة.
+    """
+    heading_only = "عربي\n\n## English Version\n\nEnglish"
+    rule_only = "عربي\n\n---\n\nEnglish"
+
+    for text in (heading_only, rule_only):
+        arabic, english = cs.split_bilingual(text)
+        assert arabic == "عربي", text
+        assert english == "English", text
+
+
+def test_a_rule_inside_the_english_half_does_not_truncate_it(cs):
+    """فاصل ثانٍ داخل النسخة الإنجليزية جزءٌ منها لا حدٌّ ثالث."""
+    text = "عربي\n\n---\n\nEnglish part one\n\n---\n\nEnglish part two"
+    _arabic, english = cs.split_bilingual(text)
+
+    assert "part one" in english
+    assert "part two" in english
+
+
+def test_an_empty_section_is_not_reported_as_missing_a_version(cs):
+    """قسم لم يُكتب بعد ليس قسماً ناقص النسخة — لا يُبلَّغ عنه هنا."""
+    assert cs.bilingual_parity(
+        [{"title": "فارغ", "content": "   "}], language="both") == []
+
+
+def test_the_parity_check_rides_the_existing_consistency_pass(cs):
+    """نقطة عرض واحدة في لوحة المراجعة — لا مسار ثانٍ."""
+    findings = cs.check(
+        [{"title": "الضمان", "content": _BOTH_DRIFT}], language="both")
+
+    assert any(f["kind"] == "bilingual_numbers" for f in findings)
