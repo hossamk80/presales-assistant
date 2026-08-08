@@ -45,6 +45,52 @@ def _hijri_to_gregorian(year: int, month: int, day: int) -> Optional[datetime.da
         return None
 
 
+def gregorian_to_hijri(value: Optional[datetime.date] = None) -> Optional[str]:
+    """
+    التاريخ الهجري بصيغة `1448/02/25`، أو `None` إن تعذّر التحويل (ب-4).
+
+    **إمّا تحويل صحيح أو لا تاريخ** — القاعدة نفسها التي يقوم عليها
+    `_hijri_to_gregorian` أعلاه: التحويل الحسابي التقريبي مرفوض هنا عمداً.
+    وتاريخٌ هجري خاطئ على غلاف عرض حكومي أسوأ من غيابه: الغائب يُستدرَك،
+    والخاطئ يُقرأ صحيحاً ويُبنى عليه.
+
+    فبلا المكتبة يعود `None` ويظهر الميلادي وحده — لا تقدير.
+    """
+    day = value or datetime.date.today()
+    try:
+        from hijridate import Gregorian
+    except ImportError:
+        try:
+            from hijri_converter import Gregorian
+        except ImportError:
+            return None
+    try:
+        h = Gregorian(day.year, day.month, day.day).to_hijri()
+    except (ValueError, OverflowError, AttributeError):
+        return None
+    return f"{h.year}/{h.month:02d}/{h.day:02d}"
+
+
+def cover_date(value: Optional[datetime.date] = None, rtl: bool = True) -> str:
+    """
+    سطر تاريخ الغلاف: هجري **موسوماً** وميلادي معه (ب-4).
+
+    **الوسم `هـ` و `م` ليس زينة**: تاريخ هجري بلا وسم يُقرأ ميلادياً — وهو
+    المزلق نفسه الذي عولج في 14-9 حين قرأ النظام «1448-11-14» ماضياً سحيقاً.
+    وعلى غلاف يقرؤه مُقيّم، الالتباس بين 1448 و 2026 ليس تفصيلاً.
+
+    والتقويمان معاً لا الهجري وحده: المراسلة الحكومية السعودية تحمل الاثنين،
+    وقارئ أحدهما لا يُترك يحسب الآخر.
+    """
+    day = value or datetime.date.today()
+    gregorian = day.strftime("%Y/%m/%d")
+    hijri = gregorian_to_hijri(day)
+    if not hijri:
+        return gregorian
+    return (f"{hijri} هـ — {gregorian} م" if rtl
+            else f"{gregorian} AD — {hijri} AH")
+
+
 def parse_date(value) -> Optional[datetime.date]:
     """
     يقرأ تاريخاً مكتوباً بأي من الصيغ الشائعة، ميلادياً أو هجرياً.

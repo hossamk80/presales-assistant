@@ -136,3 +136,163 @@ def test_df_to_table_block_handles_empty(fh):
     header, rows = fh._df_to_table_block(pd.DataFrame({"أ": [1], "ب": [2]}))
     assert header == ["أ", "ب"]
     assert rows == [["1", "2"]]
+
+
+# ─── تاريخ الغلاف ونماذج الجهات (ب-4) ─────────────────────────────────────────
+#
+# المراسلة الحكومية السعودية تحمل التقويمين، وبعض الجهات ترفض عرضاً بغير
+# نموذجها — رفضاً شكلياً لا علاقة له بجودة المحتوى.
+
+
+def test_the_cover_carries_both_calendars_each_marked(fake_streamlit):
+    """
+    **الوسم `هـ` و `م` ليس زينة**: تاريخ هجري بلا وسم يُقرأ ميلادياً — وهو
+    المزلق نفسه الذي عولج في 14-9. وعلى غلاف يقرؤه مُقيّم، الالتباس بين 1448
+    و 2026 ليس تفصيلاً.
+    """
+    import datetime
+
+    from utils import submission
+
+    line = submission.cover_date(datetime.date(2026, 8, 8), rtl=True)
+
+    assert "1448" in line and "هـ" in line
+    assert "2026/08/08" in line and "م" in line
+
+
+def test_the_english_cover_marks_both_too(fake_streamlit):
+    import datetime
+
+    from utils import submission
+
+    line = submission.cover_date(datetime.date(2026, 8, 8), rtl=False)
+
+    assert "AD" in line and "AH" in line
+
+
+def test_a_missing_calendar_library_shows_gregorian_alone(fake_streamlit,
+                                                          monkeypatch):
+    """
+    **إمّا تحويل صحيح أو لا تاريخ.** تاريخ هجري خاطئ على غلاف عرض حكومي أسوأ
+    من غيابه: الغائب يُستدرَك، والخاطئ يُقرأ صحيحاً ويُبنى عليه. فبلا المكتبة
+    يظهر الميلادي وحده — لا تقدير حسابي.
+    """
+    import builtins
+    import datetime
+
+    from utils import submission
+
+    real_import = builtins.__import__
+
+    def no_calendar(name, *args, **kwargs):
+        if name in ("hijridate", "hijri_converter"):
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_calendar)
+
+    assert submission.gregorian_to_hijri(datetime.date(2026, 8, 8)) is None
+    assert submission.cover_date(datetime.date(2026, 8, 8)) == "2026/08/08"
+
+
+def test_the_generated_cover_actually_shows_the_hijri_date(fake_streamlit):
+    """التحقّق من المستند المبنيّ فعلاً لا من الدالّة وحدها."""
+    import io
+
+    from docx import Document
+
+    from utils.file_handler import build_word_document
+
+    bio = build_word_document(
+        company_name="شركة",
+        sections=[{"kind": "ai", "title": "المنهجية", "content": "نص"}],
+        entity_name="وزارة الصحة", rtl=True,
+    )
+    lines = [p.text for p in Document(io.BytesIO(bio.getvalue())).paragraphs[:8]]
+    date_line = next(x for x in lines if x.startswith("التاريخ"))
+
+    assert "هـ" in date_line
+
+
+def test_an_entity_template_is_found_whatever_the_spelling(temp_db):
+    """
+    «وزارة الصحة» و«وزاره الصحه» جهة واحدة — بالتوحيد نفسه في ذاكرة العطاءات
+    (12-7) لا بتوحيدٍ ثانٍ: قاعدتان تعنيان جهةً تُطابَق هنا ولا تُطابَق هناك.
+    """
+    temp_db.save_entity_template("وزارة الصحة", b"PK-form", filename="moh.docx")
+
+    for spelling in ("وزارة الصحة", "وزاره الصحه ", "وزارة الصحه"):
+        found = temp_db.entity_template(spelling)
+        assert found is not None, spelling
+        assert found["entity_label"] == "وزارة الصحة"
+
+    assert temp_db.entity_template("وزارة النقل") is None
+
+
+def test_saving_again_replaces_rather_than_duplicates(temp_db):
+    """نموذجان لجهة واحدة يجعلان التصدير يختار أحدهما بلا قاعدة."""
+    temp_db.save_entity_template("وزارة الصحة", b"v1", filename="a.docx")
+    temp_db.save_entity_template("وزاره الصحه", b"v2", filename="b.docx")
+
+    assert len(temp_db.list_entity_templates()) == 1
+    assert temp_db.entity_template("وزارة الصحة")["template"] == b"v2"
+
+
+def test_an_empty_entity_or_file_is_refused(temp_db):
+    assert temp_db.save_entity_template("", b"x") is None
+    assert temp_db.save_entity_template("جهة", b"") is None
+    assert temp_db.list_entity_templates() == []
+
+
+def test_the_listing_does_not_carry_the_file_payloads(temp_db):
+    """القائمة تُعرض في كل رسم — تحميل الملفات لها يُثقلها بلا داعٍ."""
+    temp_db.save_entity_template("جهة", b"PK" * 5000, filename="x.docx")
+    row = temp_db.list_entity_templates()[0]
+
+    assert "template" not in row
+    assert row["size"] == 10000
+
+
+def test_the_entity_form_wins_over_the_company_template(temp_db, fake_streamlit):
+    """
+    **شرط قبول ب-4**: التصدير يتبع نموذج الجهة حين يوجد.
+    """
+    from views import doc_builder
+
+    temp_db.save_entity_template("وزارة الصحة", b"ENTITY-FORM")
+    doc_builder.st.session_state["_project_entity"] = "وزارة الصحة"
+    doc_builder.st.session_state["c_word_template_bytes"] = b"COMPANY"
+
+    assert doc_builder._export_template() == b"ENTITY-FORM"
+
+
+def test_the_company_template_covers_entities_with_no_form(temp_db, fake_streamlit):
+    from views import doc_builder
+
+    doc_builder.st.session_state["_project_entity"] = "جهة بلا نموذج"
+    doc_builder.st.session_state["c_word_template_bytes"] = b"COMPANY"
+
+    assert doc_builder._export_template() == b"COMPANY"
+
+
+def test_the_user_can_force_the_company_template(temp_db, fake_streamlit):
+    """نموذج جهة قديم أسوأ من غيابه — القرار يبقى بيد المستخدم."""
+    from views import doc_builder
+
+    temp_db.save_entity_template("وزارة الصحة", b"ENTITY-FORM")
+    doc_builder.st.session_state["_project_entity"] = "وزارة الصحة"
+    doc_builder.st.session_state["c_word_template_bytes"] = b"COMPANY"
+    doc_builder.st.session_state["exp_force_company"] = True
+
+    assert doc_builder._export_template() == b"COMPANY"
+
+
+def test_the_entity_falls_back_to_what_the_tender_says(temp_db, fake_streamlit):
+    """الجهة قد لا تُكتب يدوياً — تُقرأ ممّا استُخرج من الكرّاس."""
+    from views import doc_builder
+
+    temp_db.save_entity_template("وزارة النقل", b"NAQL-FORM")
+    doc_builder.st.session_state["project_context"] = {"issuing_entity": "وزارة النقل"}
+
+    assert doc_builder._entity_name() == "وزارة النقل"
+    assert doc_builder._export_template() == b"NAQL-FORM"
