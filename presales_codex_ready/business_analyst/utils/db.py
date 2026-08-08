@@ -257,6 +257,50 @@ CREATE TABLE IF NOT EXISTS clarifications (
 CREATE INDEX IF NOT EXISTS idx_clarifications_project
     ON clarifications(project_id);
 
+-- تحويل الفائز إلى مشروع (14-11): التزامات العرض تصير قائمة تسليمات.
+--
+-- المشكلة: نفوز، ثم يبدأ فريق التنفيذ من الصفر بقراءة عرضٍ من ثمانين صفحة
+-- ليعرف بماذا التزمنا. وما يُنسى منه لا يُنسى على الجهة: بند وعدنا به في
+-- المنهجية ولم يصل خطة التسليم يصير مخالفة عقدية بعد أشهر.
+--
+-- **جدولان لا خلط**: `deliveries` هي المنافسة بعد فوزها (طور التنفيذ)،
+-- و `deliverables` بنودها. وإبقاء حالة التنفيذ في `projects` يخلط طوري البيع
+-- والتسليم في صفٍّ واحد، فيصير «مفتوحة» يعني أمرين مختلفين.
+CREATE TABLE IF NOT EXISTS deliveries (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    name       TEXT NOT NULL DEFAULT '',
+    entity     TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT ''
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deliveries_project
+    ON deliveries(project_id);
+
+-- بنود التسليم. `source` و `source_ref` يقولان **من أين جاء الالتزام**: صفّ
+-- في مصفوفة الامتثال أم فقرة في قسم. وهذا هو المكسب كلّه — مدير التنفيذ يسأل
+-- «لماذا نحن ملزمون بهذا؟» فيجد مرجع البند لا ذاكرة أحد.
+--
+-- `confirmed` يفصل ما استخرجه النموذج عمّا أقرّه إنسان: الاستخراج اقتراح،
+-- والقائمة التي يُبنى عليها التسليم لا تُملأ بلا مراجعة بشرية.
+CREATE TABLE IF NOT EXISTS deliverables (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_id INTEGER NOT NULL,
+    title       TEXT NOT NULL,
+    source      TEXT NOT NULL DEFAULT 'manual',
+    source_ref  TEXT NOT NULL DEFAULT '',
+    clause_ref  TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'open',
+    owner       TEXT NOT NULL DEFAULT '',
+    due_at      TEXT NOT NULL DEFAULT '',
+    confirmed   INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_deliverables_delivery
+    ON deliverables(delivery_id);
+
 -- إعدادات النظام (13-10): مفتاح ← قيمة. جدول واحد صغير بدل عمود لكل إعداد
 -- جديد، وأول ساكنيه سياسة البيانات الشخصية (أساس المعالجة ومدة الاحتفاظ).
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -1416,6 +1460,132 @@ def content_block_stats() -> dict:
                        if b["status"] == BLOCK_APPROVED and block_review_due(b))
     stats["used"] = sum(int(b["used_count"] or 0) for b in blocks)
     return stats
+
+
+# ─── تحويل الفائز إلى مشروع (14-11) ───────────────────────────────────────────
+
+DELIVERABLE_OPEN = "open"
+DELIVERABLE_DONE = "done"
+DELIVERABLE_DROPPED = "dropped"
+DELIVERABLE_STATUSES = (DELIVERABLE_OPEN, DELIVERABLE_DONE, DELIVERABLE_DROPPED)
+
+# مصدر البند — يقول لمدير التنفيذ **لماذا نحن ملزمون به**
+SOURCE_MATRIX = "matrix"
+SOURCE_SECTION = "section"
+SOURCE_MANUAL = "manual"
+
+
+def get_delivery(project_id: int) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM deliveries WHERE project_id = ?", (int(project_id),)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def list_deliveries() -> list:
+    rows = get_conn().execute(
+        "SELECT * FROM deliveries ORDER BY created_at DESC, id DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_delivery(project_id: int, name: str = "", entity: str = "",
+                    created_by: str = "") -> Optional[int]:
+    """
+    يحوّل منافسة فائزة إلى مشروع تنفيذ. يعيد `None` إن كانت محوَّلة أصلاً.
+
+    التحويل **مرّة واحدة** (فهرس فريد على `project_id`): تحويل ثانٍ يُنشئ قائمة
+    تسليمات موازية، فيصير لكل مشروع حقيقتان ويُنفَّذ على إحداهما ويُسلَّم بالأخرى.
+    """
+    if get_delivery(project_id) is not None:
+        return None
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO deliveries (project_id, name, entity, created_at, "
+            "created_by) VALUES (?, ?, ?, ?, ?)",
+            (int(project_id), name or "", entity or "", _now(), created_by),
+        )
+        return int(cur.lastrowid)
+
+
+def delete_delivery(project_id: int) -> bool:
+    """يلغي التحويل ببنوده — يستعمله من حوّل منافسةً بالخطأ."""
+    delivery = get_delivery(project_id)
+    if delivery is None:
+        return False
+    with transaction() as conn:
+        conn.execute("DELETE FROM deliverables WHERE delivery_id = ?",
+                     (int(delivery["id"]),))
+        conn.execute("DELETE FROM deliveries WHERE id = ?", (int(delivery["id"]),))
+    return True
+
+
+def list_deliverables(delivery_id: int) -> list:
+    """
+    بنود التسليم: غير المؤكَّد أولاً.
+
+    ما استخرجه النموذج ولم يُقرَّ بعد يتصدّر القائمة — هو ما ينتظر قراراً، وما
+    أُقرّ صار عملاً يُتابَع لا قراراً يُتّخذ.
+    """
+    rows = get_conn().execute(
+        "SELECT * FROM deliverables WHERE delivery_id = ? "
+        "ORDER BY confirmed ASC, id ASC",
+        (int(delivery_id),),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_deliverable(delivery_id: int, title: str, source: str = SOURCE_MANUAL,
+                    source_ref: str = "", clause_ref: str = "",
+                    confirmed: bool = False) -> Optional[int]:
+    title = (title or "").strip()
+    if not title:
+        return None
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO deliverables (delivery_id, title, source, source_ref, "
+            "clause_ref, status, confirmed, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (int(delivery_id), title, source, (source_ref or "").strip(),
+             (clause_ref or "").strip(), DELIVERABLE_OPEN,
+             1 if confirmed else 0, _now()),
+        )
+        return int(cur.lastrowid)
+
+
+def update_deliverable(deliverable_id: int, status: Optional[str] = None,
+                       owner: Optional[str] = None, due_at: Optional[str] = None,
+                       title: Optional[str] = None,
+                       confirmed: Optional[bool] = None) -> bool:
+    sets, args = [], []
+    if status is not None:
+        if status not in DELIVERABLE_STATUSES:
+            return False
+        sets.append("status = ?")
+        args.append(status)
+    for column, value in (("owner", owner), ("due_at", due_at), ("title", title)):
+        if value is not None:
+            sets.append(f"{column} = ?")
+            args.append(str(value).strip())
+    if confirmed is not None:
+        sets.append("confirmed = ?")
+        args.append(1 if confirmed else 0)
+    if not sets:
+        return False
+    args.append(int(deliverable_id))
+    with transaction() as conn:
+        cur = conn.execute(
+            f"UPDATE deliverables SET {', '.join(sets)} WHERE id = ?", args
+        )
+        return cur.rowcount > 0
+
+
+def delete_deliverable(deliverable_id: int) -> bool:
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM deliverables WHERE id = ?", (int(deliverable_id),)
+        )
+        return cur.rowcount > 0
 
 
 # ─── وحدة الاستفسارات (14-9) ───────────────────────────────────────────────────

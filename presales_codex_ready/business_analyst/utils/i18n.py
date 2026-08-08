@@ -1917,6 +1917,66 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── تحويل الفائز إلى مشروع (14-11) / Won tender → delivery project ──
+    "dlv.title": {"ar": "مشروع التنفيذ والتزاماته", "en": "Delivery project & commitments"},
+    "dlv.hint": {
+        "ar": "المنافسة الفائزة تصير مشروعاً بقائمة تسليمات مستخرَجة من العرض — "
+              "لكل بند مرجعه، فلا يبدأ فريق التنفيذ بقراءة ثمانين صفحة.",
+        "en": "A won tender becomes a project with a deliverables list extracted "
+              "from the proposal — each item carries its reference, so the delivery "
+              "team does not start by reading eighty pages.",
+    },
+    "dlv.needs_win": {
+        "ar": "التحويل للمنافسة **الفائزة** وحدها. سجّل النتيجة «فاز» أولاً — "
+              "خطة تسليم لعملٍ لم نفز به تُدخل في اللوحة التزامات لا تخصّ أحداً.",
+        "en": "Only a **won** tender can be converted. Record the outcome as won "
+              "first — a delivery plan for work we did not win fills the board with "
+              "commitments that belong to no one.",
+    },
+    "dlv.ready": {
+        "ar": "✅ هذه المنافسة فائزة — يمكن تحويلها إلى مشروع تنفيذ.",
+        "en": "✅ This tender was won — it can be converted into a delivery project.",
+    },
+    "dlv.convert": {"ar": "حوّل إلى مشروع تنفيذ", "en": "Convert to a delivery project"},
+    "dlv.converted": {
+        "ar": "✅ حُوّلت، واستُخرج {n} التزاماً. راجِع ما ينتظر الإقرار.",
+        "en": "✅ Converted, and {n} commitment(s) extracted. Review what awaits "
+              "confirmation.",
+    },
+    "dlv.already": {"ar": "محوَّلة أصلاً.", "en": "Already converted."},
+    "dlv.undo_convert": {"ar": "إلغاء التحويل وحذف بنوده", "en": "Undo conversion and delete its items"},
+    "dlv.empty": {
+        "ar": "لا بند بعد — أضِف بنداً يدوياً أو أعد التحويل بعد كتابة الأقسام.",
+        "en": "No items yet — add one manually, or reconvert after the sections "
+              "are written.",
+    },
+    "dlv.m_total": {"ar": "البنود", "en": "Items"},
+    "dlv.m_unconfirmed": {"ar": "بانتظار الإقرار", "en": "Awaiting confirmation"},
+    "dlv.m_open": {"ar": "مفتوحة", "en": "Open"},
+    "dlv.m_done": {"ar": "منجزة", "en": "Done"},
+    "dlv.needs_confirm": {
+        "ar": "⏳ {n} بنداً مستخرَجاً من نصّ العرض ينتظر إقرار إنسان — الاستخراج "
+              "اقتراح لا قرار، وقائمة يُبنى عليها التنفيذ لا تُملأ بلا مراجعة.",
+        "en": "⏳ {n} item(s) extracted from the proposal text await human "
+              "confirmation — extraction is a suggestion, not a decision, and a list "
+              "that delivery rests on is not filled without review.",
+    },
+    "dlv.source": {"ar": "المصدر", "en": "Source"},
+    "dlv.src_matrix": {"ar": "مصفوفة الامتثال", "en": "Compliance matrix"},
+    "dlv.src_section": {"ar": "نصّ قسم في العرض", "en": "Proposal section text"},
+    "dlv.src_manual": {"ar": "أُضيف يدوياً", "en": "Added manually"},
+    "dlv.no_ref": {"ar": "بلا مرجع", "en": "no reference"},
+    "dlv.owner": {"ar": "المسؤول", "en": "Owner"},
+    "dlv.due": {"ar": "الاستحقاق", "en": "Due"},
+    "dlv.status": {"ar": "الحالة", "en": "Status"},
+    "dlv.st_open": {"ar": "مفتوح", "en": "Open"},
+    "dlv.st_done": {"ar": "منجز", "en": "Done"},
+    "dlv.st_dropped": {"ar": "أُسقط", "en": "Dropped"},
+    "dlv.confirm": {"ar": "أقرّ البند", "en": "Confirm item"},
+    "dlv.add": {"ar": "بند تسليم إضافي", "en": "Additional deliverable"},
+    "dlv.add_ph": {"ar": "التزام لم يُستخرج من العرض…", "en": "A commitment not extracted from the proposal…"},
+    "dlv.add_btn": {"ar": "إضافة بند", "en": "Add item"},
+
     # ── وحدة الاستفسارات (14-9) / Clarifications ──
     "cl.title": {"ar": "الاستفسارات للجهة", "en": "Clarifications to the entity"},
     "cl.hint": {

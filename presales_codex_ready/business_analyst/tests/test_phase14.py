@@ -1698,3 +1698,228 @@ def test_the_summary_counts_what_the_panel_shows(temp_db, clarify, clarify_matri
 
     assert stats == {"total": 3, "pending": 2, "unsent": 1, "overdue": 1,
                      "due_soon": 0, "answered": 1, "blocking": 1}
+
+
+# ─── 14-11: تحويل الفائز إلى مشروع ────────────────────────────────────────────
+#
+# نفوز، ثم يبدأ فريق التنفيذ من الصفر بقراءة عرضٍ من ثمانين صفحة ليعرف بماذا
+# التزمنا. وما يُنسى منه لا يُنسى على الجهة: بند وعدنا به في المنهجية ولم يصل
+# خطة التسليم يصير مخالفة عقدية بعد أشهر.
+#
+# ثلاث قواعد تُحرَس: **مصدران بثقتين مختلفتين** · **الاستخراج اقتراح لا قرار** ·
+# **لكل بند مرجعه**.
+
+
+@pytest.fixture()
+def deliver(temp_db, fake_streamlit):
+    from utils import delivery
+
+    return delivery
+
+
+@pytest.fixture()
+def matrix_df():
+    import pandas as pd
+
+    return pd.DataFrame({
+        "المعرّف": ["REQ-1", "REQ-2", "REQ-3", "REQ-4"],
+        "المتطلب": ["مركز عمليات 24/7", "دعم بالعربية", "شهادة أيزو", "تكامل"],
+        "الالتزام": ["نعم", "جزئي", "لا", "بانتظار التحقق"],
+        "مرجع البند": ["4-2", "4-3", "5-1", "6-1"],
+        "استراتيجية الاستجابة": ["", "عبر شريك محلي معتمد", "", ""],
+    })
+
+
+def test_only_a_won_tender_converts(deliver):
+    """
+    خطة تسليم لعملٍ لم نفز به تُدخل في اللوحة التزامات لا تخصّ أحداً. والنتيجة
+    واقعة يسجّلها إنسان — فالشرط قراءةٌ لها لا حكمٌ من عندنا.
+    """
+    from utils import history
+
+    assert deliver.can_convert({"outcome": history.OUTCOME_WON}) is True
+    assert deliver.can_convert({"outcome": history.OUTCOME_LOST}) is False
+    assert deliver.can_convert({"outcome": history.OUTCOME_PENDING}) is False
+    assert deliver.can_convert({"outcome": ""}) is False
+    assert deliver.can_convert(None) is False
+
+
+def test_a_promise_we_did_not_make_is_not_extracted(deliver, matrix_df):
+    """
+    «لا» ليست التزاماً، و«بانتظار التحقق» لم تُحسم — استخراجها يُنشئ **تعهّداً
+    لم نقطعه**، وهو أخطر ما قد تفعله هذه الوحدة.
+    """
+    found = deliver.commitments_from_matrix(matrix_df)
+
+    assert {c["source_ref"] for c in found} == {"REQ-1", "REQ-2"}
+
+
+def test_a_matrix_commitment_needs_no_second_review(deliver, matrix_df):
+    """
+    **القاعدة الأولى**: صفّ المصفوفة أقررنا فيه بالالتزام بأنفسنا صفّاً صفّاً،
+    فهو مؤكَّد. وهذا امتداد لقاعدة المرحلة 12: الصفّ في السجل أقوى من أي نصّ حرّ.
+    """
+    found = deliver.commitments_from_matrix(matrix_df)
+
+    assert all(c["confirmed"] is True for c in found)
+    assert all(c["source"] == "matrix" for c in found)
+
+
+def test_a_partial_commitment_carries_how_we_meet_it(deliver, matrix_df):
+    """«جزئي» بلا استراتيجية بندٌ غامض على مدير التنفيذ — تُضمّ إليه."""
+    partial = next(c for c in deliver.commitments_from_matrix(matrix_df)
+                   if c["source_ref"] == "REQ-2")
+
+    assert "عبر شريك محلي معتمد" in partial["title"]
+
+
+def test_every_item_carries_its_reference(deliver, matrix_df):
+    """
+    **القاعدة الثالثة**: مدير التنفيذ يسأل «لماذا نحن ملزمون بهذا؟» فيجد رقم
+    المتطلب ومرجع البند — لا ذاكرة أحد.
+    """
+    for item in deliver.commitments_from_matrix(matrix_df):
+        assert item["source_ref"]
+        assert item["clause_ref"]
+
+
+def test_a_promise_in_the_text_awaits_human_confirmation(deliver):
+    """
+    **القاعدة الثانية**: جملة في نصّ قسم استنتاج لا إقرار. قائمة يُبنى عليها
+    التنفيذ لا تُملأ بلا مراجعة بشرية.
+    """
+    sections = [{"key": "meth", "title": "المنهجية", "include": True}]
+    found = deliver.commitments_from_sections(
+        sections, lambda k: "نلتزم بتسليم خطة التنفيذ التفصيلية خلال أسبوعين.")
+
+    assert len(found) == 1
+    assert found[0]["confirmed"] is False
+    assert found[0]["source"] == "section"
+    assert found[0]["clause_ref"] == "المنهجية"
+
+
+def test_a_sentence_with_no_promise_is_not_a_deliverable(deliver):
+    """كل فقرة تصير بنداً يعني قائمة لا تُقرأ — والوعد الصريح وحده يُلتقط."""
+    sections = [{"key": "s", "title": "قسم", "include": True}]
+    found = deliver.commitments_from_sections(
+        sections, lambda k: "هذه فقرة تصف السوق ولا وعد فيها إطلاقاً هنا.")
+
+    assert found == []
+
+
+def test_a_bare_promise_is_too_short_to_be_an_item(deliver):
+    """«نلتزم بذلك.» ليست بنداً يُتابَع — لا شيء فيها يُسلَّم."""
+    sections = [{"key": "s", "title": "قسم", "include": True}]
+    found = deliver.commitments_from_sections(sections, lambda k: "نلتزم بذلك.")
+
+    assert found == []
+
+
+def test_an_excluded_section_promises_nothing(deliver):
+    """قسم خارج العرض لم يصل الجهة — فليس فيه وعد قطعناه."""
+    sections = [{"key": "out", "title": "مستبعد", "include": False}]
+    found = deliver.commitments_from_sections(
+        sections, lambda k: "نلتزم بتسليم خطة تفصيلية خلال أسبوعين من التوقيع.")
+
+    assert found == []
+
+
+def test_the_same_commitment_is_not_listed_twice(deliver, matrix_df):
+    """
+    متطلب في المصفوفة كُتب وعداً في القسم أيضاً بندٌ واحد لا اثنان — ويُحتفظ
+    بنسخة المصفوفة لأنها تحمل مرجع البند.
+    """
+    sections = [{"key": "s", "title": "قسم", "include": True}]
+    found = deliver.extract_commitments(
+        matrix_df, sections, lambda k: "مركز عمليات 24/7")
+
+    titles = [c["title"] for c in found]
+    assert titles.count("مركز عمليات 24/7") == 1
+    assert found[0]["source"] == "matrix"
+
+
+def test_conversion_happens_once(temp_db):
+    """
+    تحويل ثانٍ يُنشئ قائمة تسليمات موازية، فيصير لكل مشروع حقيقتان: يُنفَّذ على
+    إحداهما ويُسلَّم بالأخرى.
+    """
+    pid = temp_db.create_project("م", {})
+
+    assert temp_db.create_delivery(pid, "م") is not None
+    assert temp_db.create_delivery(pid, "م") is None
+    assert len(temp_db.list_deliveries()) == 1
+
+
+def test_undoing_a_conversion_takes_its_items(temp_db):
+    """من حوّل منافسةً بالخطأ يلغي التحويل ببنوده — لا يترك قائمة يتيمة."""
+    pid = temp_db.create_project("م", {})
+    did = temp_db.create_delivery(pid, "م")
+    temp_db.add_deliverable(did, "بند")
+
+    assert temp_db.delete_delivery(pid) is True
+    assert temp_db.get_delivery(pid) is None
+    assert temp_db.list_deliverables(did) == []
+
+
+def test_unconfirmed_items_lead_the_list(temp_db):
+    """ما ينتظر قراراً يتصدّر، وما أُقرّ صار عملاً يُتابَع لا قراراً يُتّخذ."""
+    pid = temp_db.create_project("م", {})
+    did = temp_db.create_delivery(pid, "م")
+    temp_db.add_deliverable(did, "مؤكَّد", confirmed=True)
+    temp_db.add_deliverable(did, "بانتظار الإقرار", confirmed=False)
+
+    assert [d["title"] for d in temp_db.list_deliverables(did)] == [
+        "بانتظار الإقرار", "مؤكَّد"]
+
+
+def test_confirming_an_item_does_not_rewrite_it(temp_db):
+    """الإقرار قرار على النصّ كما هو — لا يغيّره ولا يغيّر مصدره."""
+    pid = temp_db.create_project("م", {})
+    did = temp_db.create_delivery(pid, "م")
+    item = temp_db.add_deliverable(did, "وعدٌ من النصّ", source="section",
+                                   source_ref="meth")
+
+    temp_db.update_deliverable(item, confirmed=True)
+    after = temp_db.list_deliverables(did)[0]
+
+    assert after["confirmed"] == 1
+    assert after["title"] == "وعدٌ من النصّ"
+    assert after["source"] == "section"
+    assert after["source_ref"] == "meth"
+
+
+def test_an_unknown_status_is_refused(temp_db):
+    """حالة خارج المعلن تُفسد لوحة المتابعة صامتةً."""
+    pid = temp_db.create_project("م", {})
+    did = temp_db.create_delivery(pid, "م")
+    item = temp_db.add_deliverable(did, "بند")
+
+    assert temp_db.update_deliverable(item, status="مجهول") is False
+    assert temp_db.update_deliverable(item, status=temp_db.DELIVERABLE_DONE) is True
+
+
+def test_an_empty_item_is_refused(temp_db):
+    pid = temp_db.create_project("م", {})
+    did = temp_db.create_delivery(pid, "م")
+
+    assert temp_db.add_deliverable(did, "   ") is None
+    assert temp_db.list_deliverables(did) == []
+
+
+def test_a_missing_matrix_does_not_break_the_extraction(deliver):
+    """المصفوفة قد تكون None أو قائمة — الوحدة تقبل الثلاثة."""
+    assert deliver.commitments_from_matrix(None) == []
+    assert deliver.commitments_from_matrix([]) == []
+    assert deliver.commitments_from_matrix(
+        [{"المعرّف": "R", "المتطلب": "نص", "الالتزام": "نعم"}])[0]["source_ref"] == "R"
+
+
+def test_the_summary_separates_what_awaits_a_decision(deliver):
+    items = [
+        {"confirmed": 0, "status": "open", "source": "section"},
+        {"confirmed": 1, "status": "open", "source": "matrix"},
+        {"confirmed": 1, "status": "done", "source": "matrix"},
+    ]
+
+    assert deliver.summary(items) == {
+        "total": 3, "unconfirmed": 1, "open": 1, "done": 1, "from_matrix": 2}
