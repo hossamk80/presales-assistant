@@ -16,6 +16,7 @@ from utils.state import (
     DEFAULT_BOQ_DF,
     PIPELINE_STAGES as STATE_SCHEMA_PIPELINE_STAGES,
     get_project_snapshot,
+    get_sections,
     load_state_snapshot,
     reset_sections,
 )
@@ -272,6 +273,141 @@ def _render_pipeline():
             st.info(t("pipe.why_empty"))
 
 
+# ─── تحويل الفائز إلى مشروع (14-11) ───────────────────────────────────────────
+
+
+def _section_text(key: str) -> str:
+    from utils.state import section_content_key
+
+    return str(st.session_state.get(section_content_key(key), "") or "")
+
+
+def _render_delivery(project: dict):
+    """
+    لوحة التسليم: تحويل المنافسة الفائزة، ثم متابعة التزاماتها.
+
+    الفائزة **وحدها** تُحوَّل: خطة تسليم لعملٍ لم نفز به تُدخل في اللوحة
+    التزامات لا تخصّ أحداً.
+    """
+    from utils import delivery as delivery_utils
+
+    pid = project["id"]
+    record = db.get_delivery(pid)
+    may_edit = auth.can("projects.edit")
+
+    with st.expander(t("dlv.title"), expanded=record is not None):
+        st.caption(t("dlv.hint"))
+
+        if record is None:
+            if not delivery_utils.can_convert(project):
+                st.info(t("dlv.needs_win"))
+                return
+            st.success(t("dlv.ready"))
+            if st.button(t("dlv.convert"), type="primary", disabled=not may_edit):
+                delivery_id = db.create_delivery(
+                    pid, project.get("name", ""), project.get("entity", ""),
+                    created_by=auth.display_name(),
+                )
+                if delivery_id is None:
+                    st.warning(t("dlv.already"))
+                    return
+                found = delivery_utils.extract_commitments(
+                    st.session_state.get("df_compliance"),
+                    get_sections(), _section_text,
+                )
+                for item in found:
+                    db.add_deliverable(
+                        delivery_id, item["title"], source=item["source"],
+                        source_ref=item["source_ref"], clause_ref=item["clause_ref"],
+                        confirmed=item["confirmed"],
+                    )
+                audit.record(audit.DELIVERY_CONVERT, project_id=pid,
+                             project_name=project.get("name", ""),
+                             detail=str(len(found)))
+                st.success(t("dlv.converted", n=len(found)))
+                st.rerun()
+            return
+
+        items = db.list_deliverables(record["id"])
+        stats = delivery_utils.summary(items)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(t("dlv.m_total"), stats["total"])
+        c2.metric(t("dlv.m_unconfirmed"), stats["unconfirmed"])
+        c3.metric(t("dlv.m_open"), stats["open"])
+        c4.metric(t("dlv.m_done"), stats["done"])
+
+        if stats["unconfirmed"]:
+            # المستخرَج من النصّ اقتراح: قائمة يُبنى عليها التنفيذ لا تُملأ
+            # بلا مراجعة بشرية
+            st.warning(t("dlv.needs_confirm", n=stats["unconfirmed"]))
+
+        if not items:
+            st.info(t("dlv.empty"))
+
+        for item in items:
+            mark = "⏳" if not item["confirmed"] else (
+                "✅" if item["status"] == db.DELIVERABLE_DONE else "🔵"
+            )
+            with st.expander(f"{mark} {item['title']}"):
+                origin = t("dlv.src_" + item["source"])
+                ref = " · ".join(filter(None, [item["source_ref"], item["clause_ref"]]))
+                st.caption(f"{t('dl.source')}: {origin}"
+                           + (f" — {ref}" if ref else f" — {t('dl.no_ref')}"))
+
+                c_own, c_due, c_st = st.columns(3)
+                with c_own:
+                    owner = st.text_input(t("dlv.owner"), value=item["owner"],
+                                          key=f"dl_own_{item['id']}",
+                                          disabled=not may_edit)
+                with c_due:
+                    due = st.text_input(t("dlv.due"), value=item["due_at"],
+                                        key=f"dl_due_{item['id']}",
+                                        disabled=not may_edit)
+                with c_st:
+                    statuses = list(db.DELIVERABLE_STATUSES)
+                    status = st.selectbox(
+                        t("dlv.status"), statuses,
+                        index=statuses.index(item["status"])
+                        if item["status"] in statuses else 0,
+                        format_func=lambda s: t("dlv.st_" + s),
+                        key=f"dl_st_{item['id']}", disabled=not may_edit,
+                    )
+
+                c_save, c_conf, c_del = st.columns(3)
+                with c_save:
+                    if st.button(t("common.save_now"), key=f"dl_save_{item['id']}",
+                                 width="stretch", disabled=not may_edit):
+                        db.update_deliverable(item["id"], status=status,
+                                              owner=owner, due_at=due)
+                        st.rerun()
+                with c_conf:
+                    if st.button(t("dlv.confirm"), key=f"dl_conf_{item['id']}",
+                                 width="stretch", type="primary",
+                                 disabled=not may_edit or bool(item["confirmed"])):
+                        db.update_deliverable(item["id"], confirmed=True)
+                        st.rerun()
+                with c_del:
+                    if st.button(t("common.delete"), key=f"dl_del_{item['id']}",
+                                 width="stretch", disabled=not may_edit):
+                        db.delete_deliverable(item["id"])
+                        st.rerun()
+
+        st.divider()
+        with st.form("new_deliverable", clear_on_submit=True):
+            manual = st.text_input(t("dlv.add"), placeholder=t("dlv.add_ph"))
+            if st.form_submit_button(t("dlv.add_btn"), disabled=not may_edit):
+                if manual.strip():
+                    # ما يُضاف يدوياً مُقَرٌّ بذاته — كتبه إنسان لا نموذج
+                    db.add_deliverable(record["id"], manual,
+                                       source=db.SOURCE_MANUAL, confirmed=True)
+                    st.rerun()
+
+        if st.button(t("dlv.undo_convert"), disabled=not may_edit):
+            db.delete_delivery(pid)
+            st.rerun()
+
+
 def _render_history(projects: list, pid):
     """
     ذاكرة العطاءات: سجل النتائج، والمنافسات السابقة المشابهة للمفتوحة الآن.
@@ -424,6 +560,10 @@ def render():
     # 14-8: خطّ الأنابيب واستراتيجية العرض — للمنافسة المفتوحة وحدها
     if pid is not None:
         _render_pipeline()
+        # 14-11: وتحويلها إلى مشروع تنفيذ حين تفوز
+        _open = next((p for p in db.list_projects() if p["id"] == pid), None)
+        if _open is not None:
+            _render_delivery(_open)
 
     notice = st.session_state.pop("_merge_notice", None)
     if notice:
