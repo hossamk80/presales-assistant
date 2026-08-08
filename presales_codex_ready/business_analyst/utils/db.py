@@ -226,6 +226,37 @@ CREATE TABLE IF NOT EXISTS glossary (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_glossary_term ON glossary(term);
 
+-- وحدة الاستفسارات (14-9): الغموض المرصود يصير سؤالاً مُتتبَّعاً.
+--
+-- المشكلة: بند غامض في الكرّاس يُرصد في المصفوفة، فيُكتب سؤال في بريد أو ورقة
+-- ثم يُنسى. الموعد يمرّ، ولا أحد يعرف أنّ متطلباً حرجاً بُني على **فهمنا** له
+-- لا على جواب الجهة. غيابُ الجواب لا يظهر في أي شاشة — وهذا أخطر من ورودِه
+-- مخالفاً لتوقّعنا، لأن المخالف يُعالَج والغائب يُبنى عليه.
+--
+-- `req_id` يربط السؤال بصفّ المصفوفة (عمود «المعرّف»). الربط **بالنص لا بمفتاح
+-- أجنبي**: صفوف المصفوفة تعيش في حمولة المنافسة لا في جدول، ومعرّف قديم لم يعد
+-- في المصفوفة يُعرض «غير مرتبط» ولا يُخفي السؤال — السؤال أُرسل إلى الجهة
+-- فعلاً، فوجوده واقعة لا تُمحى بحذف صفّ عندنا.
+--
+-- `due_at` موعد الجواب المتوقَّع، ويُقرأ بـ `records.parse_date` لا بقارئ
+-- ميلادي: كرّاسات الجهات تؤرّخ هجرياً كثيراً بلا وسم.
+CREATE TABLE IF NOT EXISTS clarifications (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  INTEGER,
+    req_id      TEXT NOT NULL DEFAULT '',
+    question    TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'draft',
+    asked_at    TEXT NOT NULL DEFAULT '',
+    due_at      TEXT NOT NULL DEFAULT '',
+    answer      TEXT NOT NULL DEFAULT '',
+    answered_at TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT '',
+    created_by  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_clarifications_project
+    ON clarifications(project_id);
+
 -- إعدادات النظام (13-10): مفتاح ← قيمة. جدول واحد صغير بدل عمود لكل إعداد
 -- جديد، وأول ساكنيه سياسة البيانات الشخصية (أساس المعالجة ومدة الاحتفاظ).
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -1385,6 +1416,133 @@ def content_block_stats() -> dict:
                        if b["status"] == BLOCK_APPROVED and block_review_due(b))
     stats["used"] = sum(int(b["used_count"] or 0) for b in blocks)
     return stats
+
+
+# ─── وحدة الاستفسارات (14-9) ───────────────────────────────────────────────────
+
+CLARIFY_DRAFT = "draft"
+CLARIFY_SENT = "sent"
+CLARIFY_ANSWERED = "answered"
+CLARIFY_CLOSED = "closed"
+CLARIFY_STATUSES = (CLARIFY_DRAFT, CLARIFY_SENT, CLARIFY_ANSWERED, CLARIFY_CLOSED)
+
+
+def list_clarifications(project_id: Optional[int] = None) -> list:
+    """
+    استفسارات المنافسة، الأحدث موعداً أولاً ثم الأقدم إنشاءً.
+
+    بلا `project_id` تُعاد كلها — تستعملها الأدوات التي تعمل عبر المنافسات.
+    """
+    sql = "SELECT * FROM clarifications"
+    args: list[Any] = []
+    if project_id is not None:
+        sql += " WHERE project_id = ?"
+        args.append(int(project_id))
+    sql += " ORDER BY (due_at = '') ASC, due_at ASC, id ASC"
+    return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
+
+
+def get_clarification(clarification_id: int) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM clarifications WHERE id = ?", (int(clarification_id),)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def add_clarification(project_id: Optional[int], question: str, req_id: str = "",
+                      due_at: str = "", created_by: str = "") -> Optional[int]:
+    """يسجّل استفساراً جديداً كمسودّة. يعيد معرّفه، أو `None` لسؤال فارغ."""
+    question = (question or "").strip()
+    if not question:
+        return None
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO clarifications (project_id, req_id, question, status, "
+            "due_at, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (project_id, (req_id or "").strip(), question, CLARIFY_DRAFT,
+             (due_at or "").strip(), _now(), created_by),
+        )
+        return int(cur.lastrowid)
+
+
+def update_clarification(clarification_id: int, question: Optional[str] = None,
+                         req_id: Optional[str] = None,
+                         due_at: Optional[str] = None) -> bool:
+    sets, args = [], []
+    for column, value in (("question", question), ("req_id", req_id),
+                          ("due_at", due_at)):
+        if value is not None:
+            sets.append(f"{column} = ?")
+            args.append(str(value).strip())
+    if not sets:
+        return False
+    args.append(int(clarification_id))
+    with transaction() as conn:
+        cur = conn.execute(
+            f"UPDATE clarifications SET {', '.join(sets)} WHERE id = ?", args
+        )
+        return cur.rowcount > 0
+
+
+def mark_clarification_sent(clarification_id: int) -> bool:
+    """
+    يُسجّل أن السؤال أُرسل فعلاً إلى الجهة، ويثبّت تاريخ إرساله.
+
+    الفرق بين المسودّة والمُرسَل ليس تجميلاً: سؤال لم يُرسَل غيابُ جوابه ذنبنا
+    لا ذنب الجهة، ورصده كـ«متأخّر عن الجهة» يُخفي أنّنا لم نسأل بعد.
+    """
+    with transaction() as conn:
+        cur = conn.execute(
+            "UPDATE clarifications SET status = ?, asked_at = ? "
+            "WHERE id = ? AND status = ?",
+            (CLARIFY_SENT, _now(), int(clarification_id), CLARIFY_DRAFT),
+        )
+        return cur.rowcount > 0
+
+
+def answer_clarification(clarification_id: int, answer: str) -> bool:
+    """
+    يسجّل جواب الجهة. جواب فارغ **لا يُغلق** السؤال.
+
+    «أُجيب» حالة تُبنى عليها قرارات امتثال، فتسجيلها بلا نصّ جواب يجعل المتطلب
+    يبدو محسوماً بلا شيء يحسمه.
+    """
+    answer = (answer or "").strip()
+    if not answer:
+        return False
+    with transaction() as conn:
+        cur = conn.execute(
+            "UPDATE clarifications SET status = ?, answer = ?, answered_at = ? "
+            "WHERE id = ?",
+            (CLARIFY_ANSWERED, answer, _now(), int(clarification_id)),
+        )
+        return cur.rowcount > 0
+
+
+def close_clarification(clarification_id: int) -> bool:
+    """يُغلق سؤالاً سقط سببه — بلا ادّعاء جواب لم يأتِ."""
+    with transaction() as conn:
+        cur = conn.execute(
+            "UPDATE clarifications SET status = ? WHERE id = ?",
+            (CLARIFY_CLOSED, int(clarification_id)),
+        )
+        return cur.rowcount > 0
+
+
+def delete_clarification(clarification_id: int) -> bool:
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM clarifications WHERE id = ?", (int(clarification_id),)
+        )
+        return cur.rowcount > 0
+
+
+def delete_project_clarifications(project_id: int) -> int:
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM clarifications WHERE project_id = ?", (int(project_id),)
+        )
+        return cur.rowcount
 
 
 def project_costs() -> dict:

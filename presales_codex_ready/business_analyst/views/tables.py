@@ -26,7 +26,7 @@ from utils.state import (
     role_text,
     section_content_key,
 )
-from utils import auth, db, submission, timeline as timeline_utils, traceability
+from utils import audit, auth, db, submission, timeline as timeline_utils, traceability
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
@@ -212,6 +212,147 @@ def _extraction_bar(kind: str):
 
 def _section_content(key: str) -> str:
     return str(st.session_state.get(section_content_key(key), ""))
+
+
+# ─── وحدة الاستفسارات (14-9) ───────────────────────────────────────────────────
+
+
+def _clarify_status_label(item: dict) -> str:
+    return t("cl.status_" + str(item.get("status", "") or db.CLARIFY_DRAFT))
+
+
+def _render_clarifications():
+    """
+    الاستفسارات: سؤال للجهة بموعده وجوابه، مربوطاً بصفّ المصفوفة.
+
+    موضعها **بعد المصفوفة مباشرةً** لا في شاشة أخرى: الغموض يُرصد هنا، والسؤال
+    يُكتب حيث يُرصد — وإلا كُتب في بريد ونُسي، وهو ما وُجد هذا البند لعلاجه.
+    """
+    from utils import clarifications as clarify
+
+    project_id = st.session_state.get("_project_id")
+    df = st.session_state.get("df_compliance")
+    may_edit = auth.can("tables.edit")
+
+    with st.expander(t("cl.title"), expanded=False):
+        st.caption(t("cl.hint"))
+        if project_id is None:
+            st.info(t("cl.needs_project"))
+            return
+
+        items = db.list_clarifications(project_id)
+        stats = clarify.summary(items, df)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric(t("cl.m_total"), stats["total"])
+        c2.metric(t("cl.m_unsent"), stats["unsent"])
+        c3.metric(t("cl.m_overdue"), stats["overdue"])
+        c4.metric(t("cl.m_answered"), stats["answered"])
+
+        # المخاطر أولاً: غياب الجواب على متطلب حرج أخطر من ورودِه مخالفاً
+        found = clarify.risks(items, df)
+        if found:
+            critical = [f for f in found if f["severity"] == "حرجة"]
+            body = "\n".join(f"- {f['message']}" for f in found)
+            if critical:
+                st.error(t("cl.risks_critical", n=len(critical)) + "\n\n" + body)
+            else:
+                st.warning(t("cl.risks", n=len(found)) + "\n\n" + body)
+        elif items:
+            st.success(t("cl.no_risks"))
+
+        # ── سؤال جديد من متطلب مرصود ──
+        index = clarify.requirement_index(df)
+        options = [""] + sorted(index)
+        with st.form("new_clarification", clear_on_submit=True):
+            c_req, c_due = st.columns([1, 1])
+            with c_req:
+                req_id = st.selectbox(
+                    t("cl.req"), options,
+                    format_func=lambda r: (
+                        t("cl.req_none") if not r
+                        else f"{r} — {clarify._short(index[r].get(clarify.REQ_TEXT_COLUMN), 40)}"
+                    ),
+                )
+            with c_due:
+                due = st.text_input(t("cl.due"), placeholder="2026-09-01",
+                                    help=t("cl.due_help"))
+            question = st.text_area(t("cl.question"), height=80,
+                                    placeholder=t("cl.question_ph"))
+            if st.form_submit_button(t("cl.add"), type="primary",
+                                     disabled=not may_edit):
+                if not question.strip():
+                    st.warning(t("cl.question_required"))
+                else:
+                    db.add_clarification(project_id, question, req_id=req_id,
+                                         due_at=due, created_by=auth.display_name())
+                    audit.record(audit.CLARIFY_ADD, detail=req_id or "—")
+                    st.success(t("cl.added"))
+                    st.rerun()
+
+        if not items:
+            st.caption(t("cl.empty"))
+            return
+
+        # ── القائمة ──
+        for item in items:
+            blocking = clarify.is_blocking(item, df)
+            left = clarify.days_left(item)
+            head = f"{_clarify_status_label(item)} · {clarify._short(item['question'], 60)}"
+            if blocking:
+                head = "🚨 " + head
+            with st.expander(head):
+                meta = [t("cl.req") + ": " + (item["req_id"] or t("cl.req_none"))]
+                if item["req_id"] and clarify.linked_requirement(item, df) is None:
+                    # معرّف لم يعد في المصفوفة: السؤال أُرسل فعلاً فلا يُخفى
+                    meta.append(t("cl.req_unlinked"))
+                if item["due_at"]:
+                    meta.append(t("cl.due") + ": " + item["due_at"] + (
+                        f" ({t('cl.days_left', n=left)})" if left is not None
+                        else f" — {t('cl.due_unreadable')}"
+                    ))
+                st.caption(" · ".join(meta))
+
+                if item["status"] == db.CLARIFY_ANSWERED:
+                    st.success(t("cl.answer") + ": " + item["answer"])
+                    st.caption(t("cl.answer_reaches_model"))
+
+                c_send, c_close, c_del = st.columns(3)
+                with c_send:
+                    if st.button(t("cl.mark_sent"), key=f"cl_send_{item['id']}",
+                                 width="stretch",
+                                 disabled=not may_edit
+                                 or item["status"] != db.CLARIFY_DRAFT):
+                        db.mark_clarification_sent(item["id"])
+                        audit.record(audit.CLARIFY_SENT, detail=item["req_id"] or "—")
+                        st.rerun()
+                with c_close:
+                    if st.button(t("cl.close"), key=f"cl_close_{item['id']}",
+                                 width="stretch", disabled=not may_edit
+                                 or item["status"] == db.CLARIFY_CLOSED):
+                        db.close_clarification(item["id"])
+                        st.rerun()
+                with c_del:
+                    if st.button(t("common.delete"), key=f"cl_del_{item['id']}",
+                                 width="stretch", disabled=not may_edit):
+                        db.delete_clarification(item["id"])
+                        st.rerun()
+
+                if item["status"] != db.CLARIFY_ANSWERED:
+                    answer = st.text_area(t("cl.answer"), key=f"cl_ans_{item['id']}",
+                                          height=80, disabled=not may_edit)
+                    if st.button(t("cl.save_answer"), key=f"cl_save_{item['id']}",
+                                 type="primary", disabled=not may_edit):
+                        # جواب فارغ لا يُغلق سؤالاً: «أُجيب» حالة تُبنى عليها
+                        # قرارات امتثال، فتسجيلها بلا نصّ تجعل المتطلب يبدو
+                        # محسوماً بلا شيء يحسمه
+                        if db.answer_clarification(item["id"], answer):
+                            audit.record(audit.CLARIFY_ANSWERED,
+                                         detail=item["req_id"] or "—")
+                            st.success(t("cl.answer_saved"))
+                            st.rerun()
+                        else:
+                            st.warning(t("cl.answer_required"))
 
 
 def _render_coverage():
@@ -668,6 +809,9 @@ def render():
         )
         # Persist changes immediately
         st.session_state["df_compliance"] = edited_comp
+
+    st.divider()
+    _render_clarifications()
 
     st.divider()
     _render_coverage()

@@ -1446,3 +1446,255 @@ def test_a_stage_outside_the_list_does_not_break_the_panel(pipeline):
     assert "" in pipeline.PIPELINE_STAGES
     assert "الإعداد" in pipeline.PIPELINE_STAGES
     assert pipeline.PIPELINE_STAGES[0] == ""
+
+
+# ─── 14-9: وحدة الاستفسارات ───────────────────────────────────────────────────
+#
+# بند غامض يُرصد في المصفوفة، فيُكتب سؤال في بريد ثم يُنسى. الموعد يمرّ، ولا
+# أحد يعرف أنّ متطلباً حرجاً بُني على **فهمنا** له لا على جواب الجهة.
+#
+# وغيابُ الجواب أخطر من ورودِه مخالفاً لتوقّعنا: المخالف يُعالَج، والغائب يُبنى
+# عليه صامتاً. فما يُحرَس هنا قاعدتان:
+#   1. سؤال لم يُرسَل غيابُ جوابه **ذنبنا** لا ذنب الجهة.
+#   2. **الغائب لا يُفترَض** — المعلَّق لا يُحقن في التوليد بأي صيغة.
+
+
+@pytest.fixture()
+def clarify_matrix():
+    import pandas as pd
+
+    return pd.DataFrame({
+        "المعرّف": ["REQ-1", "REQ-2"],
+        "الأهمية": ["High", "Low"],
+        "المتطلب": ["خبرة مماثلة غير معرَّفة", "لون الغلاف"],
+    })
+
+
+@pytest.fixture()
+def clarify(temp_db, fake_streamlit):
+    from utils import clarifications
+
+    return clarifications
+
+
+def test_an_ambiguity_becomes_a_tracked_question(temp_db, clarify, clarify_matrix):
+    """
+    **شرط قبول 14-9**: غموض مرصود يصير سؤالاً مُتتبَّعاً — مربوطاً بصفّ
+    المصفوفة، له موعد وحالة، ويُعرف أنّه على متطلب حرج.
+    """
+    cid = temp_db.add_clarification(1, "ما المقصود بخبرة مماثلة؟",
+                                   req_id="REQ-1", due_at="2026-01-01")
+    item = temp_db.get_clarification(cid)
+
+    assert item["status"] == temp_db.CLARIFY_DRAFT
+    assert clarify.linked_requirement(item, clarify_matrix)["المتطلب"] \
+        == "خبرة مماثلة غير معرَّفة"
+    assert clarify.is_blocking(item, clarify_matrix) is True
+
+
+def test_an_unsent_question_is_our_fault_not_the_entitys(temp_db, clarify,
+                                                        clarify_matrix):
+    """
+    **القاعدة الأولى**: موعدٌ مضى على سؤال لم نُرسله ليس تأخّراً من الجهة.
+    خلطهما يجعل اللوحة تشكو مِمّن لم يُسأل، ويُخفي أنّ الإصلاح بيدنا.
+    """
+    temp_db.add_clarification(1, "سؤال لم يُرسَل", req_id="REQ-1",
+                              due_at="2020-01-01")
+    items = temp_db.list_clarifications(1)
+
+    assert len(clarify.unsent(items)) == 1
+    assert clarify.overdue(items) == []          # ليس تأخّراً من الجهة
+    assert [f["kind"] for f in clarify.risks(items, clarify_matrix)] == ["not_sent"]
+
+
+def test_a_sent_question_past_its_date_is_overdue(temp_db, clarify, clarify_matrix):
+    cid = temp_db.add_clarification(1, "سؤال أُرسل", req_id="REQ-1",
+                                    due_at="2020-01-01")
+    temp_db.mark_clarification_sent(cid)
+    items = temp_db.list_clarifications(1)
+
+    assert len(clarify.overdue(items)) == 1
+    assert clarify.risks(items, clarify_matrix)[0]["kind"] == "overdue"
+
+
+def test_a_critical_requirement_makes_the_gap_critical(temp_db, clarify,
+                                                       clarify_matrix):
+    """
+    الحكم على **الحرِج بلا جواب**: قائمة تشكو من كل سؤال لم يُجَب تُهمَل، وتُهمَل
+    معها الواحدة التي كانت تستحقّ التوقّف.
+    """
+    high = temp_db.add_clarification(1, "على حرج", req_id="REQ-1", due_at="2020-01-01")
+    low = temp_db.add_clarification(1, "على غير حرج", req_id="REQ-2", due_at="2020-01-01")
+    for cid in (high, low):
+        temp_db.mark_clarification_sent(cid)
+
+    found = clarify.risks(temp_db.list_clarifications(1), clarify_matrix)
+    severities = {f["clarification"]["req_id"]: f["severity"] for f in found}
+
+    assert severities["REQ-1"] == "حرجة"
+    assert severities["REQ-2"] == "تنبيه"
+    assert found[0]["severity"] == "حرجة"      # الحرِج أولاً
+
+
+def test_a_hijri_due_date_is_read_as_hijri(clarify):
+    """
+    كرّاسات الجهات تؤرّخ هجرياً كثيراً **بلا وسم**. قارئ ميلادي وحده يقرأ
+    «1448-11-14» ماضياً سحيقاً فيُعدّ كل سؤال متأخّراً — وهذا مزلق مكتوب في
+    `HANDOFF`، فالتاريخ يمرّ بـ `records.parse_date`.
+    """
+    left = clarify.days_left({"due_at": "1448-11-14"})
+
+    assert left is not None
+    assert left > 0            # مستقبل لا ماضٍ سحيق
+
+
+def test_an_unreadable_date_is_neither_passed_nor_pending(temp_db, clarify,
+                                                          clarify_matrix):
+    """الحكم بتخمين تاريخ يُبنى عليه قرار تسليم — يبقى قرار البشر."""
+    cid = temp_db.add_clarification(1, "س", req_id="REQ-1", due_at="ليس تاريخاً")
+    temp_db.mark_clarification_sent(cid)
+    items = temp_db.list_clarifications(1)
+
+    assert clarify.days_left(items[0]) is None
+    assert clarify.overdue(items) == []
+    assert clarify.due_soon(items) == []
+
+
+def test_a_question_with_no_date_is_still_tracked(temp_db, clarify, clarify_matrix):
+    """بلا موعد لا تأخّر — لكن السؤال يبقى معلَّقاً ومحسوباً."""
+    cid = temp_db.add_clarification(1, "بلا موعد", req_id="REQ-1")
+    temp_db.mark_clarification_sent(cid)
+    items = temp_db.list_clarifications(1)
+
+    assert len(clarify.pending(items)) == 1
+    assert clarify.overdue(items) == []
+
+
+def test_a_pending_question_is_never_injected(temp_db, clarify):
+    """
+    **القاعدة الثانية**: تمرير المعلَّق ولو موسوماً بـ«بانتظار الجواب» يجعل
+    النموذج يبني عليه — والغائب لا يُفترَض.
+    """
+    cid = temp_db.add_clarification(1, "سؤال معلَّق جداً", req_id="REQ-1")
+    temp_db.mark_clarification_sent(cid)
+
+    block = clarify.answers_block(temp_db.list_clarifications(1))
+
+    assert block == ""
+    assert "سؤال معلَّق جداً" not in block
+
+
+def test_an_answer_reaches_the_section_writer(temp_db, clarify):
+    """
+    جواب الجهة الرسمي يعلو على فهمنا للبند الغامض — وحقنه ثمرة السؤال كلّه.
+    """
+    cid = temp_db.add_clarification(1, "أهي القيمة أم النطاق؟", req_id="REQ-1")
+    temp_db.mark_clarification_sent(cid)
+    temp_db.answer_clarification(cid, "القيمة لا النطاق.")
+
+    block = clarify.answers_block(temp_db.list_clarifications(1))
+
+    assert "القيمة لا النطاق." in block
+    assert "تعلو على أي فهم مخالف" in block
+
+
+def test_only_answered_questions_reach_the_writer(temp_db, clarify, fake_streamlit):
+    """المُجاب وحده يعبر إلى سياق الكتابة — والمعلَّق يبقى خارجه."""
+    from views import doc_builder
+
+    answered = temp_db.add_clarification(1, "س مُجاب", req_id="REQ-1")
+    temp_db.answer_clarification(answered, "جواب رسمي مميَّز")
+    temp_db.add_clarification(1, "س معلَّق مميَّز", req_id="REQ-2")
+
+    doc_builder.st.session_state["_project_id"] = 1
+    _rfp, extra = doc_builder._writing_context({"key": "k", "title": "قسم"})
+
+    assert "جواب رسمي مميَّز" in extra
+    assert "س معلَّق مميَّز" not in extra
+
+
+def test_an_empty_answer_does_not_close_a_question(temp_db):
+    """
+    «أُجيب» حالة تُبنى عليها قرارات امتثال. تسجيلها بلا نصّ جواب يجعل المتطلب
+    يبدو محسوماً بلا شيء يحسمه.
+    """
+    cid = temp_db.add_clarification(1, "س", req_id="REQ-1")
+
+    assert temp_db.answer_clarification(cid, "   ") is False
+    assert temp_db.get_clarification(cid)["status"] == temp_db.CLARIFY_DRAFT
+
+
+def test_marking_sent_only_moves_a_draft(temp_db):
+    """تعليم الإرسال مرتين لا يعيد كتابة تاريخ الإرسال الأول."""
+    cid = temp_db.add_clarification(1, "س")
+
+    assert temp_db.mark_clarification_sent(cid) is True
+    first = temp_db.get_clarification(cid)["asked_at"]
+    assert temp_db.mark_clarification_sent(cid) is False
+    assert temp_db.get_clarification(cid)["asked_at"] == first
+
+
+def test_closing_a_question_claims_no_answer(temp_db, clarify, clarify_matrix):
+    """سؤال سقط سببه يُغلق — بلا ادّعاء جواب لم يأتِ."""
+    cid = temp_db.add_clarification(1, "س", req_id="REQ-1", due_at="2020-01-01")
+    temp_db.mark_clarification_sent(cid)
+    temp_db.close_clarification(cid)
+
+    item = temp_db.get_clarification(cid)
+    assert item["status"] == temp_db.CLARIFY_CLOSED
+    assert item["answer"] == ""
+    assert clarify.risks(temp_db.list_clarifications(1), clarify_matrix) == []
+
+
+def test_a_question_survives_the_matrix_row_it_points_at(temp_db, clarify):
+    """
+    السؤال أُرسل إلى الجهة **فعلاً**، فوجوده واقعة لا تُمحى بحذف صفّ عندنا.
+    يُعرض «غير مرتبط» ولا يُخفى.
+    """
+    import pandas as pd
+
+    cid = temp_db.add_clarification(1, "س", req_id="REQ-9")
+    empty_matrix = pd.DataFrame({"المعرّف": [], "الأهمية": [], "المتطلب": []})
+
+    item = temp_db.get_clarification(cid)
+    assert clarify.linked_requirement(item, empty_matrix) is None
+    assert clarify.is_blocking(item, empty_matrix) is False
+    assert len(temp_db.list_clarifications(1)) == 1
+
+
+def test_a_question_without_text_is_refused(temp_db):
+    assert temp_db.add_clarification(1, "   ") is None
+    assert temp_db.list_clarifications(1) == []
+
+
+def test_deleting_a_tender_takes_its_clarifications(temp_db):
+    """الاستفسارات تذهب مع منافستها كنسخ الأقسام وقرارات الاعتماد."""
+    pid = temp_db.create_project("م", {})
+    temp_db.add_clarification(pid, "س1")
+    temp_db.add_clarification(pid, "س2")
+
+    assert temp_db.delete_project_clarifications(pid) == 2
+    assert temp_db.list_clarifications(pid) == []
+
+
+def test_a_missing_matrix_does_not_crash_the_unit(temp_db, clarify):
+    """المصفوفة قد تكون None أو قائمة — الوحدة تقبل الثلاثة ولا تنهار."""
+    cid = temp_db.add_clarification(1, "س", req_id="REQ-1")
+    item = temp_db.get_clarification(cid)
+
+    assert clarify.linked_requirement(item, None) is None
+    assert clarify.requirement_index(None) == {}
+    assert clarify.requirement_index([{"المعرّف": "REQ-1"}]) == {"REQ-1": {"المعرّف": "REQ-1"}}
+
+
+def test_the_summary_counts_what_the_panel_shows(temp_db, clarify, clarify_matrix):
+    unsent = temp_db.add_clarification(1, "لم يُرسَل", req_id="REQ-1")
+    late = temp_db.add_clarification(1, "متأخّر", req_id="REQ-2", due_at="2020-01-01")
+    done = temp_db.add_clarification(1, "مُجاب", req_id="REQ-2")
+    temp_db.mark_clarification_sent(late)
+    temp_db.answer_clarification(done, "جواب")
+
+    stats = clarify.summary(temp_db.list_clarifications(1), clarify_matrix)
+
+    assert stats == {"total": 3, "pending": 2, "unsent": 1, "overdue": 1,
+                     "due_soon": 0, "answered": 1, "blocking": 1}
