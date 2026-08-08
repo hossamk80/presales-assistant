@@ -145,6 +145,9 @@ def render():
     _render_content_library()
 
     st.divider()
+    _render_entity_templates()
+
+    st.divider()
     _render_glossary()
 
     st.divider()
@@ -424,6 +427,64 @@ def _render_content_library():
         st.divider()
         st.markdown(f"**{t('lib.add')}**")
         _save_block_form(None, may_edit)
+
+
+# ─── نماذج الجهات (ب-4) ───────────────────────────────────────────────────────
+#
+# قالب الشركة واحد، وبعض الجهات تفرض نموذجها وترفض ما عداه رفضاً شكلياً. من
+# يقدّم لثلاث جهات كان يبدّل القالب يدوياً قبل كل تصدير ويتذكّر أيّها الصحيح.
+
+
+def _render_entity_templates():
+    """نموذج Word لكل جهة — يُختار تلقائياً عند التصدير حسب جهة المنافسة."""
+    may_edit = auth.can("company.edit")
+    saved = db.list_entity_templates()
+
+    with st.expander(t("et.title")):
+        st.caption(t("et.hint"))
+
+        known = sorted({
+            str(r.get("name", "")).strip() for r in db.list_records("entities")
+            if str(r.get("name", "")).strip()
+        })
+        entity = st.selectbox(
+            t("et.entity"), [""] + known,
+            format_func=lambda n: n or t("et.entity_new"),
+            key="et_pick", disabled=not may_edit,
+        )
+        if not entity:
+            # جهة خارج سجل الجهات: تُكتب باسمها، والتوحيد يتكفّل بالإملاء
+            entity = st.text_input(t("et.entity_name"), key="et_name",
+                                   disabled=not may_edit,
+                                   help=t("et.entity_name_help"))
+
+        uploaded = st.file_uploader(t("et.upload"), type=["docx"],
+                                    key="et_file", disabled=not may_edit)
+        if uploaded is not None and entity.strip() and st.button(
+                t("et.save"), type="primary", disabled=not may_edit):
+            db.save_entity_template(entity, uploaded.getvalue(),
+                                    filename=uploaded.name,
+                                    updated_by=auth.display_name())
+            st.success(t("et.saved", entity=entity.strip()))
+            st.rerun()
+
+        if not saved:
+            st.info(t("et.empty"))
+            return
+
+        st.caption(t("et.count", n=len(saved)))
+        for record in saved:
+            cols = st.columns([4, 1])
+            with cols[0]:
+                st.markdown(
+                    f"🏛️ **{record['entity_label']}** — {record['filename'] or '—'} "
+                    f"· {int(record['size'] or 0) // 1024} KB · {record['updated_at']}"
+                )
+            with cols[1]:
+                if st.button(t("common.delete"), key=f"et_del_{record['id']}",
+                             width="stretch", disabled=not may_edit):
+                    db.delete_entity_template(record["entity_label"])
+                    st.rerun()
 
 
 # ─── مسرد المصطلحات (14-6) ────────────────────────────────────────────────────

@@ -301,6 +301,25 @@ CREATE TABLE IF NOT EXISTS deliverables (
 CREATE INDEX IF NOT EXISTS idx_deliverables_delivery
     ON deliverables(delivery_id);
 
+-- نماذج الجهات (ب-4): قالب Word لكل جهة تفرض شكلها.
+--
+-- بعض الجهات ترفض عرضاً بغير نموذجها — رفضاً شكلياً لا علاقة له بجودة المحتوى.
+-- وكان في النظام قالب **واحد للشركة**، فمن يقدّم لثلاث جهات مختلفة يبدّله يدوياً
+-- قبل كل تصدير ويتذكّر أيّها الصحيح.
+--
+-- `entity_key` اسم الجهة **مُوحَّداً** بـ `history.normalize_entity` (12-7):
+-- «وزارة الصحة» و«وزاره الصحه» جهة واحدة، وعدّهما جهتين يُفقد النموذج صاحبَه.
+-- و `entity_label` الاسم كما كتبه المستخدم — يُعرض ولا يُطابَق به.
+CREATE TABLE IF NOT EXISTS entity_templates (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_key  TEXT NOT NULL UNIQUE,
+    entity_label TEXT NOT NULL DEFAULT '',
+    filename    TEXT NOT NULL DEFAULT '',
+    template    BLOB,
+    updated_at  TEXT NOT NULL DEFAULT '',
+    updated_by  TEXT NOT NULL DEFAULT ''
+);
+
 -- إعدادات النظام (13-10): مفتاح ← قيمة. جدول واحد صغير بدل عمود لكل إعداد
 -- جديد، وأول ساكنيه سياسة البيانات الشخصية (أساس المعالجة ومدة الاحتفاظ).
 CREATE TABLE IF NOT EXISTS app_settings (
@@ -1460,6 +1479,72 @@ def content_block_stats() -> dict:
                        if b["status"] == BLOCK_APPROVED and block_review_due(b))
     stats["used"] = sum(int(b["used_count"] or 0) for b in blocks)
     return stats
+
+
+# ─── نماذج الجهات (ب-4) ───────────────────────────────────────────────────────
+
+
+def _entity_key(name: str) -> str:
+    """
+    مفتاح الجهة مُوحَّداً — نفس توحيد ذاكرة العطاءات (12-7) لا توحيدٌ ثانٍ.
+
+    قاعدتان لتوحيد الاسم تعنيان جهةً واحدة تُطابَق هنا ولا تُطابَق هناك.
+    """
+    from utils import history
+
+    return history.normalize_entity(name)
+
+
+def list_entity_templates() -> list:
+    """النماذج المحفوظة بلا حمولاتها — القائمة تُعرض ولا تُحمَّل الملفات لها."""
+    rows = get_conn().execute(
+        "SELECT id, entity_key, entity_label, filename, updated_at, updated_by, "
+        "LENGTH(template) AS size FROM entity_templates "
+        "ORDER BY entity_label COLLATE NOCASE"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def entity_template(entity: str) -> Optional[dict]:
+    """نموذج هذه الجهة بحمولته، أو `None`."""
+    key = _entity_key(entity)
+    if not key:
+        return None
+    row = get_conn().execute(
+        "SELECT * FROM entity_templates WHERE entity_key = ?", (key,)
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def save_entity_template(entity: str, template: bytes, filename: str = "",
+                         updated_by: str = "") -> Optional[int]:
+    """يحفظ نموذج جهة (أو يستبدله). يعيد `None` لاسم فارغ أو ملف فارغ."""
+    key = _entity_key(entity)
+    if not key or not template:
+        return None
+    label = str(entity or "").strip()
+    with transaction() as conn:
+        conn.execute(
+            "INSERT INTO entity_templates (entity_key, entity_label, filename, "
+            "template, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(entity_key) DO UPDATE SET entity_label = excluded.entity_label, "
+            "filename = excluded.filename, template = excluded.template, "
+            "updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+            (key, label, filename or "", template, _now(), updated_by),
+        )
+    row = entity_template(entity)
+    return int(row["id"]) if row else None
+
+
+def delete_entity_template(entity: str) -> bool:
+    key = _entity_key(entity)
+    if not key:
+        return False
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM entity_templates WHERE entity_key = ?", (key,)
+        )
+        return cur.rowcount > 0
 
 
 # ─── تحويل الفائز إلى مشروع (14-11) ───────────────────────────────────────────

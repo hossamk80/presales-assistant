@@ -1,7 +1,6 @@
 """
 utils/file_handler.py — File I/O: Extraction & Export
 """
-import datetime
 import glob
 import os
 import streamlit as st
@@ -10,6 +9,7 @@ from io import BytesIO
 from typing import List, Optional
 
 from utils.document_blocks import parse_blocks
+from utils import submission as _submission
 
 # أقل عدد أحرف في الصفحة يُعتبر معه استخراج النص ناجحاً.
 # ما دون ذلك يرجّح أن الصفحة صورة ممسوحة ضوئياً.
@@ -597,10 +597,9 @@ def build_word_document(
         run.font.size = Pt(16)
         _set_run_font(run, font_name, rtl)
 
+    # ب-4: التقويمان معاً وكلٌّ موسوم — انظر `submission.cover_date`
     date_line = _para_dir(doc.add_paragraph(), rtl, center=True)
-    date_run = date_line.add_run(
-        f"{date_label}: {datetime.date.today().strftime('%Y/%m/%d')}"
-    )
+    date_run = date_line.add_run(f"{date_label}: {_submission.cover_date(rtl=rtl)}")
     date_run.font.size = Pt(12)
     _set_run_font(date_run, font_name, rtl)
     doc.add_page_break()
@@ -889,9 +888,10 @@ def build_pdf_document(
     if company_name:
         story.append(P(
             f"{'مقدَّم من' if rtl else 'Submitted by'}: {company_name}", center))
+    # ب-4: نفس سطر التاريخ في Word — الصيغتان لا تختلفان أمام لجنة الفتح
     story.append(P(
         f"{'التاريخ' if rtl else 'Date'}: "
-        f"{datetime.date.today().strftime('%Y/%m/%d')}", center))
+        f"{_submission.cover_date(rtl=rtl)}", center))
     story.append(PageBreak())
 
     # ── الفهرس ────────────────────────────────────────────────────────────────

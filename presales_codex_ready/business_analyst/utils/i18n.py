@@ -1917,6 +1917,57 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── نماذج الجهات (ب-4) / Per-entity Word templates ──
+    "et.title": {"ar": "نماذج الجهات", "en": "Entity form templates"},
+    "et.hint": {
+        "ar": "بعض الجهات ترفض عرضاً بغير نموذجها — رفضاً شكلياً لا علاقة له "
+              "بجودة المحتوى. النموذج المحفوظ هنا يُختار تلقائياً عند التصدير "
+              "حسب جهة المنافسة، وقالب الشركة يبقى للباقي.",
+        "en": "Some entities reject a proposal that is not on their own form — a "
+              "formal rejection unrelated to content quality. A template saved "
+              "here is picked automatically at export based on the tender's "
+              "entity; the company template covers the rest.",
+    },
+    "et.entity": {"ar": "الجهة", "en": "Entity"},
+    "et.entity_new": {"ar": "— جهة أخرى —", "en": "— another entity —"},
+    "et.entity_name": {"ar": "اسم الجهة", "en": "Entity name"},
+    "et.entity_name_help": {
+        "ar": "يُطابَق بتوحيد الإملاء نفسه في ذاكرة العطاءات: «وزارة الصحة» "
+              "و«وزاره الصحه» جهة واحدة.",
+        "en": "Matched with the same name normalisation used by the bid memory: "
+              "spelling variants resolve to one entity.",
+    },
+    "et.upload": {"ar": "ملف النموذج (docx)", "en": "Template file (docx)"},
+    "et.save": {"ar": "حفظ النموذج", "en": "Save template"},
+    "et.saved": {"ar": "✅ حُفظ نموذج «{entity}».", "en": "✅ Saved the template for \"{entity}\"."},
+    "et.empty": {
+        "ar": "لا نموذج جهة محفوظ — التصدير يستعمل قالب الشركة.",
+        "en": "No entity template saved — export uses the company template.",
+    },
+    "et.count": {"ar": "{n} نموذجاً محفوظاً.", "en": "{n} template(s) saved."},
+
+    "db.template_entity_on": {
+        "ar": "✅ سيُصدَّر بنموذج **{entity}**.",
+        "en": "✅ Will export on the **{entity}** form.",
+    },
+    "db.template_no_entity_form": {
+        "ar": "لا نموذج محفوظ لـ «{entity}» — يُضاف من ملف الشركة إن كانت تفرض شكلها.",
+        "en": "No template saved for \"{entity}\" — add one from the company page "
+              "if that entity mandates its own form.",
+    },
+    "db.force_company_template": {
+        "ar": "استعمل قالب الشركة بدل نموذج الجهة",
+        "en": "Use the company template instead of the entity form",
+    },
+    "db.force_company_help": {
+        "ar": "نموذج جهة قديم أسوأ من غيابه — القرار بيدك.",
+        "en": "An outdated entity form is worse than none — the choice is yours.",
+    },
+    "db.template_company_forced": {
+        "ar": "سيُصدَّر بقالب الشركة بطلبك، لا بنموذج الجهة.",
+        "en": "Will export on the company template at your request, not the entity form.",
+    },
+
     # ── الموصّلات الخارجية (14-10) / External connectors ──
     "cn.title": {"ar": "الموصّلات الخارجية", "en": "External connectors"},
     "cn.hint": {

@@ -1085,6 +1085,63 @@ def _appendix_payload() -> list:
     return out
 
 
+def _entity_name() -> str:
+    """اسم الجهة المصدِرة: ما كتبه المستخدم، وإلا ما استُخرج من الكرّاس."""
+    return str(
+        st.session_state.get("_project_entity", "")
+        or (st.session_state.get("project_context") or {}).get("issuing_entity", "")
+        or ""
+    ).strip()
+
+
+def _export_template():
+    """
+    نموذج التصدير: **نموذج الجهة أولاً** ثم قالب الشركة (ب-4).
+
+    الجهة أولى لأن بعضها يرفض عرضاً بغير نموذجها — رفضٌ شكلي لا علاقة له بجودة
+    المحتوى. وقالب الشركة يبقى الأساس لمن لا نموذج لجهته.
+
+    والمستخدم يستطيع فرض قالب الشركة من الشاشة: نموذج جهة قديم أسوأ من غيابه.
+    """
+    from utils import db
+
+    if st.session_state.get("exp_force_company"):
+        return st.session_state.get("c_word_template_bytes")
+    record = db.entity_template(_entity_name())
+    if record and record.get("template"):
+        return record["template"]
+    return st.session_state.get("c_word_template_bytes")
+
+
+def _render_template_choice():
+    """
+    يقول **أيّ نموذج سيُستعمل** قبل البناء.
+
+    الصمت هنا أسوأ من الغياب: تصديرٌ بنموذج جهة أخرى يخرج سليم الشكل ويُرفض
+    شكلياً، ولا يعرف أحد لماذا.
+    """
+    from utils import db
+
+    entity = _entity_name()
+    record = db.entity_template(entity) if entity else None
+    has_company = bool(st.session_state.get("c_word_template_bytes"))
+
+    if record:
+        st.checkbox(t("db.force_company_template"), key="exp_force_company",
+                    disabled=not has_company,
+                    help=t("db.force_company_help"))
+        if st.session_state.get("exp_force_company") and has_company:
+            st.info(t("db.template_company_forced"))
+        else:
+            st.success(t("db.template_entity_on", entity=record["entity_label"]))
+    elif has_company:
+        st.success(t("db.template_on"))
+        if entity:
+            st.caption(t("db.template_no_entity_form", entity=entity))
+    else:
+        st.info(t("db.template_off"))
+
+
 def _render_export(sections: list):
     st.divider()
     st.markdown(t("db.export_title"))
@@ -1140,10 +1197,7 @@ def _render_export(sections: list):
             + "\n".join(f"- {item}" for item in coverage["blocking"][:10])
         )
 
-    if st.session_state.get("c_word_template_bytes"):
-        st.success(t("db.template_on"))
-    else:
-        st.info(t("db.template_off"))
+    _render_template_choice()
 
     opt1, opt2 = st.columns(2)
     with opt1:
@@ -1212,7 +1266,7 @@ def _render_export(sections: list):
                     bio = build_word_document(
                         company_name=company_name,
                         sections=payload,
-                        template_bytes=st.session_state.get("c_word_template_bytes"),
+                        template_bytes=_export_template(),
                         df_compliance=st.session_state.get("df_compliance"),
                         df_boq=st.session_state.get("df_boq"),
                         df_timeline=st.session_state.get("df_timeline"),
