@@ -13,3 +13,9 @@ font = "sans serif"
 
 [client]
 toolbarMode = "minimal"
+
+[server]
+# خدمة الملفات الساكنة — الخطّ العربي يُقدَّم من `static/` بجوار `app.py` (ب-1).
+# كان يُستدعى حيّاً من `fonts.googleapis.com`، فأي تركيب معزول عن الإنترنت
+# يفقده. تعطيل هذا المفتاح يُسقط الواجهة إلى خط النظام ولا يكسرها.
+enableStaticServing = true
