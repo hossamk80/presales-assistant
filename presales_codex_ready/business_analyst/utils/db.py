@@ -320,6 +320,32 @@ CREATE TABLE IF NOT EXISTS entity_templates (
     updated_by  TEXT NOT NULL DEFAULT ''
 );
 
+-- الأشكال: مخططات وصور العرض (ب-5).
+--
+-- العرض الفني بلا مخطط معماري يخسر درجات في «وضوح الحل»: لجنة الفحص تقرأ
+-- خمسين صفحة نصّاً لتفهم بنيةً يوضّحها شكل واحد.
+--
+-- **الصورة يرفعها المستخدم ولا يولّدها النموذج.** النموذج لا يعرف معمارية
+-- الحلّ الفعلية، ومخططٌ مولَّد **ادّعاءٌ عن الحلّ** لا توضيحٌ له — وهو ما
+-- تمنعه القاعدة الثالثة من القواعد الثابتة (لا اختراع).
+--
+-- `section_key` يربط الشكل بقسمه، و `ordinal` ترتيبه داخله. أمّا **رقم الشكل**
+-- المعروض فيُحسب وقت البناء من ترتيب المستند لا يُخزَّن: حذف شكل أو نقل قسم
+-- يُعيد الترقيم بلا ثغرة — نفس مبدأ ترقيم الملاحق (12-9).
+CREATE TABLE IF NOT EXISTS figures (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  INTEGER,
+    section_key TEXT NOT NULL DEFAULT '',
+    caption     TEXT NOT NULL DEFAULT '',
+    image       BLOB NOT NULL,
+    mime        TEXT NOT NULL DEFAULT '',
+    filename    TEXT NOT NULL DEFAULT '',
+    ordinal     INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_figures_project ON figures(project_id);
+
 -- إعدادات النظام (13-10): مفتاح ← قيمة. جدول واحد صغير بدل عمود لكل إعداد
 -- جديد، وأول ساكنيه سياسة البيانات الشخصية (أساس المعالجة ومدة الاحتفاظ).
 CREATE TABLE IF NOT EXISTS app_settings (
