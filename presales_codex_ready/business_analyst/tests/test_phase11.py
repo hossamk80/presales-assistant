@@ -394,3 +394,199 @@ def test_missing_key_error_is_still_reported(temp_db, fake_streamlit):
 
     assert ai_engine.ai_generate("تعليمات") is None
     assert any(kind == "error" for kind, _ in fake_streamlit.messages)
+
+
+# ─── البثّ التدريجي (ب-2) ─────────────────────────────────────────────────────
+#
+# انتظار القسم دقيقةً بلا أي إشارة كان يجعل المستخدم يظنّ النظام معلَّقاً فيعيد
+# الضغط — **فتُنفَق توكنات مرّتين على قسم واحد**. والبثّ لا يجوز أن يُضعف أياً
+# من ضمانات المسار العادي: الذاكرة · الميزانية · القياس · وألّا يُسلَّم ناقص.
+
+
+class _StreamingProvider:
+    """موفّر يبثّ ثلاثة مقاطع ثم يُعيد عدّاداته."""
+
+    name = "gemini"
+    streams = True
+
+    def __init__(self, pieces=None):
+        self.pieces = pieces or ["نلتزم ", "بتسليم ", "الخطة."]
+        self.calls = 0
+
+    def generate_stream(self, model_id, prompt, temperature=None, max_tokens=None):
+        from utils.providers.base import GenResult, Usage
+
+        self.calls += 1
+        for piece in self.pieces:
+            yield piece
+        return GenResult(provider=self.name, model=model_id,
+                         usage=Usage(input_tokens=120, output_tokens=30),
+                         elapsed_ms=900)
+
+
+def test_the_text_arrives_in_pieces_and_accumulates(temp_db, fake_streamlit,
+                                                    monkeypatch):
+    """**شرط قبول ب-2**: النصّ يُعرض وهو يُكتب لا بعد اكتماله."""
+    from utils import providers
+
+    monkeypatch.setattr(providers, "get_provider", lambda name: _StreamingProvider())
+    seen = []
+
+    result = providers.run_stream("m", "اكتب", on_chunk=seen.append)
+
+    assert seen == ["نلتزم ", "نلتزم بتسليم ", "نلتزم بتسليم الخطة."]
+    assert result.text == "نلتزم بتسليم الخطة."
+
+
+def test_the_usage_comes_from_the_provider_not_an_estimate(temp_db, fake_streamlit,
+                                                           monkeypatch):
+    """العدّادات تصل في آخر الدفق — والفوترة لا تُبنى على تقدير محلي (11-7)."""
+    from utils import providers
+
+    monkeypatch.setattr(providers, "get_provider", lambda name: _StreamingProvider())
+    result = providers.run_stream("m", "اكتب")
+
+    assert result.usage.input_tokens == 120
+    assert result.usage.output_tokens == 30
+
+
+def test_a_cached_result_is_served_without_streaming(temp_db, fake_streamlit,
+                                                     monkeypatch):
+    """
+    البثّ لإخفاء انتظار، ولا انتظار في نتيجة محفوظة (11-13). فتُسلَّم دفعةً
+    واحدة بلا استدعاء ثانٍ.
+    """
+    from utils import providers
+
+    provider = _StreamingProvider()
+    monkeypatch.setattr(providers, "get_provider", lambda name: provider)
+
+    providers.run_stream("m", "اكتب")
+    seen = []
+    providers.run_stream("m", "اكتب", on_chunk=seen.append)
+
+    assert provider.calls == 1                    # لم يُستدعَ الموفّر ثانيةً
+    assert seen == ["نلتزم بتسليم الخطة."]        # دفعة واحدة لا مقاطع
+
+
+def test_a_broken_stream_raises_and_stores_nothing(temp_db, fake_streamlit,
+                                                   monkeypatch):
+    """
+    **الأهمّ**: قسمٌ مبتور يبدو مكتوباً هو ما يصل الجهة. الفشل يرفع ولا يُسلِّم
+    الناقص كأنه تامّ، ولا يُخزَّن الناقص في الذاكرة — وإلا سُلِّم كاملاً في
+    المرة القادمة بلا استدعاء.
+    """
+    from utils import providers
+    from utils.providers.base import Provider, ProviderError
+
+    class Broken(Provider):
+        name = "gemini"
+        streams = True
+
+        def generate_stream(self, model_id, prompt, temperature=None, max_tokens=None):
+            yield "نصف "
+            raise ProviderError("انقطع الاتصال")
+
+    monkeypatch.setattr(providers, "get_provider", lambda name: Broken())
+
+    with pytest.raises(ProviderError):
+        providers.run_stream("m", "مختلف", on_chunk=lambda t: None)
+
+    fp = providers.fingerprint("gemini", "m", "مختلف", None, None)
+    assert providers.db.ai_cache_get(fp) is None
+
+
+def test_a_provider_without_streaming_still_works(temp_db, fake_streamlit,
+                                                  monkeypatch):
+    """
+    موفّر لا يدعم البثّ **لا يُكسَر**: يسقط إلى استدعاء عادي فيرى المستخدم
+    النتيجة دفعةً واحدة كما اليوم. البثّ تحسينٌ لا شرط عمل.
+    """
+    from utils import providers
+    from utils.providers.base import GenResult, Provider
+
+    class Plain(Provider):
+        name = "gemini"
+        streams = False
+
+        def generate(self, model_id, prompt, temperature=None, max_tokens=None):
+            return GenResult(text="نصّ كامل", provider=self.name, model=model_id)
+
+    monkeypatch.setattr(providers, "get_provider", lambda name: Plain())
+    seen = []
+
+    result = providers.run_stream("m", "اكتب", on_chunk=seen.append)
+
+    assert result.text == "نصّ كامل"
+    assert seen == ["نصّ كامل"]
+
+
+def test_the_budget_is_checked_before_the_first_piece(temp_db, fake_streamlit,
+                                                      monkeypatch):
+    """
+    حدّ الإنفاق يُفحَص **قبل** بدء الدفق لا بعده (11-9): دفقٌ بدأ أنفق بالفعل.
+    """
+    from utils import providers
+    from utils.providers.base import BudgetExceeded
+
+    provider = _StreamingProvider()
+    monkeypatch.setattr(providers, "get_provider", lambda name: provider)
+
+    def over(*a, **k):
+        raise BudgetExceeded("تجاوز الحدّ")
+
+    monkeypatch.setattr(providers, "check_budget", over)
+
+    with pytest.raises(BudgetExceeded):
+        providers.run_stream("m", "اكتب")
+    assert provider.calls == 0
+
+
+def test_the_fixed_rules_reach_a_streamed_call_too(temp_db, fake_streamlit,
+                                                   monkeypatch):
+    """
+    14-2: القواعد الثابتة تُلحق في `_call` — والمسار المبثوث يمرّ به كذلك، وإلا
+    صار البثّ باباً خلفياً حول منع التسعير وشرط القرار البشري.
+    """
+    from utils import ai_engine, providers
+
+    captured = {}
+
+    def spy(model_id, prompt, task="write", on_chunk=None):
+        from utils.providers.base import GenResult
+
+        captured["prompt"] = prompt
+        if on_chunk:
+            on_chunk("رد")
+        return GenResult(text="رد", provider="gemini", model=model_id)
+
+    monkeypatch.setattr(providers, "run_stream", spy)
+    ai_engine.ai_generate("اكتب قسماً", on_chunk=lambda t: None)
+
+    assert ai_engine.has_fixed_rules(captured["prompt"])
+
+
+def test_json_calls_are_not_streamed(fake_streamlit):
+    """
+    الاستخراج المُهيكل لا يُبثّ عمداً: JSON ناقص لا يُحلَّل، والبثّ لا يُظهر
+    منه شيئاً مفيداً للمستخدم — كلفةٌ في التعقيد بلا مقابل.
+    """
+    import inspect
+
+    from utils import ai_engine
+
+    assert "on_chunk" not in inspect.signature(ai_engine.ai_generate_json).parameters
+    assert "on_chunk" in inspect.signature(ai_engine.ai_generate).parameters
+
+
+def test_the_live_preview_degrades_where_there_is_no_display(fake_streamlit):
+    """
+    البثّ تحسينٌ في العرض: غيابُ مكان العرض يُسقط المعاينة وحدها ولا يُسقط
+    توليد قسم.
+    """
+    from views import doc_builder
+
+    on_chunk, close = doc_builder._live_preview()
+
+    assert on_chunk is None
+    assert close() is None

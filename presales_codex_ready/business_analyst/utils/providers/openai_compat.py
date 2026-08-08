@@ -23,6 +23,7 @@ TIMEOUT = 300
 
 
 class OpenAICompatProvider(Provider):
+    streams = True
     def __init__(self, name: str):
         self.name = name
 
@@ -92,6 +93,60 @@ class OpenAICompatProvider(Provider):
         return GenResult(
             text=text or None, provider=self.name, model=model_id,
             usage=self._usage(data), elapsed_ms=elapsed,
+        )
+
+    def generate_stream(self, model_id, prompt, temperature=None, max_tokens=None):
+        """
+        بثّ عبر Server-Sent Events — الصيغة القياسية لنقاط OpenAI والمتوافقة معها.
+
+        `stream_options.include_usage` تطلب عدّادات الاستهلاك في آخر حدث: بدونها
+        يصل الدفق بلا أرقام فتُسجَّل المحاسبة أصفاراً، ويبدو استدعاءٌ حقيقي
+        مجانياً في لوحة الاستهلاك. ونقطة لا تدعم الخيار تتجاهله بلا ضرر.
+        """
+        payload: dict = {
+            "model": model_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+
+        started = time.monotonic()
+        try:
+            response = requests.post(
+                f"{self._base_url()}/chat/completions", headers=self._headers(),
+                json=payload, timeout=TIMEOUT, stream=True,
+            )
+        except requests.RequestException as e:
+            raise ProviderError(f"connection: {e}") from e
+        if response.status_code >= 400:
+            raise ProviderError(f"HTTP {response.status_code}: {response.text[:400]}")
+
+        usage = Usage()
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
+            body = line[5:].strip()
+            if body == "[DONE]":
+                break
+            try:
+                event = json.loads(body)
+            except ValueError:
+                # حدث مشوّه وسط دفق سليم: يُتخطّى ولا يُسقط ما وصل
+                continue
+            if event.get("usage"):
+                usage = self._usage(event)
+            for choice in event.get("choices") or []:
+                piece = (choice.get("delta") or {}).get("content")
+                if piece:
+                    yield piece
+
+        return GenResult(
+            provider=self.name, model=model_id, usage=usage,
+            elapsed_ms=int((time.monotonic() - started) * 1000),
         )
 
     def generate_json(self, model_id, prompt, schema,

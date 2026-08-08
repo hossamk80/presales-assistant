@@ -78,9 +78,28 @@ class Provider:
 
     name = ""
 
+    # هل يدعم هذا الموفّر البثّ التدريجي؟ (ب-2)
+    #
+    # موفّر لا يدعمه **لا يُكسَر**: `providers.run_stream` تسقط إلى استدعاء
+    # عادي فيرى المستخدم النتيجة دفعةً واحدة كما اليوم. البثّ تحسينٌ في
+    # التجربة لا شرطٌ لعمل النظام.
+    streams = False
+
     def generate(self, model_id: str, prompt: str,
                  temperature: Optional[float] = None,
                  max_tokens: Optional[int] = None) -> GenResult:
+        raise NotImplementedError
+
+    def generate_stream(self, model_id: str, prompt: str,
+                        temperature: Optional[float] = None,
+                        max_tokens: Optional[int] = None):
+        """
+        مولِّد يُخرج مقاطع النصّ تباعاً، **ويُعيد `GenResult` عند انتهائه**
+        (عبر `return` في المولِّد — تُلتقط بـ `yield from`).
+
+        النتيجة النهائية تحمل عدّادات الاستهلاك **كما أرجعها الموفّر** في آخر
+        الدفق: القياس المحلي تقدير، والفوترة لا تُبنى على تقدير (11-8).
+        """
         raise NotImplementedError
 
     def generate_json(self, model_id: str, prompt: str, schema: dict,

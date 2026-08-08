@@ -638,6 +638,24 @@ def _render_cover_editor(sec: dict):
         )
 
 
+def _live_preview():
+    """
+    معاينة البثّ (ب-2): `(دالّة عرض المقاطع، دالّة الإغلاق)`.
+
+    تعيد `(None, no-op)` حيث لا عنصر عرض متاح — تشغيلٌ بلا واجهة رسم، أو
+    اختبارٌ بواجهة بديلة. البثّ **تحسينٌ في العرض**، فغيابُ مكان العرض يُسقط
+    المعاينة وحدها ويُبقي التوليد كما هو، ولا يُسقط توليد قسم.
+    """
+    holder = st.empty()
+    if holder is None or not hasattr(holder, "markdown"):
+        return None, lambda: None
+
+    def show(text: str):
+        holder.markdown(f"> {t('db.streaming')}\n\n{text}")
+
+    return show, lambda: holder.empty()
+
+
 def _render_ai_editor(sec: dict):
     key = sec["key"]
     ckey = section_content_key(key)
@@ -665,6 +683,11 @@ def _render_ai_editor(sec: dict):
 
         if go:
             status = st.empty()
+            # ب-2: البثّ التدريجي — الانتظار الصامت دقيقةً كان يجعل المستخدم
+            # يظنّ النظام معلَّقاً فيعيد الضغط، فتُنفَق توكنات مرّتين على قسم
+            # واحد. النصّ المعروض هنا **مؤقّت**: ما يُكتب في القسم هو الناتج
+            # التامّ وحده، فقسمٌ مبتور يبدو مكتوباً هو ما يصل الجهة.
+            on_chunk, close_preview = _live_preview()
             with st.spinner(t("common.generating")):
                 rfp_context, extra_context = _writing_context(sec)
                 out = ai_generate(
@@ -674,8 +697,10 @@ def _render_ai_editor(sec: dict):
                     on_progress=lambda m: status.caption(f"⏳ {m}"),
                     extra_context=extra_context,
                     language=_language(),
+                    on_chunk=on_chunk,
                 )
             status.empty()
+            close_preview()
             if out:
                 st.session_state[ckey] = out
                 audit.record(audit.SECTION_GENERATE,
@@ -975,6 +1000,8 @@ def _apply_refinement(sec: dict, request: str, model: str):
     ckey = section_content_key(sec["key"])
     current = st.session_state.get(ckey, "")
 
+    # ب-2: التنقيح يُبثّ كذلك — هو ثاني أطول انتظار بعد التوليد
+    on_chunk, close_preview = _live_preview()
     with st.spinner(t("db.refining")):
         revised = ai_generate(
             build_prompt("refine", _language(), content=current, edit_request=request),
@@ -982,7 +1009,9 @@ def _apply_refinement(sec: dict, request: str, model: str):
             rfp_context=st.session_state.get("rfp_raw_text", ""),
             extra_context=_assistant_context(sec),
             language=_language(),
+            on_chunk=on_chunk,
         )
+    close_preview()
     if not revised:
         return
 

@@ -514,12 +514,25 @@ def _report_provider_error(error: Exception):
 
 def _call(prompt: str, model_id: str,
           on_progress: Optional[Callable[[str], None]] = None,
-          task: str = "write") -> Optional[str]:
-    """استدعاء واحد للنموذج عبر طبقة الموفّرين، مع إعادة محاولة عابرة."""
+          task: str = "write",
+          on_chunk: Optional[Callable[[str], None]] = None) -> Optional[str]:
+    """
+    استدعاء واحد للنموذج عبر طبقة الموفّرين، مع إعادة محاولة عابرة.
+
+    `on_chunk` (ب-2): تُستدعى بالنصّ **المتراكم** كلّما وصل مقطع، فتعرض الواجهة
+    القسم وهو يُكتب. بدونها يبقى السلوك كما كان — استدعاء واحد ونتيجة واحدة.
+
+    والنصّ الناقص **لا يُعاد** عند الفشل: `_with_retry` يرفع، فتعود `None`
+    وتُبقي الواجهةُ نصَّ المستخدم كما هو (قاعدة ثابتة في المنتج). ما عُرض أثناء
+    البثّ مؤقّت، وما يُكتب في القسم هو الناتج التامّ وحده.
+    """
     prompt = apply_fixed_rules(prompt)          # 14-2: لا استدعاء بلا القواعد
     try:
         result = _with_retry(
-            lambda: providers.run(model_id, prompt, task=task),
+            lambda: (providers.run_stream(model_id, prompt, task=task,
+                                          on_chunk=on_chunk)
+                     if on_chunk else
+                     providers.run(model_id, prompt, task=task)),
             on_progress,
         )
     except (BudgetExceeded, ProviderError) as e:
@@ -584,6 +597,7 @@ def ai_generate(
     on_progress: Optional[Callable[[str], None]] = None,
     extra_context: str = "",
     language: str = DEFAULT_LANGUAGE,
+    on_chunk: Optional[Callable[[str], None]] = None,
 ) -> Optional[str]:
     """
     توليد محتوى بالذكاء الاصطناعي.
@@ -606,11 +620,12 @@ def ai_generate(
         prompt = f"{prompt}\n{extra_context}"
 
     if not rfp_context:
-        return _call(prompt, model_id, on_progress)
+        return _call(prompt, model_id, on_progress, on_chunk=on_chunk)
 
     # المسار المعتاد: الكراسة كاملة في استدعاء واحد
     if len(rfp_context) <= CONTEXT_CHAR_BUDGET:
-        return _call(f"{prompt}\n\n---\nنص الكراسة:\n{rfp_context}", model_id, on_progress)
+        return _call(f"{prompt}\n\n---\nنص الكراسة:\n{rfp_context}", model_id,
+                     on_progress, on_chunk=on_chunk)
 
     # المسار الاستثنائي: كراسة أكبر من نافذة السياق
     chunks = _split_into_chunks(rfp_context, CONTEXT_CHAR_BUDGET)
