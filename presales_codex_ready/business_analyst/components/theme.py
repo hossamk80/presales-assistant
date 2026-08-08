@@ -15,6 +15,8 @@ instead of writing inline styles, so the identity stays in one place.
 from __future__ import annotations
 
 import html
+from functools import lru_cache
+from pathlib import Path
 from typing import Iterable, Sequence
 
 import streamlit as st
@@ -46,6 +48,56 @@ TOKENS = {
 
 FONT_STACK = "'IBM Plex Sans Arabic', 'Tajawal', 'Segoe UI', sans-serif"
 
+# ─── الخط مُضمَّن لا مُستدعى (ب-1) ─────────────────────────────────────────────
+#
+# كان هنا `@import` حيّ إلى `fonts.googleapis.com`. عيبان لا واحد:
+#
+#   · **التشغيل المعزول عن الإنترنت يفقد الخطّ** — وهو الشائع في الجهات
+#     الحكومية التي يستهدفها هذا النظام. الواجهة عربية، وسقوطها إلى خطّ بديل
+#     يُفقدها شكلها الذي بُني في 14-1.
+#   · **طلبٌ إلى طرف ثالث مع كل فتح صفحة** يحمل ترويسة المُحيل — من جهاز يعمل
+#     على كرّاسات عطاءات.
+#
+# الخطّ الآن **مُضمَّن في المستودع** ويُقدَّم من `static/` عبر خدمة الملفات
+# الساكنة في Streamlit: لا شبكة، ولا base64 يُعاد إرساله في كل دورة رسم
+# (الصفحة تُعاد رسمها عشرات المرات في الجلسة، وحقن ~400KB في كلٍّ منها يُبطئها).
+#
+# الترخيص **OFL-1.1** يسمح بإعادة التوزيع، ونصّه مرفق في `static/fonts/`.
+#
+# والأوزان الأربعة هي المستعملة فعلاً في هذا الملف (400 · 500 · 600 · 700).
+# «الخفيف 300» كان يُستدعى ولا يُستعمل — بُعدٌ يُنقل بلا سبب.
+_FONT_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
+_FONT_WEIGHTS = {400: "Regular", 500: "Medium", 600: "SemiBold", 700: "Bold"}
+
+
+@lru_cache(maxsize=1)
+def _font_face_css() -> str:
+    """
+    قواعد `@font-face` للأوزان **الموجودة على القرص**.
+
+    ملفٌّ ناقص يُتخطّى بلا قاعدة تشير إليه: مسار مكسور يجعل المتصفّح ينتظر
+    طلباً فاشلاً في كل تحميل، والسقوط الصامت إلى `FONT_STACK` أنظف — ولهذا
+    تبقى بدائل النظام في السلسلة ولا تُحذف.
+    """
+    rules = []
+    for weight, style in _FONT_WEIGHTS.items():
+        if not (_FONT_DIR / f"IBMPlexSansArabic-{style}.woff2").is_file():
+            continue
+        rules.append(
+            "@font-face {"
+            "font-family:'IBM Plex Sans Arabic';"
+            f"font-weight:{weight};font-style:normal;font-display:swap;"
+            f"src:url('app/static/fonts/IBMPlexSansArabic-{style}.woff2')"
+            " format('woff2');}"
+        )
+    return "\n".join(rules)
+
+
+def bundled_font_weights() -> list:
+    """الأوزان المتوفّرة فعلاً — تستعملها الاختبارات والتشخيص."""
+    return [w for w, style in _FONT_WEIGHTS.items()
+            if (_FONT_DIR / f"IBMPlexSansArabic-{style}.woff2").is_file()]
+
 # نغمات الحالة: مفتاح واحد يقود اللون في الشارات والبطاقات وحلقات النسبة.
 TONES = {
     "ok": ("green", "green_tint"),
@@ -76,7 +128,7 @@ def _css(rtl: bool) -> str:
 
     return f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+{_font_face_css()}
 
 :root {{
   --primary: {v['primary']};

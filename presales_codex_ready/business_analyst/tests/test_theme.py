@@ -166,3 +166,110 @@ def test_views_do_not_write_raw_colours(theme):
             if hex_colour.search(line):
                 offenders.append(f"{path.name}:{i} {line.strip()[:60]}")
     assert not offenders, "لون مكتوب خارج نظام التصميم:\n" + "\n".join(offenders)
+
+
+# ─── الخط مُضمَّن لا مُستدعى (ب-1) ─────────────────────────────────────────────
+#
+# كان `components/theme.py` يستدعي `fonts.googleapis.com` حيّاً في كل فتح صفحة.
+# عيبان: التركيب المعزول عن الإنترنت — الشائع في الجهات الحكومية — يفقد الخطّ
+# فتتشوّه الواجهة العربية؛ وطلبٌ إلى طرف ثالث يغادر من جهاز يعمل على كرّاسات
+# عطاءات.
+
+
+def test_the_stylesheet_asks_no_third_party_for_anything(theme):
+    """
+    **الحارس الأساسي**: لا مورد بعيد في الأنماط أصلاً — لا خطاً ولا غيره.
+    الأيقونات مدمجة SVG أصلاً، والخطّ صار مُضمَّناً، فبقي أن يُمنع رجوعهما.
+    """
+    css = theme._css(rtl=True)
+
+    assert "googleapis" not in css
+    assert "gstatic" not in css
+    assert "http://" not in css
+    assert "https://" not in css
+
+
+def test_no_ui_module_pulls_a_remote_asset():
+    """
+    والحارس نفسه على كل ملفات الواجهة: استدعاء بعيد يُضاف لاحقاً في أي شاشة
+    يُعيد العطب نفسه، ويسقط هنا بدل أن يُكتشف في تركيب معزول عند عميل.
+    """
+    offenders = []
+    for path in list((APP_DIR / "components").glob("*.py")) + \
+            list((APP_DIR / "views").glob("*.py")) + [APP_DIR / "app.py"]:
+        # الشيفرة وحدها لا التعليقات: تعليقٌ يشرح **ما أُزيل** ليس استدعاءً،
+        # وفحص النصّ الخام يجعل توثيق الإصلاح يُسقط اختبار الإصلاح نفسه.
+        # `ast.unparse` يُسقط التعليقات ويُبقي السلاسل — وهي ما يهمّنا.
+        code = ast.unparse(ast.parse(path.read_text(encoding="utf-8")))
+        for marker in ("fonts.googleapis.com", "fonts.gstatic.com",
+                       "cdn.jsdelivr.net", "unpkg.com", "cdnjs.cloudflare.com"):
+            if marker in code:
+                offenders.append(f"{path.name}: {marker}")
+
+    assert not offenders, f"موارد بعيدة في الواجهة: {offenders}"
+
+
+def test_the_font_is_bundled_for_every_weight_the_css_uses(theme):
+    """
+    الأوزان الأربعة المستعملة في الأنماط موجودة على القرص. وزنٌ ناقص يسقط
+    صامتاً إلى أقرب متوفّر فيتغيّر ثقل العناوين بلا سبب ظاهر.
+    """
+    assert theme.bundled_font_weights() == [400, 500, 600, 700]
+
+    css = theme._css(rtl=True)
+    for weight in (400, 500, 600, 700):
+        assert f"font-weight:{weight}" in css, weight
+
+
+def test_the_font_files_are_real_woff2(theme):
+    """ملفٌّ فارغ أو تالف يُقدَّم بنجاح ويعطي واجهة بلا خط — التوقيع يُفحص."""
+    for weight, style in theme._FONT_WEIGHTS.items():
+        path = theme._FONT_DIR / f"IBMPlexSansArabic-{style}.woff2"
+        head = path.read_bytes()[:4]
+        assert head == b"wOF2", (style, head)
+        assert path.stat().st_size > 20_000, style
+
+
+def test_the_font_licence_ships_with_the_font(theme):
+    """
+    الخطّ تحت OFL-1.1 — وإعادة التوزيع مشروطة بمرافقة نصّ الترخيص. غيابه
+    مخالفة ترخيص في منتج يُباع.
+    """
+    licence = theme._FONT_DIR / "LICENSE.txt"
+
+    assert licence.is_file()
+    assert "SIL Open Font License" in licence.read_text(encoding="utf-8")
+
+
+def test_a_missing_font_file_degrades_instead_of_breaking(theme, tmp_path,
+                                                          monkeypatch):
+    """
+    مسار مكسور يجعل المتصفّح ينتظر طلباً فاشلاً في كل تحميل. الأنظف أن تُحذف
+    القاعدة ويسقط النص إلى خط النظام — ولهذا تبقى البدائل في `FONT_STACK`.
+    """
+    monkeypatch.setattr(theme, "_FONT_DIR", tmp_path)
+    theme._font_face_css.cache_clear()
+    try:
+        assert theme._font_face_css() == ""
+        assert theme.bundled_font_weights() == []
+        # والسلسلة تبقى فيها بدائل النظام فلا تخرج الواجهة بلا خط
+        assert "sans-serif" in theme.FONT_STACK
+        assert "Segoe UI" in theme.FONT_STACK
+    finally:
+        theme._font_face_css.cache_clear()
+
+
+def test_static_serving_is_enabled_where_the_app_runs():
+    """
+    الخطّ يُقدَّم من `static/` عبر خدمة الملفات الساكنة. `run.sh` يشغّل من جذر
+    المستودع، فالإعداد هناك هو الفاعل — ونسخة مجلد التطبيق لمن يشغّل من داخله.
+    """
+    for config in (APP_DIR.parent.parent / ".streamlit" / "config.toml",
+                   APP_DIR / ".streamlit" / "config.toml"):
+        assert "enableStaticServing = true" in config.read_text(encoding="utf-8"), config
+
+
+def test_the_font_lives_next_to_the_app_script(theme):
+    """خدمة الملفات الساكنة تقرأ `static/` بجوار السكربت الرئيسي لا سواه."""
+    assert theme._FONT_DIR.parent.name == "static"
+    assert (theme._FONT_DIR.parent.parent / "app.py").is_file()
