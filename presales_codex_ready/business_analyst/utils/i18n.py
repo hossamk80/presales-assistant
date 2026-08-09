@@ -1917,6 +1917,51 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "lib.preview": {"ar": "معاينة", "en": "Preview"},
 
+    # ── الأشكال: مخططات وصور (ب-5) / Figures ──
+    "fig.title": {"ar": "أشكال القسم ومخططاته", "en": "Section figures & diagrams"},
+    "fig.hint": {
+        "ar": "العرض بلا مخطط معماري يخسر درجات في «وضوح الحل». **الصورة ترفعها "
+              "أنت ولا يولّدها النموذج**: النموذج لا يعرف معمارية حلّك، ومخططٌ "
+              "مولَّد ادّعاءٌ عن الحلّ لا توضيحٌ له.",
+        "en": "A proposal with no architecture diagram loses points on solution "
+              "clarity. **You upload the image; the model does not generate it**: "
+              "the model does not know your actual architecture, and a generated "
+              "diagram is a claim about the solution, not an illustration of it.",
+    },
+    "fig.needs_project": {
+        "ar": "افتح منافسة أولاً — الشكل يخصّ عرضاً بعينه.",
+        "en": "Open a tender first — a figure belongs to a specific proposal.",
+    },
+    "fig.upload": {"ar": "ملف الصورة", "en": "Image file"},
+    "fig.caption": {"ar": "تسمية الشكل", "en": "Figure caption"},
+    "fig.caption_ph": {"ar": "معمارية الحل المقترح", "en": "Proposed solution architecture"},
+    "fig.add": {"ar": "إضافة الشكل", "en": "Add figure"},
+    "fig.added": {"ar": "✅ أُضيف الشكل.", "en": "✅ Figure added."},
+    "fig.none": {"ar": "لا شكل في هذا القسم بعد.", "en": "No figure in this section yet."},
+    "fig.no_caption": {"ar": "بلا تسمية", "en": "no caption"},
+    "fig.warn_no_caption": {
+        "ar": "⚠️ بلا تسمية — القارئ يستنتج ما يراه، ولجنة الفحص لا تستنتج",
+        "en": "⚠️ No caption — the reader must infer what they see, and an "
+              "evaluation panel does not infer",
+    },
+    "fig.warn_unreferenced": {
+        "ar": "⚠️ لا يشير إليه النصّ («انظر {label}») فيبدو حشواً",
+        "en": "⚠️ The text never refers to it (\"see {label}\"), so it reads as filler",
+    },
+    "fig.err_empty": {"ar": "❌ الملف فارغ.", "en": "❌ The file is empty."},
+    "fig.err_too_big": {
+        "ar": "❌ الصورة أكبر من {limit} ميغابايت — مخطط معماري لا يقارب هذا الحدّ.",
+        "en": "❌ The image exceeds {limit} MB — an architecture diagram never "
+              "comes close to that.",
+    },
+    "fig.err_not_image": {
+        "ar": "❌ الملف ليس صورة (PNG · JPEG · GIF). الفحص بالتوقيع لا بالامتداد: "
+              "ملفٌّ سُمّي صورةً وهو غيرها كان سيُسقط بناء المستند يوم التسليم.",
+        "en": "❌ Not an image (PNG · JPEG · GIF). Checked by signature, not by "
+              "extension: a file merely named like an image would have broken the "
+              "document build on submission day.",
+    },
+
     # ── البثّ التدريجي (ب-2) / Streaming ──
     "db.streaming": {
         "ar": "⏳ يُكتب الآن… (معاينة مؤقّتة — النصّ يُحفظ عند اكتماله)",

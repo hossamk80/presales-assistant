@@ -638,6 +638,90 @@ def _render_cover_editor(sec: dict):
         )
 
 
+# ─── الأشكال: مخططات القسم وصوره (ب-5) ────────────────────────────────────────
+
+
+def _project_figures() -> list:
+    """أشكال المنافسة بحمولاتها — للتصدير وحده."""
+    from utils import db
+
+    project_id = st.session_state.get("_project_id")
+    if project_id is None:
+        return []
+    return db.list_figures(project_id, with_images=True)
+
+
+def _render_figures(sec: dict):
+    """
+    رفع أشكال القسم وتسميتها.
+
+    **الصورة يرفعها المستخدم ولا يولّدها النموذج**: النموذج لا يعرف معمارية
+    الحلّ الفعلية، ومخططٌ مولَّد ادّعاءٌ عن الحلّ لا توضيحٌ له.
+
+    والرقم المعروض يُحسب بترتيب المستند لا بترتيب الرفع — فما يراه المستخدم هنا
+    هو ما سيراه المُقيّم.
+    """
+    from utils import db, figures as figures_util
+
+    project_id = st.session_state.get("_project_id")
+    key = sec["key"]
+    may_edit = auth.can_edit_section(sec)
+
+    with st.expander(t("fig.title"), expanded=False):
+        st.caption(t("fig.hint"))
+        if project_id is None:
+            st.info(t("fig.needs_project"))
+            return
+
+        uploaded = st.file_uploader(
+            t("fig.upload"), type=["png", "jpg", "jpeg", "gif"],
+            key=f"fig_up_{key}", disabled=not may_edit,
+        )
+        caption = st.text_input(t("fig.caption"), key=f"fig_cap_{key}",
+                                placeholder=t("fig.caption_ph"),
+                                disabled=not may_edit)
+        if uploaded is not None and st.button(t("fig.add"), key=f"fig_add_{key}",
+                                              type="primary", disabled=not may_edit):
+            data = uploaded.getvalue()
+            # الفحص عند الرفع لا عند التصدير: صورة تالفة تُقبل صامتةً ثم تُسقط
+            # بناء المستند كلّه في يوم التسليم
+            issue = figures_util.problem(data)
+            if issue:
+                st.error(t(issue, limit=figures_util.MAX_BYTES // (1024 * 1024)))
+            else:
+                db.add_figure(project_id, key, data, caption=caption,
+                              mime=figures_util.detect_image(data) or "",
+                              filename=uploaded.name)
+                st.success(t("fig.added"))
+                st.rerun()
+
+        everything = figures_util.numbered(
+            db.list_figures(project_id), get_sections(), rtl=is_rtl(_language()))
+        mine = figures_util.for_section(everything, key)
+        if not mine:
+            st.caption(t("fig.none"))
+            return
+
+        content = str(st.session_state.get(section_content_key(key), "") or "")
+        for figure in mine:
+            cols = st.columns([4, 1])
+            with cols[0]:
+                line = f"🖼️ **{figure['label']}** — {figure['caption'] or t('fig.no_caption')}"
+                st.markdown(line)
+                notes = []
+                if not str(figure.get("caption", "")).strip():
+                    notes.append(t("fig.warn_no_caption"))
+                if not figures_util.referenced_in(content, figure):
+                    notes.append(t("fig.warn_unreferenced", label=figure["label"]))
+                if notes:
+                    st.caption(" · ".join(notes))
+            with cols[1]:
+                if st.button(t("common.delete"), key=f"fig_del_{figure['id']}",
+                             width="stretch", disabled=not may_edit):
+                    db.delete_figure(figure["id"])
+                    st.rerun()
+
+
 def _live_preview():
     """
     معاينة البثّ (ب-2): `(دالّة عرض المقاطع، دالّة الإغلاق)`.
@@ -733,6 +817,7 @@ def _render_ai_editor(sec: dict):
         if _has_placeholders(st.session_state[ckey]):
             st.warning(t("db.placeholder_warn"))
 
+        _render_figures(sec)
         _render_block_library(sec)
         _render_side_assistant(sec, model)
         _render_versions(sec)
@@ -1296,6 +1381,7 @@ def _render_export(sections: list):
                         company_name=company_name,
                         sections=payload,
                         template_bytes=_export_template(),
+                        figures=_project_figures(),
                         df_compliance=st.session_state.get("df_compliance"),
                         df_boq=st.session_state.get("df_boq"),
                         df_timeline=st.session_state.get("df_timeline"),
@@ -1320,6 +1406,7 @@ def _render_export(sections: list):
                     bio = build_pdf_document(
                         company_name=company_name,
                         sections=payload,
+                        figures=_project_figures(),
                         df_compliance=st.session_state.get("df_compliance"),
                         df_boq=st.session_state.get("df_boq"),
                         df_timeline=st.session_state.get("df_timeline"),

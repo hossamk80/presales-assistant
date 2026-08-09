@@ -9,6 +9,7 @@ from io import BytesIO
 from typing import List, Optional
 
 from utils.document_blocks import parse_blocks
+from utils import figures as _figures_util
 from utils import submission as _submission
 
 # أقل عدد أحرف في الصفحة يُعتبر معه استخراج النص ناجحاً.
@@ -527,6 +528,7 @@ def build_word_document(
     company_name: str,
     sections: list,
     template_bytes: Optional[bytes] = None,
+    figures: Optional[list] = None,
     df_compliance: Optional[pd.DataFrame] = None,
     df_boq: Optional[pd.DataFrame] = None,
     df_timeline: Optional[pd.DataFrame] = None,
@@ -612,6 +614,9 @@ def build_word_document(
         _enable_update_fields(doc)
         doc.add_page_break()
 
+    # ب-5: الترقيم يُحسب مرة بترتيب المستند لا يُخزَّن — حذف شكل لا يترك ثغرة
+    numbered_figures = _figures_util.numbered(figures, sections, rtl=rtl)
+
     # ── الأقسام ───────────────────────────────────────────────────────────────
     for idx, sec in enumerate(sections):
         kind = sec.get("kind")
@@ -634,6 +639,12 @@ def build_word_document(
             else:
                 _para_dir(doc.add_paragraph(empty_note), rtl)
 
+        # ب-5: أشكال القسم بعد نصّه — القارئ يفهم ما يراه بعد أن يُقال له ما هو
+        _render_figures_docx(
+            doc, _figures_util.for_section(numbered_figures, sec.get("key", "")),
+            rtl, font_name,
+        )
+
         if idx < len(sections) - 1:
             doc.add_page_break()
 
@@ -644,6 +655,72 @@ def build_word_document(
     doc.save(bio)
     bio.seek(0)
     return bio
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  الأشكال: مخططات العرض وصوره (ب-5)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# **الصورة يرفعها المستخدم ولا يولّدها النموذج** — انظر `utils/figures.py`.
+#
+# الشكل يُرسم **بعد نصّ قسمه** لا قبله: القارئ يفهم ما يراه بعد أن يُقال له ما
+# هو. والتسمية أسفله كعرف المستندات الفنية.
+#
+# والصيغتان (Word و PDF) ترسمانه بالترتيب نفسه والترقيم نفسه — اختلافهما أمام
+# لجنة الفتح مأخذٌ على المورّد.
+
+
+def _render_figures_docx(doc, figures, rtl, font_name):
+    """يرسم أشكال قسم في Word — الصورة ثم تسميتها."""
+    from docx.shared import Cm as _Cm, Pt as _Pt
+
+    from utils import figures as figures_util
+
+    for figure in figures or []:
+        image = figure.get("image")
+        if not image:
+            continue
+        try:
+            para = _para_dir(doc.add_paragraph(), rtl, center=True)
+            para.add_run().add_picture(
+                BytesIO(image), width=_Cm(figures_util.FIGURE_WIDTH_CM))
+        except Exception:
+            # صورة رفضها المُصيّر رغم فحص الرفع: يُتخطّى الشكل ولا يسقط المستند
+            # كلّه في يوم التسليم — والنقص مرئي، بخلاف مستند لم يُبنَ أصلاً.
+            continue
+        caption = _para_dir(doc.add_paragraph(), rtl, center=True)
+        run = caption.add_run(figures_util.caption_text(figure))
+        run.italic = True
+        run.font.size = _Pt(10)
+        _set_run_font(run, font_name, rtl)
+
+
+def _figure_flowables(figures, rtl, caption_style, para_factory):
+    """يبني عناصر الأشكال لـ PDF — الصورة ثم تسميتها."""
+    from reportlab.lib.units import cm as _cm
+    from reportlab.platypus import Image as _Image, Spacer as _Spacer
+
+    from utils import figures as figures_util
+
+    out = []
+    for figure in figures or []:
+        image = figure.get("image")
+        if not image:
+            continue
+        try:
+            flowable = _Image(BytesIO(image))
+            ratio = flowable.imageHeight / flowable.imageWidth \
+                if flowable.imageWidth else 1
+            flowable.drawWidth = figures_util.FIGURE_WIDTH_CM * _cm
+            flowable.drawHeight = figures_util.FIGURE_WIDTH_CM * _cm * ratio
+            flowable.hAlign = "CENTER"
+            out.append(flowable)
+        except Exception:
+            continue
+        out.append(para_factory(figures_util.caption_text(figure), caption_style))
+        out.append(_Spacer(1, 0.3 * _cm))
+    return out
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -775,6 +852,7 @@ def build_pdf_document(
     entity_name: str = "",
     brand_color: str = BRAND_COLOR,
     df_timeline: Optional[pd.DataFrame] = None,
+    figures: Optional[list] = None,
 ) -> BytesIO:
     """
     يبني نسخة PDF من نفس الأقسام. في العربية يُشكَّل النص ويُحاذى لليمين.
@@ -829,6 +907,8 @@ def build_pdf_document(
                                  fontSize=26, leading=36, alignment=TA_CENTER,
                                  textColor=accent)
     center = ParagraphStyle("ArCenter", parent=body, alignment=TA_CENTER)
+    # ب-5: تسمية الشكل — أصغر ووسطى كعرف المستندات الفنية
+    caption_style = ParagraphStyle("ArCaption", parent=center, fontSize=9)
 
     class _Doc(BaseDocTemplate):
         """يسجّل العناوين في الفهرس بعد رسم كل عنصر."""
@@ -872,6 +952,9 @@ def build_pdf_document(
         p._toc_level = level
         p._toc_text = _shape(text, rtl)
         return p
+
+    # ب-5: الترقيم نفسه في الصيغتين — اختلافهما أمام لجنة الفتح مأخذ
+    numbered_figures = _figures_util.numbered(figures, sections, rtl=rtl)
 
     story = []
 
@@ -1024,6 +1107,12 @@ def build_pdf_document(
                 elif btype == "table":
                     story.append(table_flowable(block["header"], block["rows"]))
                     story.append(Spacer(1, 0.3 * cm))
+
+        # ب-5: أشكال القسم بعد نصّه — بالترتيب والترقيم نفسهما في Word
+        story.extend(_figure_flowables(
+            _figures_util.for_section(numbered_figures, sec.get("key", "")),
+            rtl, caption_style, P,
+        ))
 
         if idx < len(sections) - 1:
             story.append(PageBreak())

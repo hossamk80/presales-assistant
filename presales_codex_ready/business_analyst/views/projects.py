@@ -756,6 +756,7 @@ def render():
                             db.delete_section_versions(proj["id"])
                             db.delete_approvals(proj["id"])
                             db.delete_project_clarifications(proj["id"])
+                            db.delete_project_figures(proj["id"])       # ب-5
                             db.delete_project(proj["id"])
                             st.session_state.pop(confirm_key, None)
                             st.rerun()

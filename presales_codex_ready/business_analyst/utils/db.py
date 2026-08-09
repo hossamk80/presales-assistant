@@ -1507,6 +1507,92 @@ def content_block_stats() -> dict:
     return stats
 
 
+# ─── الأشكال: مخططات العرض وصوره (ب-5) ────────────────────────────────────────
+
+
+def list_figures(project_id: Optional[int] = None,
+                 with_images: bool = False) -> list:
+    """
+    أشكال المنافسة مرتّبةً بقسمها ثم بترتيبها داخله.
+
+    الحمولات **لا تُحمَّل افتراضياً**: القائمة تُرسم في كل دورة، وصورة بحجم
+    ميغابايت تُقرأ من القرص عبثاً في كل مرة. `with_images` لبنّاء المستند وحده.
+    """
+    columns = "*" if with_images else (
+        "id, project_id, section_key, caption, mime, filename, ordinal, "
+        "created_at, LENGTH(image) AS size"
+    )
+    sql = f"SELECT {columns} FROM figures"
+    args: list[Any] = []
+    if project_id is not None:
+        sql += " WHERE project_id = ?"
+        args.append(int(project_id))
+    sql += " ORDER BY section_key, ordinal, id"
+    return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
+
+
+def add_figure(project_id: Optional[int], section_key: str, image: bytes,
+               caption: str = "", mime: str = "", filename: str = "") -> Optional[int]:
+    """
+    يضيف شكلاً في آخر قسمه. يعيد `None` لصورة فارغة.
+
+    الترتيب داخل القسم يُحسب من الموجود لا من عدّاد محفوظ: حذف شكل لا يترك
+    فجوةً يقع فيها الشكل التالي.
+    """
+    if not image:
+        return None
+    row = get_conn().execute(
+        "SELECT MAX(ordinal) AS last FROM figures WHERE project_id IS ? "
+        "AND section_key = ?",
+        (project_id, str(section_key or "")),
+    ).fetchone()
+    ordinal = int((row["last"] if row and row["last"] is not None else -1)) + 1
+
+    with transaction() as conn:
+        cur = conn.execute(
+            "INSERT INTO figures (project_id, section_key, caption, image, mime, "
+            "filename, ordinal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (project_id, str(section_key or ""), caption or "", image,
+             mime or "", filename or "", ordinal, _now()),
+        )
+        return int(cur.lastrowid)
+
+
+def update_figure(figure_id: int, caption: Optional[str] = None,
+                  section_key: Optional[str] = None,
+                  ordinal: Optional[int] = None) -> bool:
+    sets, args = [], []
+    for column, value in (("caption", caption), ("section_key", section_key)):
+        if value is not None:
+            sets.append(f"{column} = ?")
+            args.append(str(value))
+    if ordinal is not None:
+        sets.append("ordinal = ?")
+        args.append(int(ordinal))
+    if not sets:
+        return False
+    args.append(int(figure_id))
+    with transaction() as conn:
+        cur = conn.execute(
+            f"UPDATE figures SET {', '.join(sets)} WHERE id = ?", args
+        )
+        return cur.rowcount > 0
+
+
+def delete_figure(figure_id: int) -> bool:
+    with transaction() as conn:
+        cur = conn.execute("DELETE FROM figures WHERE id = ?", (int(figure_id),))
+        return cur.rowcount > 0
+
+
+def delete_project_figures(project_id: int) -> int:
+    with transaction() as conn:
+        cur = conn.execute(
+            "DELETE FROM figures WHERE project_id = ?", (int(project_id),)
+        )
+        return cur.rowcount
+
+
 # ─── نماذج الجهات (ب-4) ───────────────────────────────────────────────────────
 
 
