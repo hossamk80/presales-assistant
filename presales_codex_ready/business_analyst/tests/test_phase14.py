@@ -2352,3 +2352,221 @@ def test_solution_matrix_survives_a_saved_project(fake_streamlit):
     restored = state.st.session_state["df_solution"].to_dict("records")
     assert restored[0]["مكوّن الحل"] == "FortiGate"
     assert restored[0]["المورّد"] == "Fortinet"
+
+
+# ─── الكميات المحسوبة واعتمادها (ب-5 · ن-22) ───────────────────────────────────
+#
+# ما يُحرَس: أن الرقم المشتقّ لا يخرج بلا ختم إنسان، وأن أساس الاحتساب شرط
+# وجودٍ لا حقل زينة، وأن الختم يسقط إذا تغيّر ما خُتم عليه.
+
+
+def _boq_df(rows):
+    import pandas as pd
+
+    from utils.state import BOQ_COLUMNS
+
+    frame = pd.DataFrame(rows)
+    for col in BOQ_COLUMNS:
+        if col not in frame.columns:
+            frame[col] = {"الكمية": 1, "القائمة الإلزامية": False,
+                          "معتمَد": False}.get(col, "")
+    return frame[BOQ_COLUMNS]
+
+
+def _derived(item="نقطة شبكة", qty=500, basis="نقطة شبكة لكل موظف · 500 موظف (بند 3-2)",
+             approved=False):
+    from utils.state import QTY_DERIVED
+
+    return {"البند": item, "الوحدة": "نقطة", "الكمية": qty,
+            "أساس الاحتساب": basis, "مصدر الكمية": QTY_DERIVED,
+            "معتمَد": approved}
+
+
+def test_derived_quantity_is_withheld_from_the_document():
+    """
+    الرقم الذي اشتقّه النموذج لا يصل لجنة الفتح بلا ختم إنسان — وهذا هو
+    الفرق كلّه بين مساعدٍ يقترح وبين نظامٍ يوقّع نيابةً عن الشركة.
+    """
+    from utils import quantities
+    from utils.state import QTY_FROM_TENDER
+
+    df = _boq_df([
+        {"البند": "خادم", "الكمية": 4, "مصدر الكمية": QTY_FROM_TENDER,
+         "معتمَد": True},
+        _derived(),
+    ])
+
+    assert list(quantities.export_df(df)["البند"]) == ["خادم"]
+    assert list(quantities.export_df(quantities.approve(df, [1]))["البند"]) == [
+        "خادم", "نقطة شبكة"]
+
+
+def test_derived_without_a_real_basis_is_not_a_derivation():
+    """
+    «تقديري» ليست أساساً. رقمٌ بلا معادلةٍ ومدخلات لا يُراجَع ولا يُدافَع عنه،
+    فيُردّ يدويّاً ويملكه الفريق بدل أن يحمل صفة حسابٍ لم يجرِ.
+    """
+    from utils import quantities
+    from utils.state import QTY_DERIVED, QTY_MANUAL
+
+    df = _boq_df([_derived(basis="تقديري"), _derived()])
+    out = quantities.normalize(df)
+
+    assert list(out["مصدر الكمية"]) == [QTY_MANUAL, QTY_DERIVED]
+    # وما رُدّ يدويّاً لا يُحجب عن المستند — الفريق يملك رقمه
+    assert "نقطة شبكة" in list(quantities.export_df(df)["البند"])
+
+
+def test_approval_falls_when_the_number_changes_after_it():
+    """
+    ختمٌ على «500» ليس ختماً على «800». بلا هذا يصير الاعتماد توقيعاً على
+    ورقة بيضاء تُملأ بعده — نفس منطق 13-8 و 14-4.
+    """
+    from utils import quantities
+
+    before = quantities.approve(_boq_df([_derived()]), [0])
+    assert bool(before["معتمَد"].iloc[0]) is True
+
+    after = before.copy()
+    after.loc[0, "الكمية"] = 800
+
+    assert bool(quantities.refresh_approvals(after, before)["معتمَد"].iloc[0]) is False
+
+
+def test_approval_survives_an_unrelated_edit():
+    """تعديل وصف بندٍ آخر لا يُسقط ختماً — إنذارٌ كاذب يُفقد الميزة قيمتها."""
+    from utils import quantities
+
+    before = quantities.approve(_boq_df([_derived(), _derived("رخصة", 500)]), [0, 1])
+    after = before.copy()
+    after.loc[1, "الوصف"] = "وصف جديد"
+
+    assert list(quantities.refresh_approvals(after, before)["معتمَد"]) == [True, True]
+
+
+def test_the_basis_never_reaches_the_exported_document():
+    """
+    أساس الاحتساب أداة عمل داخلية. نشره يُخبر لجنة الفحص أي أرقامنا اجتهادٌ
+    منّا وأيّها منقول عنها.
+    """
+    from utils import quantities
+
+    out = quantities.export_df(quantities.approve(_boq_df([_derived()]), [0]))
+
+    for column in ("أساس الاحتساب", "مصدر الكمية", "معتمَد"):
+        assert column not in out.columns
+
+
+def test_extraction_marks_derived_rows_unapproved(fake_streamlit):
+    from utils.state import QTY_DERIVED, QTY_FROM_TENDER
+    from views import tables
+
+    df = tables._boq_to_df([
+        {"item_name": "خادم", "unit": "وحدة", "quantity": 4,
+         "quantity_source": "stated", "mandatory_list_flag": False},
+        {"item_name": "نقطة شبكة", "unit": "نقطة", "quantity": 500,
+         "quantity_source": "derived", "mandatory_list_flag": False,
+         "quantity_basis": "نقطة شبكة لكل موظف · 500 موظف (بند 3-2)"},
+    ])
+
+    assert list(df["مصدر الكمية"]) == [QTY_FROM_TENDER, QTY_DERIVED]
+    assert list(df["معتمَد"]) == [True, False]
+
+
+def test_a_saved_boq_from_before_this_change_is_not_suddenly_withheld():
+    """
+    جدول محفوظ لا يُعرف مصدر أرقامه — ووسمه «محسوباً» يحجب عن الفريق بنوداً
+    اعتمدها وصدّرها من قبل، فيصدّر ناقصاً وهو يحسبه كاملاً.
+    """
+    import pandas as pd
+
+    from utils import quantities
+    from utils.state import QTY_FROM_TENDER, migrate_boq_df
+
+    legacy = pd.DataFrame({
+        "البند": ["ترخيص"], "الوصف": ["سنوي"], "الكمية": [50],
+        "الوحدة": ["ترخيص"], "ملاحظات": ["يشمل الدعم"],
+    })
+    out = migrate_boq_df(legacy)
+
+    assert out.iloc[0]["مصدر الكمية"] == QTY_FROM_TENDER
+    assert list(quantities.export_df(out)["البند"]) == ["ترخيص"]
+
+
+def test_pending_quantities_are_announced_not_dropped_silently():
+    """فريقٌ يرى البند في الشاشة ولا يجده في المستند يظنّه عطلاً."""
+    from utils import quantities
+
+    assert quantities.blocking_note(_boq_df([_derived()]))
+    assert quantities.blocking_note(
+        quantities.approve(_boq_df([_derived()]), [0])) is None
+
+
+# ─── مصفوفة الصلاحيات القابلة للتحرير ─────────────────────────────────────────
+
+
+def test_approving_quantities_is_not_open_to_whoever_fills_the_table(fake_streamlit):
+    """من يملأ الجدول لا يختم اجتهاده بنفسه — افتراضاً."""
+    from utils import auth
+
+    assert auth.WRITER in auth.permission_roles("tables.edit")
+    assert auth.WRITER not in auth.permission_roles("boq.approve")
+
+
+def test_a_permission_can_be_moved_between_roles_without_touching_code(temp_db,
+                                                                      fake_streamlit):
+    """
+    توزيع المسؤوليات يختلف من منشأة لأخرى، ومن أراد الاعتماد لمراجعه لا
+    ينتظر إصداراً جديداً من البرنامج.
+    """
+    from utils import auth
+
+    assert auth.set_permission("boq.approve", auth.REVIEWER, True)
+    assert auth.set_permission("boq.approve", auth.BID_MANAGER, False)
+
+    roles = auth.permission_roles("boq.approve")
+    assert auth.REVIEWER in roles
+    assert auth.BID_MANAGER not in roles
+
+
+def test_untouched_permissions_still_follow_the_code_default(temp_db, fake_streamlit):
+    """
+    التجاوز يُخزَّن زوجاً زوجاً لا مصفوفةً كاملة: ترقيةٌ تمنح صلاحية لدور
+    تسري على التثبيت القائم بدل أن يتجمّد على صورته يوم أول تشغيل.
+    """
+    from utils import auth, db
+
+    auth.set_permission("boq.approve", auth.REVIEWER, True)
+
+    assert db.permission_override("review.run", auth.REVIEWER) is None
+    assert auth.REVIEWER in auth.permission_roles("review.run")
+
+
+def test_the_admin_cannot_lock_the_install_out_of_itself(temp_db, fake_streamlit):
+    """
+    نزع إدارة المستخدمين عن مدير النظام يترك نظاماً لا أحد فيه يعيد ما نُزع —
+    خطأٌ بضغطة واحدة بلا سبيل رجوع من الواجهة.
+    """
+    from utils import auth
+
+    for permission in auth.LOCKED_ADMIN_PERMISSIONS:
+        assert auth.set_permission(permission, auth.ADMIN, False) is False
+        assert auth.ADMIN in auth.permission_roles(permission)
+
+
+def test_resetting_permissions_restores_the_shipped_matrix(temp_db, fake_streamlit):
+    from utils import auth
+
+    auth.set_permission("boq.approve", auth.VIEWER, True)
+    auth.reset_all_permissions()
+
+    assert auth.permission_roles("boq.approve") == (auth.ADMIN, auth.BID_MANAGER)
+
+
+def test_an_unknown_permission_stays_shut_for_everyone_but_the_admin(temp_db,
+                                                                     fake_streamlit):
+    """الخطأ المطبعي في اسم صلاحية يجب أن يُغلق الباب لا أن يفتحه."""
+    from utils import auth
+
+    assert auth.permission_roles("boq.aprove") == (auth.ADMIN,)
+    assert auth.set_permission("boq.aprove", auth.WRITER, True) is False

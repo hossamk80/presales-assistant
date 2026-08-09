@@ -7,7 +7,7 @@ views/doc_builder.py — Tab 3: منشئ العرض الفني
 import re
 import streamlit as st
 
-from utils import knowledge, submission, traceability
+from utils import knowledge, quantities, submission, traceability
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
     EXTRACT_PROMPTS,
@@ -328,6 +328,11 @@ def _render_mandatory_check(sections: list):
 
     if any(s.get("include") and s["kind"] == "table_boq" for s in sections):
         st.error(t("db.financial_warning"))
+        # ب-5: الحجب الصامت أسوأ من الرقم المشكوك فيه — فريقٌ يرى البند في
+        # الشاشة ولا يجده في المستند يصدّر ناقصاً وهو يحسبه كاملاً.
+        blocked_qty = quantities.counts(st.session_state.get("df_boq"))["pending"]
+        if blocked_qty:
+            st.warning(t("qty.export_blocked", n=blocked_qty))
 
 
 def _covers(haystack: str, section_name: str) -> bool:

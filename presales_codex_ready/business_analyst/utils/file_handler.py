@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from utils.document_blocks import parse_blocks
 from utils import figures as _figures_util
+from utils import quantities as _quantities
 from utils import submission as _submission
 
 # أقل عدد أحرف في الصفحة يُعتبر معه استخراج النص ناجحاً.
@@ -644,10 +645,10 @@ def build_word_document(
         elif kind in ("table_compliance", "table_boq", "table_solution"):
             if kind == "table_solution":
                 block = _solution_table_block(df_solution)
+            elif kind == "table_boq":
+                block = _df_to_table_block(_quantities.export_df(df_boq))
             else:
-                block = _df_to_table_block(
-                    df_compliance if kind == "table_compliance" else df_boq
-                )
+                block = _df_to_table_block(df_compliance)
             if block:
                 _add_docx_table(doc, *block, rtl=rtl)
             else:
@@ -1105,7 +1106,9 @@ def build_pdf_document(
             story.append(table_flowable(*block) if block
                          else P("[لا توجد بيانات في جدول الامتثال]", body))
         elif kind == "table_boq":
-            block = _df_to_table_block(df_boq)
+            # ب-5: الكمية المحسوبة غير المعتمدة لا تخرج، وأعمدة العمل الداخلية
+            # لا تُنشر — انظر `quantities.export_df`.
+            block = _df_to_table_block(_quantities.export_df(df_boq))
             story.append(table_flowable(*block) if block
                          else P("[لا توجد بيانات في جدول الكميات]", body))
         elif kind == "table_solution":

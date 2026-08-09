@@ -353,6 +353,19 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT NOT NULL DEFAULT ''
 );
 
+-- تجاوزات مصفوفة الصلاحيات: صلاحية × دور ← مسموح أو ممنوع.
+--
+-- المصفوفة في `utils/auth.py` تبقى **الافتراض**، وهذا الجدول يحمل ما غيّره
+-- مدير النظام وحده. صفٌّ غائب يعني «اتبع الافتراض» لا «ممنوع» — والفرق جوهري:
+-- ترقية تُضيف صلاحية لدور في الشيفرة تسري على التثبيتات القائمة، ولو خزّنّا
+-- المصفوفة كاملةً لتجمّدت على صورتها يوم أول تشغيل.
+CREATE TABLE IF NOT EXISTS role_permissions (
+    permission TEXT NOT NULL,
+    role       TEXT NOT NULL,
+    allowed    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (permission, role)
+);
+
 -- سير الاعتماد قبل التسليم (13-8): مدير العطاءات ← المالية ← الاعتماد النهائي.
 --
 -- الاعتماد يُسجَّل **على رقم مراجعة بعينه** (13-7) لا على المنافسة مطلقاً: عرض
@@ -2080,6 +2093,53 @@ def set_personal_data_policy(legal_basis: str, retention_months: int) -> bool:
     set_app_setting(_PD_BASIS_KEY, legal_basis)
     set_app_setting(_PD_RETENTION_KEY, str(int(retention_months)))
     return True
+
+
+# ─── تجاوزات مصفوفة الصلاحيات ─────────────────────────────────────────────────
+#
+# القراءة والكتابة هنا **بلا تفسير**: القاعدة لا تعرف ما الصلاحيات ولا الأدوار،
+# ولا تعرف الافتراض. `utils/auth.py` وحده يجمع بين الافتراض والتجاوز.
+
+
+def permission_override(permission: str, role: str) -> Optional[bool]:
+    """التجاوز المخزَّن لهذا الزوج، أو `None` إن لم يُغيَّر فيُتبع الافتراض."""
+    row = get_conn().execute(
+        "SELECT allowed FROM role_permissions WHERE permission = ? AND role = ?",
+        (permission, role),
+    ).fetchone()
+    return None if row is None else bool(row["allowed"])
+
+
+def permission_overrides() -> dict:
+    """كل التجاوزات: `{(صلاحية، دور): مسموح}` — للعرض في شاشة الإعدادات."""
+    rows = get_conn().execute(
+        "SELECT permission, role, allowed FROM role_permissions"
+    ).fetchall()
+    return {(r["permission"], r["role"]): bool(r["allowed"]) for r in rows}
+
+
+def set_permission_override(permission: str, role: str, allowed: bool):
+    with transaction() as conn:
+        conn.execute(
+            "INSERT INTO role_permissions (permission, role, allowed) "
+            "VALUES (?, ?, ?) ON CONFLICT(permission, role) "
+            "DO UPDATE SET allowed = excluded.allowed",
+            (permission, role, 1 if allowed else 0),
+        )
+
+
+def clear_permission_override(permission: str, role: str):
+    """يحذف التجاوز فيعود الزوج إلى افتراض الشيفرة."""
+    with transaction() as conn:
+        conn.execute(
+            "DELETE FROM role_permissions WHERE permission = ? AND role = ?",
+            (permission, role),
+        )
+
+
+def clear_all_permission_overrides():
+    with transaction() as conn:
+        conn.execute("DELETE FROM role_permissions")
 
 
 def expired_cv_documents(months: Optional[int] = None) -> list:

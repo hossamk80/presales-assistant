@@ -59,6 +59,12 @@ CLARIFY_SENT = "clarify.sent"
 CLARIFY_ANSWERED = "clarify.answered"
 DELIVERY_CONVERT = "delivery.convert"
 CONNECTOR_PULL = "connector.pull"
+# ب-5: اعتماد كمية اشتقّها النموذج. تُترجَم إلى مال في المظروف المالي، فمن
+# ختمها يُعرَف بالاسم — والسجل هو ما يُسأل عنه حين يختلف المنفَّذ عن المعروض.
+BOQ_QTY_APPROVE = "boq.qty_approve"
+# تغيير مصفوفة الصلاحيات: من منح ماذا لمن. بلا أثرٍ له يصير التحكّم بالوصول
+# قابلاً للتغيير بلا من يُسأل عنه.
+PERMISSION_CHANGE = "permission.change"
 USER_ADD = "user.add"
 USER_ROLE = "user.role"
 USER_ACTIVE = "user.active"
@@ -75,7 +81,7 @@ ACTIONS = (
     PROMPT_EDIT, PROMPT_RESET, PROMPT_TRIAL,
     BLOCK_EDIT, BLOCK_STATUS, BLOCK_REVIEW, BLOCK_DELETE, BLOCK_INSERT,
     GLOSSARY_EDIT, CLARIFY_ADD, CLARIFY_SENT, CLARIFY_ANSWERED,
-    DELIVERY_CONVERT, CONNECTOR_PULL,
+    DELIVERY_CONVERT, CONNECTOR_PULL, BOQ_QTY_APPROVE, PERMISSION_CHANGE,
     USER_ADD, USER_ROLE, USER_ACTIVE, USER_DELETE, USER_PASSWORD, AUTH_LOGIN,
 )
 

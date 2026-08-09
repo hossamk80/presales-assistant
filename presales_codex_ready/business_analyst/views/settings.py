@@ -321,6 +321,92 @@ def _my_account_section():
                 st.success(t("us.password_changed"))
 
 
+def _permissions_section():
+    """
+    تحرير مصفوفة الصلاحيات: صلاحية × دور.
+
+    المصفوفة في `utils/auth.py` **افتراضٌ** لا حكم: قسم عطاءات يوزّع مسؤولياته
+    بطريقته، ومن أراد أن يعتمد الكميات المحسوبة مراجعُه لا مديرُ عطاءاته لا
+    ينتظر إصداراً جديداً من البرنامج.
+
+    ما لا يُلمَس هنا يبقى تابعاً للافتراض، فترقيةٌ تُضيف صلاحية لدور تسري على
+    التثبيت القائم بدل أن يتجمّد على صورته يوم أول تشغيل.
+    """
+    with st.expander(t("perm.title")):
+        st.caption(t("perm.hint"))
+
+        current = {
+            p: {r: (r in auth.permission_roles(p)) for r in auth.ROLES}
+            for p in auth.PERMISSIONS
+        }
+
+        table = pd.DataFrame([
+            {t("perm.col_permission"): p,
+             **{t(f"role.{r}"): current[p][r] for r in auth.ROLES}}
+            for p in sorted(auth.PERMISSIONS)
+        ])
+
+        edited = st.data_editor(
+            table, hide_index=True, width="stretch", key="de_permissions",
+            disabled=[t("perm.col_permission")],
+            column_config={
+                t("perm.col_permission"): st.column_config.TextColumn(
+                    t("perm.col_permission"), width="medium"),
+                **{t(f"role.{r}"): st.column_config.CheckboxColumn(t(f"role.{r}"))
+                   for r in auth.ROLES},
+            },
+        )
+
+        col_save, col_reset = st.columns([3, 1])
+        with col_save:
+            if st.button(t("perm.save"), type="primary", key="perm_save"):
+                _save_permissions(edited, current)
+        with col_reset:
+            if st.button(t("perm.reset"), key="perm_reset", width="stretch"):
+                auth.reset_all_permissions()
+                audit.record(audit.PERMISSION_CHANGE, target=t("perm.reset_target"))
+                st.session_state.pop("de_permissions", None)
+                st.rerun()
+
+        st.caption(t("perm.locked_note", names=" · ".join(
+            auth.LOCKED_ADMIN_PERMISSIONS)))
+
+
+def _save_permissions(edited, current: dict):
+    """
+    يحفظ ما تغيّر وحده — الزوج الذي لم يُلمَس لا يُخزَّن فيبقى تابعاً للافتراض.
+
+    والرفض يُقال صراحةً: زوجٌ محميّ يُردّ بلا صمت، وإلا ظنّ المدير أنه نزع
+    صلاحيةً وهي باقية.
+    """
+    labels = {t(f"role.{r}"): r for r in auth.ROLES}
+    changed, refused = 0, []
+
+    for row in edited.to_dict("records"):
+        permission = row.get(t("perm.col_permission"))
+        if permission not in auth.PERMISSIONS:
+            continue
+        for label, role in labels.items():
+            wanted = bool(row.get(label))
+            if wanted == current[permission][role]:
+                continue
+            if auth.set_permission(permission, role, wanted):
+                changed += 1
+                audit.record(audit.PERMISSION_CHANGE,
+                             target=f"{permission} · {role}",
+                             detail="منح" if wanted else "نزع")
+            else:
+                refused.append(f"{permission} · {t(f'role.{role}')}")
+
+    if refused:
+        st.error(t("perm.refused", names=" · ".join(refused)))
+    if changed:
+        st.success(t("perm.saved", n=changed))
+        st.rerun()
+    elif not refused:
+        st.info(t("perm.nothing_changed"))
+
+
 def _users_section():
     """
     إدارة المستخدمين (13-2): إضافة · تصفير كلمة · تعطيل · حذف.
@@ -461,6 +547,7 @@ def render_settings():
     _my_account_section()
     if auth.can("users.manage"):
         _users_section()
+        _permissions_section()
 
     with st.expander(t("st.out_lang"), expanded=False):
         st.caption(t("st.out_lang_caption"))
