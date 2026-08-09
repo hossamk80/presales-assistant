@@ -374,6 +374,8 @@ def test_each_role_gets_exactly_its_matrix_row(auth):
             "approve.bid_manager", "approve.finance",
             # 14-4: يحرّر كتل المكتبة ويعتمدها
             "library.manage", "library.approve",
+            # ب-5: يعتمد الكميات المحسوبة — **افتراضاً**، والمصفوفة قابلة للتحرير
+            "boq.approve",
         },
         auth.WRITER: {
             "projects.create", "projects.edit", "tables.edit", "sections.write",

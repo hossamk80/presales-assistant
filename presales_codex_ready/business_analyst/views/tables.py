@@ -18,6 +18,9 @@ from utils.state import (
     CRITICALITY_OPTIONS,
     DEFAULT_BOQ_DF,
     DEFAULT_COMPLIANCE_DF,
+    QTY_DERIVED,
+    QTY_FROM_TENDER,
+    QTY_SOURCE_OPTIONS,
     SUBMISSION_HAVE_OPTIONS,
     get_sections,
     migrate_boq_df,
@@ -26,7 +29,10 @@ from utils.state import (
     role_text,
     section_content_key,
 )
-from utils import audit, auth, db, submission, timeline as timeline_utils, traceability
+from utils import (
+    audit, auth, db, quantities, submission, timeline as timeline_utils,
+    traceability,
+)
 from utils.ai_engine import (
     BOQ_SCHEMA,
     COMPLIANCE_SCHEMA,
@@ -111,6 +117,9 @@ def _boq_to_df(items: list) -> pd.DataFrame:
             qty = float(it.get("quantity", 1) or 1)
         except (TypeError, ValueError):
             qty = 1.0
+        # الكمية المشتقّة تصل **غير معتمدة**: النموذج يقترح ولا يختم. و
+        # `quantities.normalize` يردّ المشتقّ بلا أساسٍ يستحق الاسم إلى يدوي.
+        derived = str(it.get("quantity_source", "")).strip().lower() == "derived"
         rows.append({
             "رقم البند": str(it.get("item_number", "") or i).strip(),
             "التصنيف": str(it.get("category", "")).strip(),
@@ -120,9 +129,68 @@ def _boq_to_df(items: list) -> pd.DataFrame:
             "المواصفات": str(it.get("specifications", "")).strip(),
             "كود البناء": str(it.get("construction_code", "")).strip(),
             "الكمية": int(qty) if qty == int(qty) else qty,
+            "أساس الاحتساب": str(it.get("quantity_basis", "")).strip(),
+            "مصدر الكمية": QTY_DERIVED if derived else QTY_FROM_TENDER,
+            "معتمَد": not derived,
             "القائمة الإلزامية": bool(it.get("mandatory_list_flag")),
         })
-    return pd.DataFrame(rows)[BOQ_COLUMNS] if rows else DEFAULT_BOQ_DF.copy()
+    if not rows:
+        return DEFAULT_BOQ_DF.copy()
+    return quantities.normalize(pd.DataFrame(rows)[BOQ_COLUMNS])
+
+
+def _render_quantity_approvals(boq_df):
+    """
+    لوحة اعتماد الكميات المحسوبة.
+
+    تُعرَض **فوق الجدول** لا تحته: كمية محجوبة عن المستند خبرٌ يسبق التحرير لا
+    يليه. وكل بند يُعرَض برقمه **وأساس احتسابه** — بلا الأساس يصير الاعتماد
+    ضغطةً على رقم لا يعرف صاحبها من أين جاء.
+    """
+    items = quantities.pending(boq_df)
+    if not items:
+        return
+
+    approver = auth.can("boq.approve")
+    st.warning(t("qty.pending_title", n=len(items)) + "\n\n" + t("qty.pending_hint"))
+
+    for item in items:
+        row = st.container(border=True)
+        with row:
+            head, act = st.columns([5, 1])
+            with head:
+                st.markdown(
+                    f"**{item['item']}** — {item['quantity']} {item['unit']}")
+                st.caption(f"🧮 {t('qty.basis_label')}: {item['basis']}")
+            with act:
+                if st.button("✅", key=f"qty_ok_{item['fingerprint']}",
+                             help=t("qty.approve_one"), disabled=not approver,
+                             width="stretch"):
+                    _approve_quantities([item["index"]], item["item"])
+
+    if len(items) > 1:
+        if st.button(t("qty.approve_all", n=len(items)), key="qty_ok_all",
+                     disabled=not approver):
+            _approve_quantities([i["index"] for i in items], t("qty.all_target"))
+
+    if not approver:
+        st.caption(t("qty.no_permission"))
+
+
+def _approve_quantities(indexes: list, target: str):
+    """
+    يعتمد الكميات ويسجّل من فعل ذلك.
+
+    الصلاحية تُفحص هنا **ثانيةً** لا في الزرّ وحده: زرٌّ معطَّل حجبٌ في الواجهة
+    لا حارسٌ، والفحص عند الفعل هو ما يمنعه فعلاً.
+    """
+    if not auth.can("boq.approve"):
+        return
+    st.session_state["df_boq"] = quantities.approve(
+        st.session_state.get("df_boq"), indexes)
+    audit.record(audit.BOQ_QTY_APPROVE, target=target,
+                 detail=f"{len(indexes)} كمية محسوبة")
+    st.rerun()
 
 
 def _mandatory_list_reference() -> str:
@@ -929,15 +997,19 @@ def render():
         st.divider()
 
         # منافسات محفوظة قبل توسيع المخطط تُرقَّى عند العرض
-        boq_df = migrate_boq_df(st.session_state.get("df_boq"))
+        boq_df = quantities.normalize(migrate_boq_df(st.session_state.get("df_boq")))
         st.session_state["df_boq"] = boq_df
 
         col_info2, col_actions = st.columns([3, 2])
         with col_info2:
             flagged = int(boq_df["القائمة الإلزامية"].fillna(False).astype(bool).sum())
-            m1, m2 = st.columns(2)
+            qty = quantities.counts(boq_df)
+            m1, m2, m3 = st.columns(3)
             m1.metric(t("tb.total_items"), len(boq_df))
             m2.metric(t("tb.flagged"), flagged)
+            m3.metric(t("qty.derived_metric"), qty["derived"],
+                      delta=(f"-{qty['pending']}" if qty["pending"] else None),
+                      delta_color="inverse")
         with col_actions:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button(t("tb.reset_table"), key="reset_boq", width="stretch"):
@@ -946,6 +1018,8 @@ def render():
                 st.rerun()
 
         st.caption(t("tb.mandatory_warning"))
+
+        _render_quantity_approvals(boq_df)
 
         edited_boq = st.data_editor(
             boq_df,
@@ -962,13 +1036,22 @@ def render():
                 "المواصفات": st.column_config.TextColumn("المواصفات الفنية", width="large"),
                 "كود البناء": st.column_config.TextColumn("كود البناء"),
                 "الكمية": st.column_config.NumberColumn("الكمية", min_value=0),
+                "أساس الاحتساب": st.column_config.TextColumn(
+                    t("qty.col_basis"), width="large", help=t("qty.col_basis_help")),
+                "مصدر الكمية": st.column_config.SelectboxColumn(
+                    t("qty.col_source"), options=QTY_SOURCE_OPTIONS, required=True,
+                    width="small"),
+                "معتمَد": st.column_config.CheckboxColumn(
+                    t("qty.col_approved"), help=t("qty.col_approved_help")),
                 "القائمة الإلزامية": st.column_config.CheckboxColumn(
                     "القائمة الإلزامية",
                     help="هل يقع البند ضمن القائمة الإلزامية للمحتوى المحلي؟",
                 ),
             },
         )
-        st.session_state["df_boq"] = edited_boq
+        # الاعتماد معلَّق على الرقم وأساسه: تعديل أيّهما بعد الختم يعيد البند
+        # إلى الانتظار بدل أن يحمل ختماً لرقم آخر (نفس منطق 13-8 و 14-4).
+        st.session_state["df_boq"] = quantities.refresh_approvals(edited_boq, boq_df)
 
     st.divider()
     _render_timeline()

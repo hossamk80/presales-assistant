@@ -67,14 +67,18 @@ def test_role_text_empty_without_attachments(state, fake_streamlit):
 # ─── مخطط الكميات الموسّع ──────────────────────────────────────────────────────
 
 
-def test_boq_schema_has_all_nine_fields(ae):
+def test_boq_schema_has_all_its_fields(ae):
     props = ae.BOQ_SCHEMA["properties"]["items"]["items"]["properties"]
     assert set(props) == {
         "item_number", "category", "item_name", "unit", "description",
         "specifications", "construction_code", "quantity", "mandatory_list_flag",
+        # ب-5: الرقم وحده لا يكفي — من أين جاء، وبأي معادلة
+        "quantity_source", "quantity_basis",
     }
     assert props["mandatory_list_flag"]["type"] == "BOOLEAN"
     assert props["quantity"]["type"] == "NUMBER"
+    # المصدر مُلزِم: كمية بلا مصدر تُقرأ منقولةً وهي اجتهاد
+    assert "quantity_source" in ae.BOQ_SCHEMA["properties"]["items"]["items"]["required"]
 
 
 def test_boq_rows_map_every_field(tables, state):

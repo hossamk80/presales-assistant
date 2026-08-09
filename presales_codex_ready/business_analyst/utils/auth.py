@@ -87,6 +87,10 @@ PERMISSIONS: dict[str, tuple] = {
     # الكاتب يقترح كتلة، ولا يمنح نصَّه ختم «يُدرَج بلا مراجعة» بنفسه.
     "library.manage": (ADMIN, BID_MANAGER, WRITER),
     "library.approve": (ADMIN, BID_MANAGER),
+    # ب-5: اعتماد الكميات **المحسوبة**. الكمية المشتقّة تُترجَم إلى مال في
+    # المظروف المالي، فمن يملأ الجدول لا يختم اجتهاده بنفسه. وأي منشأة تريد
+    # اعتمادها لمراجعها أو لكاتبها تغيّرها من شاشة الصلاحيات بلا تعديل شيفرة.
+    "boq.approve": (ADMIN, BID_MANAGER),
     # 13-5: قراءة سجل التدقيق — يكشف من فعل ماذا، فليس لكل من يكتب
     "audit.view": (ADMIN, BID_MANAGER),
     # 13-8: سير الاعتماد قبل التسليم. لا دور «مالية» بين الأدوار الخمسة بعد،
@@ -369,12 +373,13 @@ def can(permission: str, user: Optional[dict] = None) -> bool:
 
     صلاحية غير معرَّفة تُرفض للجميع عدا مدير النظام — الخطأ المطبعي في اسم
     صلاحية يجب أن يُغلق الباب لا أن يفتحه.
+
+    والجواب يمرّ بطبقة التجاوز: `PERMISSIONS` افتراضٌ يصلح لأغلب الأقسام،
+    وتوزيع الأدوار يختلف من منشأة لأخرى — فمن أراد أن يعتمد الكميات مراجعُه
+    لا مديرُ عطاءاته يغيّرها من الشاشة بلا تعديل شيفرة.
     """
     role = role_of(user)
-    allowed = PERMISSIONS.get(permission)
-    if allowed is None:
-        return role == ADMIN
-    return role in allowed
+    return role in permission_roles(permission)
 
 
 def blocked(permission: str, user: Optional[dict] = None) -> bool:
@@ -406,7 +411,82 @@ def can_edit_section(section: dict) -> bool:
 
 
 def permissions_of(role: str) -> set:
-    return {p for p, roles in PERMISSIONS.items() if role in roles}
+    return {p for p in PERMISSIONS if role in permission_roles(p)}
+
+
+# ─── تحرير مصفوفة الصلاحيات ───────────────────────────────────────────────────
+#
+# `PERMISSIONS` أعلاه **افتراضٌ** لا حكمٌ نهائي: قسم عطاءات يوزّع مسؤولياته
+# بطريقته، ومن أراد أن يعتمد الكميات المحسوبة مراجعُه لا مديرُ عطاءاته لا
+# ينتظر إصداراً جديداً. التجاوز يُخزَّن في `role_permissions` زوجاً زوجاً،
+# فما لم يُلمَس يبقى تابعاً للافتراض وتسري عليه ترقيات الشيفرة.
+
+# صلاحيات لا تُنزَع عن مدير النظام **مهما كان**: بلا إدارة المستخدمين
+# والإعدادات لا يبقى في النظام من يعيد ما نُزع — خطأٌ بضغطة واحدة يقفل
+# التثبيت على أهله بلا سبيل رجوع من الواجهة.
+LOCKED_ADMIN_PERMISSIONS = ("settings.manage", "users.manage")
+
+
+def permission_roles(permission: str) -> tuple:
+    """
+    الأدوار التي تملك هذه الصلاحية فعلاً: الافتراض معدَّلاً بالتجاوزات.
+
+    صلاحية غير معرَّفة لمدير النظام وحده — الخطأ المطبعي يُغلق الباب لا يفتحه.
+    """
+    default = PERMISSIONS.get(permission)
+    if default is None:
+        return (ADMIN,)
+
+    roles = []
+    for role in ROLES:
+        if role == ADMIN and permission in LOCKED_ADMIN_PERMISSIONS:
+            roles.append(role)
+            continue
+        override = _override(permission, role)
+        if override if override is not None else role in default:
+            roles.append(role)
+    return tuple(roles)
+
+
+def _override(permission: str, role: str) -> Optional[bool]:
+    # قاعدة غير مهيّأة بعد (أول تشغيل · اختبار) لا تُسقط الحراسة إلى الرفض
+    # ولا إلى القبول — تُترك للافتراض المكتوب في الشيفرة.
+    try:
+        return db.permission_override(permission, role)
+    except Exception:
+        return None
+
+
+def set_permission(permission: str, role: str, allowed: bool) -> bool:
+    """
+    يمنح صلاحية لدور أو ينزعها. يعيد `False` إن كان الزوج محميّاً.
+
+    يُخزَّن التجاوز حتى لو طابق الافتراض: «مسموحٌ عمداً» و«مسموحٌ لأنه الافتراض»
+    حالتان مختلفتان عند الترقية — الأولى تبقى، والثانية تتبع الشيفرة الجديدة.
+    """
+    if permission not in PERMISSIONS or role not in ROLES:
+        return False
+    if role == ADMIN and permission in LOCKED_ADMIN_PERMISSIONS and not allowed:
+        return False
+    db.set_permission_override(permission, role, allowed)
+    return True
+
+
+def reset_permission(permission: str, role: str) -> bool:
+    """يعيد الزوج إلى افتراض الشيفرة بحذف تجاوزه."""
+    if permission not in PERMISSIONS or role not in ROLES:
+        return False
+    db.clear_permission_override(permission, role)
+    return True
+
+
+def reset_all_permissions():
+    db.clear_all_permission_overrides()
+
+
+def is_customized(permission: str, role: str) -> bool:
+    """هل هذا الزوج مُتجاوَز؟ — للواجهة كي تُظهر ما خرج عن الافتراض."""
+    return _override(permission, role) is not None
 
 
 def _is_last_admin(user_id: int) -> bool:

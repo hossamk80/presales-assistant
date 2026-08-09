@@ -374,6 +374,87 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "tb.col_strategy": {"ar": "استراتيجية الاستجابة", "en": "Compliance strategy"},
     "tb.col_status": {"ar": "الالتزام", "en": "Compliance"},
     "tb.col_certificate": {"ar": "الشهادة المطلوبة", "en": "Required certificate"},
+    # مصفوفة الصلاحيات: الافتراض في الشيفرة، والتوزيع قرار المنشأة
+    "perm.title": {"ar": "🔑 مصفوفة الصلاحيات", "en": "🔑 Permission matrix"},
+    "perm.hint": {
+        "ar": "ما في الشيفرة **افتراضٌ** لا حكم: كل قسم عطاءات يوزّع مسؤولياته "
+              "بطريقته. غيّر ما يخصّك هنا، وما لا تلمسه يبقى على الافتراض "
+              "فتسري عليه تحديثات البرنامج.",
+        "en": "What ships in the code is a **default**, not a ruling — every "
+              "bid team divides responsibility its own way. Change what you "
+              "need; whatever you leave alone follows the default and keeps "
+              "receiving product updates.",
+    },
+    "perm.col_permission": {"ar": "الصلاحية", "en": "Permission"},
+    "perm.save": {"ar": "💾 حفظ الصلاحيات", "en": "💾 Save permissions"},
+    "perm.saved": {
+        "ar": "✅ حُفظ **{n}** تغييراً على الصلاحيات.",
+        "en": "✅ Saved **{n}** permission changes.",
+    },
+    "perm.nothing_changed": {"ar": "لا تغيير للحفظ.", "en": "Nothing to save."},
+    "perm.reset": {"ar": "↩️ الافتراضي", "en": "↩️ Defaults"},
+    "perm.reset_target": {"ar": "إعادة كل الصلاحيات للافتراضي",
+                        "en": "reset all permissions to defaults"},
+    "perm.refused": {
+        "ar": "🔒 لم تُنزَع: {names} — بلا هذه الصلاحيات لا يبقى من يعيد ما نُزع.",
+        "en": "🔒 Not revoked: {names} — without these nobody could ever "
+              "restore what was taken away.",
+    },
+    "perm.locked_note": {
+        "ar": "🔒 لا تُنزَع عن مدير النظام مهما كان: {names} — خطأٌ بضغطة واحدة "
+              "يقفل النظام على أهله بلا سبيل رجوع.",
+        "en": "🔒 Never removable from the admin role: {names} — one wrong "
+              "click would lock the install with no way back.",
+    },
+    # الكميات المحسوبة: النموذج يشتقّ الرقم، والإنسان يعتمده أو لا يخرج
+    "qty.derived_metric": {"ar": "كميات محسوبة", "en": "Derived quantities"},
+    "qty.col_basis": {"ar": "أساس الاحتساب", "en": "Derivation basis"},
+    "qty.col_basis_help": {
+        "ar": "المعادلة ومن أين جاء كل رقم فيها مع مرجع البند. رقمٌ بلا أساس "
+              "لا يُراجَع ولا يُدافَع عنه أمام لجنة الفحص. **لا يخرج في العرض** — "
+              "أداة عمل داخلية.",
+        "en": "The formula and where each number in it came from, with a clause "
+              "reference. A number with no basis cannot be reviewed or defended. "
+              "**Never exported** — an internal working field.",
+    },
+    "qty.col_source": {"ar": "مصدر الكمية", "en": "Quantity source"},
+    "qty.col_approved": {"ar": "معتمَد", "en": "Approved"},
+    "qty.col_approved_help": {
+        "ar": "الكمية المحسوبة لا تخرج في أي مستند حتى تُعتمد. والمنقول من "
+              "الكرّاس معتمَد دائماً — نقلٌ لا اجتهاد.",
+        "en": "A derived quantity is excluded from every document until it is "
+              "approved. Quantities taken from the tender are always approved — "
+              "they are transcription, not judgement.",
+    },
+    "qty.pending_title": {
+        "ar": "🧮 **{n}** كمية اشتقّها النموذج ولم تُعتمد بعد — لن تخرج في العرض:",
+        "en": "🧮 **{n}** model-derived quantities are not approved yet — "
+              "they will not appear in the proposal:",
+    },
+    "qty.pending_hint": {
+        "ar": "راجع أساس الاحتساب لكل بند. اعتمده إن صحّ، أو صحّح الرقم في "
+              "الجدول وسيعود إلى الانتظار حتى تعتمده من جديد.",
+        "en": "Check each item's derivation basis. Approve it if it holds, or "
+              "correct the number in the table — it returns to pending until "
+              "you approve it again.",
+    },
+    "qty.basis_label": {"ar": "أساس الاحتساب", "en": "Basis"},
+    "qty.approve_one": {"ar": "اعتماد هذه الكمية", "en": "Approve this quantity"},
+    "qty.approve_all": {"ar": "✅ اعتماد الكميات الـ {n}", "en": "✅ Approve all {n}"},
+    "qty.all_target": {"ar": "كل الكميات المحسوبة", "en": "all derived quantities"},
+    "qty.no_permission": {
+        "ar": "🔒 الاعتماد ليس من صلاحيتك — مصفوفة الصلاحيات في الإعدادات "
+              "تحدّد من يملكه.",
+        "en": "🔒 Approving is not in your permissions — the permission matrix "
+              "in Settings decides who holds it.",
+    },
+    "qty.export_blocked": {
+        "ar": "🧮 **{n}** كمية محسوبة غير معتمدة ستُحذف من جدول الكميات في "
+              "المستند. اعتمدها في تبويب الجداول أو صحّحها يدوياً.",
+        "en": "🧮 **{n}** unapproved derived quantities will be dropped from "
+              "the BOQ in the document. Approve them in the Tables tab or "
+              "correct them by hand.",
+    },
     # مصفوفة الحلّ: تُقرأ بعد مصفوفة الامتثال وتجيب سؤالها التالي — «بماذا نلتزم؟»
     "sol.title": {"ar": "🧩 مصفوفة الحلّ", "en": "🧩 Solution matrix"},
     "sol.hint": {
