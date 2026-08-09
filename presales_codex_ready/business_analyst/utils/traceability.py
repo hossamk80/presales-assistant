@@ -180,3 +180,66 @@ def run_coverage_check(
     if not result:
         return None
     return apply_coverage(df, (result or {}).get("coverage") or [])
+
+
+# ─── مصفوفة الحلّ: المتطلب ومكوّنه (ب-5) ──────────────────────────────────────
+#
+# مصفوفة الامتثال تقول **هل نلتزم**، ومصفوفة الحلّ تقول **بأي مكوّن**. والفجوة
+# بينهما هي ما يُرصد هنا: متطلبٌ **أقررنا بالالتزام به** ولا مكوّن في حلّنا
+# يلبّيه — وعدٌ بلا ما يُنفّذه.
+#
+# لجنة الفحص تقرأ «نعم، ملتزمون» فتسأل «بماذا؟»، والجواب الغائب هنا يظهر عندها.
+
+# حالات الالتزام التي تعني وعداً قطعناه — نفس عتبة 14-11 فلا معياران للوعد.
+_COMMITTED = ("نعم", "جزئي")
+
+
+def solution_gaps(df_compliance=None, df_solution=None) -> list:
+    """
+    المتطلبات المُلتزَم بها بلا مكوّن حلّ.
+
+    **الحرِج منها `حرجة` وما دونه `تنبيه`**: متطلبٌ عالي الأهمية وعدنا به بلا
+    مكوّن يلبّيه هو ما يُفقد العطاء، وقائمةٌ تشكو من كل متطلب بلا مكوّن تُهمَل
+    فيُهمَل معها الحرِج.
+
+    Returns:
+        `[{"kind", "severity", "message", "req_id"}]` — فارغة إن لم تُملأ
+        مصفوفة الحلّ أصلاً: بندٌ لم يبدأ ليس بنداً ناقصاً.
+    """
+    from utils.state import solution_rows_for
+
+    rows = _records(df_compliance)
+    if not rows:
+        return []
+
+    # مصفوفة حلّ فارغة تماماً تعني أن الفريق لم يبدأها بعد — لا أن كل متطلب
+    # بلا مكوّن. الشكوى من كل صفّ في جدول لم يُفتح ضجيجٌ يُهمِل الأداة.
+    filled = _records(df_solution)
+    if not any(str(r.get("مكوّن الحل", "") or "").strip() for r in filled):
+        return []
+
+    findings = []
+    for row in rows:
+        status = str(row.get("الالتزام", "") or "").strip()
+        if status not in _COMMITTED:
+            continue
+        req_id = str(row.get("المعرّف", "") or "").strip()
+        if not req_id:
+            continue
+        if solution_rows_for(df_solution, req_id):
+            continue
+        blocking = str(row.get("الأهمية", "") or "").strip() == BLOCKING_CRITICALITY
+        requirement = " ".join(str(row.get("المتطلب", "") or "").split())[:90]
+        findings.append({
+            "kind": "solution_gap",
+            "severity": "حرجة" if blocking else "تنبيه",
+            "req_id": req_id,
+            "message": (
+                f"المتطلب {req_id} أُقرّ الالتزام به ولا مكوّن حلّ يلبّيه"
+                + (f" — {requirement}" if requirement else "")
+                + ". وعدٌ بلا ما يُنفّذه."
+            ),
+        })
+
+    findings.sort(key=lambda f: f["severity"] != "حرجة")
+    return findings

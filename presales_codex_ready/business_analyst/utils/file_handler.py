@@ -524,6 +524,21 @@ def _df_to_table_block(df: Optional[pd.DataFrame]) -> Optional[tuple]:
     return header, rows
 
 
+def _solution_table_block(df: Optional[pd.DataFrame]):
+    """
+    مصفوفة الحلّ للتصدير بعد إسقاط الصفوف بلا مكوّن.
+
+    الجدول يبدأ بصفٍّ فارغ جاهز للكتابة، وتصديره كما هو يضع في العرض صفّاً
+    أبيض أمام لجنة الفتح. الصفّ بلا مكوّن حلّ لا يقول شيئاً فلا يُطبع.
+    """
+    if df is None or getattr(df, "empty", True):
+        return None
+    if "مكوّن الحل" not in df.columns:
+        return _df_to_table_block(df)
+    filled = df[df["مكوّن الحل"].fillna("").astype(str).str.strip() != ""]
+    return _df_to_table_block(filled)
+
+
 def build_word_document(
     company_name: str,
     sections: list,
@@ -531,6 +546,7 @@ def build_word_document(
     figures: Optional[list] = None,
     df_compliance: Optional[pd.DataFrame] = None,
     df_boq: Optional[pd.DataFrame] = None,
+    df_solution: Optional[pd.DataFrame] = None,
     df_timeline: Optional[pd.DataFrame] = None,
     include_toc: bool = True,
     include_page_numbers: bool = True,
@@ -546,6 +562,7 @@ def build_word_document(
     Args:
         sections: [{"key","title","kind","content"}] بالترتيب النهائي.
                   kind: cover · docinfo · ai · table_compliance · table_boq
+                  · table_solution
         template_bytes: قالب Word للشركة يُحقن المحتوى بعده.
         proposal_title: عنوان العرض على الغلاف؛ يعود لعنوان عام إن كان فارغاً.
         entity_name: الجهة المصدِرة للمنافسة — تظهر كسطر "مقدَّم إلى".
@@ -624,10 +641,13 @@ def build_word_document(
 
         if kind == "table_timeline":
             _render_timeline_docx(doc, df_timeline, rtl, brand_color, empty_note)
-        elif kind in ("table_compliance", "table_boq"):
-            block = _df_to_table_block(
-                df_compliance if kind == "table_compliance" else df_boq
-            )
+        elif kind in ("table_compliance", "table_boq", "table_solution"):
+            if kind == "table_solution":
+                block = _solution_table_block(df_solution)
+            else:
+                block = _df_to_table_block(
+                    df_compliance if kind == "table_compliance" else df_boq
+                )
             if block:
                 _add_docx_table(doc, *block, rtl=rtl)
             else:
@@ -852,6 +872,7 @@ def build_pdf_document(
     entity_name: str = "",
     brand_color: str = BRAND_COLOR,
     df_timeline: Optional[pd.DataFrame] = None,
+    df_solution: Optional[pd.DataFrame] = None,
     figures: Optional[list] = None,
 ) -> BytesIO:
     """
@@ -1087,6 +1108,10 @@ def build_pdf_document(
             block = _df_to_table_block(df_boq)
             story.append(table_flowable(*block) if block
                          else P("[لا توجد بيانات في جدول الكميات]", body))
+        elif kind == "table_solution":
+            block = _solution_table_block(df_solution)
+            story.append(table_flowable(*block) if block
+                         else P("[لا توجد بيانات في مصفوفة الحل]", body))
         else:
             content = (sec.get("content") or "").strip()
             if not content:

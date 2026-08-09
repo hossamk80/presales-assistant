@@ -2159,3 +2159,196 @@ def test_switching_tenders_does_not_wipe_the_credentials(fake_streamlit):
 
     assert projects.st.session_state["cn_odoo_api_key"] == "سرّ"
     assert projects.st.session_state["cn_odoo_url"] == "https://x"
+
+
+# ─── مصفوفة الحلّ (ن-22) ───────────────────────────────────────────────────────
+#
+# ما يُحرَس هنا ثلاثة: أن جدولاً لم يُفتح لا يُشتكى منه، وأن النقل من مصفوفة
+# الامتثال لا يمسح عمل الفريق، وأن الصفوف الفارغة لا تُطبع في العرض.
+
+
+def _compliance_df(rows):
+    import pandas as pd
+
+    from utils.state import COMPLIANCE_COLUMNS, DEFAULT_COMPLIANCE_DF
+
+    frame = pd.DataFrame(rows)
+    for col in COMPLIANCE_COLUMNS:
+        if col not in frame.columns:
+            frame[col] = DEFAULT_COMPLIANCE_DF[col].iloc[0]
+    return frame[COMPLIANCE_COLUMNS]
+
+
+def _solution_df(rows):
+    import pandas as pd
+
+    from utils.state import SOLUTION_COLUMNS
+
+    frame = pd.DataFrame(rows)
+    for col in SOLUTION_COLUMNS:
+        if col not in frame.columns:
+            frame[col] = ""
+    return frame[SOLUTION_COLUMNS]
+
+
+def test_untouched_solution_matrix_reports_no_gaps():
+    """
+    بندٌ لم يبدأ ليس بنداً ناقصاً — ولولا هذا لظهرت شكوى من كل متطلب لحظة
+    استخراج مصفوفة الامتثال، فتُهمَل الأداة قبل أن تُستعمل.
+    """
+    from utils import traceability
+    from utils.state import DEFAULT_SOLUTION_DF
+
+    compliance = _compliance_df([
+        {"المعرّف": "REQ-1", "المتطلب": "جدار ناري", "الالتزام": "نعم"},
+    ])
+
+    assert traceability.solution_gaps(compliance, DEFAULT_SOLUTION_DF.copy()) == []
+
+
+def test_committed_requirement_without_a_component_is_a_gap():
+    from utils import traceability
+
+    compliance = _compliance_df([
+        {"المعرّف": "REQ-1", "المتطلب": "جدار ناري", "الالتزام": "نعم",
+         "الأهمية": "High"},
+        {"المعرّف": "REQ-2", "المتطلب": "نسخ احتياطي", "الالتزام": "جزئي",
+         "الأهمية": "Medium"},
+        {"المعرّف": "REQ-3", "المتطلب": "تدريب", "الالتزام": "لا",
+         "الأهمية": "High"},
+    ])
+    solution = _solution_df([
+        {"المعرّف": "REQ-2", "المتطلب": "نسخ احتياطي", "مكوّن الحل": "Veeam"},
+    ])
+
+    gaps = traceability.solution_gaps(compliance, solution)
+    by_id = {g["req_id"]: g for g in gaps}
+
+    # REQ-2 له مكوّن، و REQ-3 لم نلتزم به أصلاً فلا يُطالَب بحلّ
+    assert set(by_id) == {"REQ-1"}
+    assert by_id["REQ-1"]["severity"] == "حرجة"
+
+
+def test_non_blocking_gap_is_a_warning_not_a_blocker():
+    """قائمةٌ تصرخ من كل متطلب تُهمَل، فيُهمَل معها الحرِج."""
+    from utils import traceability
+
+    compliance = _compliance_df([
+        {"المعرّف": "REQ-1", "المتطلب": "تقرير شهري", "الالتزام": "نعم",
+         "الأهمية": "Low"},
+        {"المعرّف": "REQ-2", "المتطلب": "نسخ", "الالتزام": "نعم"},
+    ])
+    solution = _solution_df([
+        {"المعرّف": "REQ-2", "مكوّن الحل": "Veeam"},
+    ])
+
+    gaps = traceability.solution_gaps(compliance, solution)
+
+    assert [g["severity"] for g in gaps] == ["تنبيه"]
+
+
+def test_solution_gaps_reach_the_review_findings():
+    """الفجوة تظهر في المراجعة لا في تبويب الجداول وحده."""
+    from utils import consistency
+
+    compliance = _compliance_df([
+        {"المعرّف": "REQ-1", "المتطلب": "جدار ناري", "الالتزام": "نعم",
+         "الأهمية": "High"},
+    ])
+    solution = _solution_df([{"المعرّف": "REQ-9", "مكوّن الحل": "Veeam"}])
+
+    findings = consistency.check(
+        sections=[], df_compliance=compliance, df_solution=solution)
+
+    assert any(f.get("kind") == "solution_gap" for f in findings)
+
+
+def test_pulling_requirements_never_erases_written_rows():
+    """
+    إعادة النقل بعد تحديث الكرّاس تُضيف ما استُجدّ — ولو مسحت لضاع عمل يومٍ
+    كامل بضغطة زرّ لا رجعة فيها.
+    """
+    from views.tables import _solution_from_compliance
+
+    compliance = _compliance_df([
+        {"المعرّف": "REQ-1", "المتطلب": "جدار ناري"},
+        {"المعرّف": "REQ-2", "المتطلب": "نسخ احتياطي"},
+    ])
+    current = _solution_df([
+        {"المعرّف": "REQ-1", "المتطلب": "جدار ناري", "مكوّن الحل": "FortiGate",
+         "المورّد": "Fortinet"},
+    ])
+
+    merged = _solution_from_compliance(compliance, current)
+    rows = {r["المعرّف"]: r for r in merged.to_dict("records")}
+
+    assert rows["REQ-1"]["مكوّن الحل"] == "FortiGate"
+    assert rows["REQ-1"]["المورّد"] == "Fortinet"
+    assert "REQ-2" in rows
+
+
+def test_empty_solution_rows_are_not_exported():
+    """
+    الجدول يبدأ بصفٍّ فارغ جاهزٍ للكتابة — وتصديره كما هو يضع صفّاً أبيض في
+    العرض أمام لجنة الفتح.
+    """
+    from utils.file_handler import _solution_table_block
+    from utils.state import DEFAULT_SOLUTION_DF
+
+    assert _solution_table_block(DEFAULT_SOLUTION_DF.copy()) is None
+
+    filled = _solution_df([
+        {"المعرّف": "REQ-1", "مكوّن الحل": "FortiGate"},
+        {"المعرّف": "REQ-2", "مكوّن الحل": ""},
+    ])
+    header, rows = _solution_table_block(filled)
+
+    assert header[0] == "المعرّف"
+    assert len(rows) == 1
+
+
+def test_solution_table_section_renders_in_word():
+    from utils.file_handler import build_word_document
+
+    solution = _solution_df([
+        {"المعرّف": "REQ-1", "المتطلب": "جدار ناري", "مكوّن الحل": "FortiGate"},
+    ])
+    bio = build_word_document(
+        "شركة", [{"key": "solution_table", "title": "مصفوفة الحل",
+                  "kind": "table_solution"}],
+        df_solution=solution, include_toc=False,
+    )
+
+    from docx import Document
+
+    doc = Document(bio)
+    assert any("FortiGate" in c.text for tbl in doc.tables
+               for row in tbl.rows for c in row.cells)
+
+
+def test_solution_section_is_off_by_default():
+    """
+    العرض الفني لا يُحشى بجدولٍ لم يُملأ — القسم موجود ويُشغَّل عند الحاجة.
+    """
+    from utils.state import DEFAULT_SECTIONS
+
+    section = next(s for s in DEFAULT_SECTIONS if s["kind"] == "table_solution")
+
+    assert section["include"] is False
+
+
+def test_solution_matrix_survives_a_saved_project(fake_streamlit):
+    """مصفوفة الحلّ عملُ أيام — تُحفظ مع المنافسة ولا تُعاد كتابتها."""
+    from utils import state
+
+    state.st.session_state["df_solution"] = _solution_df([
+        {"المعرّف": "REQ-1", "مكوّن الحل": "FortiGate", "المورّد": "Fortinet"},
+    ])
+    snapshot = state.get_project_snapshot()
+
+    state.st.session_state["df_solution"] = state.DEFAULT_SOLUTION_DF.copy()
+    state.load_state_snapshot(snapshot)
+
+    restored = state.st.session_state["df_solution"].to_dict("records")
+    assert restored[0]["مكوّن الحل"] == "FortiGate"
+    assert restored[0]["المورّد"] == "Fortinet"

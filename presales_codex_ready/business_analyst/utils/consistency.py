@@ -13,6 +13,7 @@ from typing import Optional
 
 import pandas as pd
 
+from utils import traceability
 from utils.timeline import parse_duration_weeks, contract_weeks
 
 # نُقارن مدة **التنفيذ** وحدها. مدة الضمان ومدة سريان العرض أرقام مشروعة
@@ -250,7 +251,8 @@ def check(sections: Optional[list] = None,
           timeline_df: Optional[pd.DataFrame] = None,
           project_context: Optional[dict] = None,
           extracted_weeks=None,
-          language: str = "ar") -> list:
+          language: str = "ar",
+          df_compliance=None, df_solution=None) -> list:
     """
     يقارن مدد التنفيذ المذكورة في الأقسام بالجدول الزمني وبمدة العقد، ويرصد
     انحراف المصطلحات عن المسرد المعتمد (14-6)، وتفاوت النسختين في وضع
@@ -322,10 +324,13 @@ def check(sections: Optional[list] = None,
                     "sections": sorted(data["sections"]),
                 })
 
-    # 5) تطابق النسختين في وضع «كليهما» (ب-3) — قبل التنبيهات، فيه حرِج
+    # 5) فجوة مصفوفة الحلّ (ب-5): مُلتزَم به بلا مكوّن يلبّيه
+    findings.extend(traceability.solution_gaps(df_compliance, df_solution))
+
+    # 6) تطابق النسختين في وضع «كليهما» (ب-3) — قبل التنبيهات، فيه حرِج
     findings.extend(bilingual_parity(sections, language))
 
-    # 6) انحراف المصطلحات عن المسرد (14-6) — تنبيه في آخر القائمة بعد الحرِج
+    # 7) انحراف المصطلحات عن المسرد (14-6) — تنبيه في آخر القائمة بعد الحرِج
     findings.extend(glossary_drift(sections, language))
 
     return findings

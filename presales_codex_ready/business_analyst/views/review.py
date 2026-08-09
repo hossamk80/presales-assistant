@@ -304,6 +304,9 @@ def _render_consistency(sections: list):
             st.session_state.get("timeline_contract_weeks"),
             # 14-6: الصيغة المعتمدة تتبع لغة المخرجات لا لغة الواجهة
             language=st.session_state.get("output_language", "ar"),
+            # ب-5: فجوة مصفوفة الحلّ تُعرض مع بقيّة الفحوص
+            df_compliance=st.session_state.get("df_compliance"),
+            df_solution=st.session_state.get("df_solution"),
         )
         if not findings:
             st.success(t("cs.ok"))
