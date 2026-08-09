@@ -374,6 +374,46 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "tb.col_strategy": {"ar": "استراتيجية الاستجابة", "en": "Compliance strategy"},
     "tb.col_status": {"ar": "الالتزام", "en": "Compliance"},
     "tb.col_certificate": {"ar": "الشهادة المطلوبة", "en": "Required certificate"},
+    # مصفوفة الحلّ: تُقرأ بعد مصفوفة الامتثال وتجيب سؤالها التالي — «بماذا نلتزم؟»
+    "sol.title": {"ar": "🧩 مصفوفة الحلّ", "en": "🧩 Solution matrix"},
+    "sol.hint": {
+        "ar": "مصفوفة الامتثال تقول **ماذا** نلتزم به، وهذه تقول **بماذا**. "
+              "لكل متطلب مكوّن الحلّ الذي يلبّيه — والمُقيّم يتتبّع الوعد إلى ما "
+              "يحقّقه. المعرّفات تُنقل من مصفوفة الامتثال ولا تُكتب من جديد.",
+        "en": "The compliance matrix says **what** you commit to; this one says "
+              "**with what**. Each requirement gets the solution component that "
+              "meets it, so the evaluator can trace a promise to what delivers "
+              "it. IDs are pulled from the compliance matrix, never retyped.",
+    },
+    "sol.gaps": {
+        "ar": "⚠️ **{n}** متطلب مُلتزَم به بلا مكوّن حلّ يلبّيه:",
+        "en": "⚠️ **{n}** committed requirements have no solution component:",
+    },
+    "sol.gaps_critical": {
+        "ar": "🔴 **{n}** متطلب **عالي الأهمية** مُلتزَم به بلا مكوّن حلّ — "
+              "وعدٌ بلا ما يسنده:",
+        "en": "🔴 **{n}** **high-criticality** committed requirements have no "
+              "solution component — a promise with nothing behind it:",
+    },
+    "sol.pull_requirements": {
+        "ar": "⬇️ نقل المتطلبات من مصفوفة الامتثال",
+        "en": "⬇️ Pull requirements from compliance matrix",
+    },
+    "sol.pull_help": {
+        "ar": "يملأ المعرّف والمتطلب فقط. الصفوف المكتوبة تبقى كما هي، "
+              "والمتطلبات الجديدة تُضاف — لا يُمسح شيء.",
+        "en": "Fills the ID and requirement only. Rows you already wrote stay "
+              "untouched and new requirements are appended — nothing is erased.",
+    },
+    "sol.col_component": {"ar": "مكوّن الحلّ", "en": "Solution component"},
+    "sol.col_role": {"ar": "دوره", "en": "Its role"},
+    "sol.col_product": {"ar": "المنتج/التقنية", "en": "Product / technology"},
+    "sol.col_vendor": {"ar": "المورّد", "en": "Vendor"},
+    "sol.col_notes": {"ar": "ملاحظات", "en": "Notes"},
+    "sol.count": {
+        "ar": "**{filled}** من **{total}** صفّاً له مكوّن حلّ · {columns} أعمدة",
+        "en": "**{filled}** of **{total}** rows have a component · {columns} columns",
+    },
     "tb.submission": {"ar": "📎 مستندات التسليم", "en": "📎 Submission documents"},
     "tb.submission_hint": {
         "ar": "أكثر أسباب الاستبعاد شيوعاً مستند ناقص أو شهادة منتهية، لا ضعف "

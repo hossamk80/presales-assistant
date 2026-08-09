@@ -214,6 +214,108 @@ def _section_content(key: str) -> str:
     return str(st.session_state.get(section_content_key(key), ""))
 
 
+# ─── مصفوفة الحلّ (ب-5) ────────────────────────────────────────────────────────
+
+
+def _render_solution_matrix():
+    """
+    مصفوفة الحلّ: لكل متطلب مكوّنه.
+
+    موضعها **بعد مصفوفة الامتثال** لأنها تجيب سؤالها التالي: قرأنا «نعم،
+    ملتزمون» فبماذا؟ والمعرّفات تُنقل من المصفوفة الأولى ولا تُعاد كتابتها —
+    قائمةُ متطلبات ثانية تنحرف عن الأولى فيصير للعرض حقيقتان.
+    """
+    from utils import traceability
+    from utils.state import DEFAULT_SOLUTION_DF, SOLUTION_COLUMNS, migrate_solution_df
+
+    df = migrate_solution_df(st.session_state.get("df_solution"))
+    st.session_state["df_solution"] = df
+    compliance = st.session_state.get("df_compliance")
+
+    with st.expander(t("sol.title"), expanded=False):
+        st.caption(t("sol.hint"))
+
+        # الفجوة أولاً: مُلتزَم به بلا مكوّن يلبّيه
+        gaps = traceability.solution_gaps(compliance, df)
+        if gaps:
+            critical = [g for g in gaps if g["severity"] == "حرجة"]
+            body = "\n".join(f"- {g['message']}" for g in gaps[:10])
+            if critical:
+                st.error(t("sol.gaps_critical", n=len(critical)) + "\n\n" + body)
+            else:
+                st.warning(t("sol.gaps", n=len(gaps)) + "\n\n" + body)
+
+        col_add, col_reset = st.columns([3, 1])
+        with col_add:
+            # النقل من مصفوفة الامتثال: المعرّف والمتطلب يُملآن، والباقي للفريق
+            if st.button(t("sol.pull_requirements"), disabled=auth.blocked("tables.edit"),
+                         help=t("sol.pull_help")):
+                st.session_state["df_solution"] = _solution_from_compliance(
+                    compliance, df)
+                st.session_state.pop("de_solution", None)
+                st.rerun()
+        with col_reset:
+            if st.button(f"↩️ {t('common.reset')}", key="reset_solution",
+                         width="stretch", disabled=auth.blocked("tables.edit")):
+                st.session_state["df_solution"] = DEFAULT_SOLUTION_DF.copy()
+                st.session_state.pop("de_solution", None)
+                st.rerun()
+
+        edited = st.data_editor(
+            df, num_rows="dynamic", width="stretch", key="de_solution",
+            disabled=auth.blocked("tables.edit"),
+            column_config={
+                "المعرّف": st.column_config.TextColumn("REQ", width="small"),
+                "المتطلب": st.column_config.TextColumn(
+                    t("tb.col_requirement"), width="large"),
+                "مكوّن الحل": st.column_config.TextColumn(
+                    t("sol.col_component"), width="medium"),
+                "دوره": st.column_config.TextColumn(t("sol.col_role"), width="medium"),
+                "المنتج/التقنية": st.column_config.TextColumn(t("sol.col_product")),
+                "المورّد": st.column_config.TextColumn(t("sol.col_vendor")),
+                "ملاحظات": st.column_config.TextColumn(t("sol.col_notes"), width="large"),
+            },
+        )
+        st.session_state["df_solution"] = edited
+
+        filled = sum(1 for r in edited.to_dict("records")
+                     if str(r.get("مكوّن الحل", "") or "").strip())
+        st.caption(t("sol.count", filled=filled, total=len(edited),
+                     columns=len(SOLUTION_COLUMNS)))
+
+
+def _solution_from_compliance(compliance, current):
+    """
+    يملأ المعرّفات والمتطلبات من مصفوفة الامتثال، ويُبقي ما كُتب.
+
+    **لا يمسح عمل الفريق**: صفٌّ لمعرّف موجود يبقى كما هو، والجديد يُضاف —
+    وإعادة النقل بعد تعديل الكرّاس تُضيف ما استُجدّ ولا تُلغي ما بُني.
+    """
+    import pandas as pd
+
+    from utils.state import DEFAULT_SOLUTION_DF, SOLUTION_COLUMNS
+
+    if compliance is None or not hasattr(compliance, "to_dict"):
+        return DEFAULT_SOLUTION_DF.copy()
+
+    existing = [r for r in (current.to_dict("records") if current is not None else [])
+                if any(str(v or "").strip() for v in r.values())]
+    known = {str(r.get("المعرّف", "") or "").strip() for r in existing}
+
+    rows = list(existing)
+    for req in compliance.to_dict("records"):
+        req_id = str(req.get("المعرّف", "") or "").strip()
+        if not req_id or req_id in known:
+            continue
+        known.add(req_id)
+        row = {col: "" for col in SOLUTION_COLUMNS}
+        row["المعرّف"] = req_id
+        row["المتطلب"] = str(req.get("المتطلب", "") or "").strip()
+        rows.append(row)
+
+    return pd.DataFrame(rows or DEFAULT_SOLUTION_DF.to_dict("records"))[SOLUTION_COLUMNS]
+
+
 # ─── وحدة الاستفسارات (14-9) ───────────────────────────────────────────────────
 
 
@@ -809,6 +911,9 @@ def render():
         )
         # Persist changes immediately
         st.session_state["df_compliance"] = edited_comp
+
+    st.divider()
+    _render_solution_matrix()
 
     st.divider()
     _render_clarifications()

@@ -107,6 +107,58 @@ def migrate_compliance_df(df: "pd.DataFrame") -> "pd.DataFrame":
 
     return out[COMPLIANCE_COLUMNS]
 
+
+# ─── مصفوفة الحلّ (ب-5) ────────────────────────────────────────────────────────
+#
+# مصفوفة الامتثال تجيب: **هل نلتزم؟** — قرار بشري وتغطيةٌ في النصّ.
+# ومصفوفة الحلّ تجيب سؤالاً آخر: **بأي مكوّنٍ نلبّي هذا المتطلب؟**
+#
+# لجنة الفحص تقرأ «نعم، ملتزمون» فتسأل «بماذا؟». وبلا هذا الجدول يبقى الجواب
+# مبثوثاً في خمسين صفحة نصّاً، أو غير موجود أصلاً — فيصير الالتزام وعداً بلا
+# ما يُنفّذه.
+#
+# **المعرّف يُنقل من مصفوفة الامتثال ولا يُعاد إدخاله**: قائمةُ متطلبات ثانية
+# تنحرف عن الأولى، فيصير للعرض حقيقتان.
+SOLUTION_COLUMNS = [
+    "المعرّف",
+    "المتطلب",
+    "مكوّن الحل",
+    "دوره",
+    "المنتج/التقنية",
+    "المورّد",
+    "ملاحظات",
+]
+
+DEFAULT_SOLUTION_DF = pd.DataFrame({col: [""] for col in SOLUTION_COLUMNS})
+
+
+def migrate_solution_df(df) -> "pd.DataFrame":
+    """يضمن أن مصفوفة الحلّ تحمل كل أعمدتها مهما كان مصدرها."""
+    if df is None or not isinstance(df, pd.DataFrame):
+        return DEFAULT_SOLUTION_DF.copy()
+    if list(df.columns) == SOLUTION_COLUMNS:
+        return df
+    out = df.copy()
+    for col in SOLUTION_COLUMNS:
+        if col not in out.columns:
+            out[col] = ""
+    return out[SOLUTION_COLUMNS]
+
+
+def solution_rows_for(df, req_id: str) -> list:
+    """صفوف الحلّ التي تخصّ متطلباً بعينه."""
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return []
+    key = str(req_id or "").strip()
+    if not key:
+        return []
+    return [
+        row for row in df.to_dict("records")
+        if str(row.get("المعرّف", "") or "").strip() == key
+        and str(row.get("مكوّن الحل", "") or "").strip()
+    ]
+
+
 # ─── مستندات التسليم ───────────────────────────────────────────────────────────
 # أكثر أسباب الاستبعاد شيوعاً ليست ضعف العرض الفني بل مستند ناقص في المظروف.
 SUBMISSION_COLUMNS = [
@@ -386,6 +438,8 @@ DEFAULT_SECTIONS = [
     {"key": "timeline_table", "title": "الجدول الزمني ومعالم التسليم", "kind": "table_timeline", "include": False,
      "guidance": ""},
     {"key": "compliance_table", "title": "جدول الامتثال بالمواصفات", "kind": "table_compliance", "include": True,
+     "guidance": ""},
+    {"key": "solution_table", "title": "مصفوفة الحل: المتطلب ومكوّنه", "kind": "table_solution", "include": False,
      "guidance": ""},
     {"key": "boq_table", "title": "جدول الكميات (BOQ)", "kind": "table_boq", "include": False,
      "guidance": ""},
@@ -865,6 +919,7 @@ STATE_SCHEMA = {
 
     # Tables
     "df_compliance": DEFAULT_COMPLIANCE_DF,
+    "df_solution": DEFAULT_SOLUTION_DF,
     "df_boq": DEFAULT_BOQ_DF,
     "df_submission": DEFAULT_SUBMISSION_DF,
     "df_timeline": DEFAULT_TIMELINE_DF,
@@ -917,6 +972,7 @@ def reset_analysis():
         del st.session_state[key]
 
     st.session_state["df_compliance"] = DEFAULT_COMPLIANCE_DF.copy()
+    st.session_state["df_solution"] = DEFAULT_SOLUTION_DF.copy()
     st.session_state["df_boq"] = DEFAULT_BOQ_DF.copy()
     st.session_state["df_submission"] = DEFAULT_SUBMISSION_DF.copy()
     st.session_state["df_timeline"] = DEFAULT_TIMELINE_DF.copy()
@@ -964,6 +1020,8 @@ def load_state_snapshot(data: dict):
                         st.session_state[key] = migrate_boq_df(loaded)
                     elif key == "df_compliance":
                         st.session_state[key] = migrate_compliance_df(loaded)
+                    elif key == "df_solution":
+                        st.session_state[key] = migrate_solution_df(loaded)
                     elif key == "df_submission":
                         st.session_state[key] = migrate_submission_df(loaded)
                     elif key == "df_timeline":

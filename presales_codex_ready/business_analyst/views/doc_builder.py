@@ -160,7 +160,8 @@ def _apply_proposed_outline(proposed: list):
 
     head = [s for s in existing if s["kind"] in ("cover", "docinfo")]
     tail = [s for s in existing
-            if s["kind"] in ("table_compliance", "table_boq", "table_timeline")]
+            if s["kind"] in ("table_compliance", "table_boq", "table_solution",
+                             "table_timeline")]
 
     taken = {s["key"] for s in head + tail}
     body = []
@@ -371,6 +372,7 @@ def _render_section_list(sections: list):
             badge = {
                 "cover": "✉️", "docinfo": "🔒", "ai": "✍️",
                 "table_compliance": "📋", "table_boq": "📦",
+                "table_solution": "🧩",
             }.get(sec["kind"], "•")
             filled = bool(st.session_state.get(section_content_key(sec["key"]), "").strip())
             mark = "🟢" if filled or sec["kind"] != "ai" else "⚪"
@@ -583,6 +585,12 @@ def _render_editors(sections: list):
             df = st.session_state.get("df_boq")
             n = 0 if df is None else len(df)
             st.caption(f"📦 **{sec['title']}** — " + t("db.table_injected", n=n))
+            continue
+
+        if sec["kind"] == "table_solution":
+            df = st.session_state.get("df_solution")
+            n = 0 if df is None else len(df)
+            st.caption(f"🧩 **{sec['title']}** — " + t("db.table_injected", n=n))
             continue
 
         if sec["kind"] == "cover":
@@ -1384,6 +1392,7 @@ def _render_export(sections: list):
                         figures=_project_figures(),
                         df_compliance=st.session_state.get("df_compliance"),
                         df_boq=st.session_state.get("df_boq"),
+                        df_solution=st.session_state.get("df_solution"),
                         df_timeline=st.session_state.get("df_timeline"),
                         include_toc=include_toc,
                         include_page_numbers=include_pageno,
@@ -1409,6 +1418,7 @@ def _render_export(sections: list):
                         figures=_project_figures(),
                         df_compliance=st.session_state.get("df_compliance"),
                         df_boq=st.session_state.get("df_boq"),
+                        df_solution=st.session_state.get("df_solution"),
                         df_timeline=st.session_state.get("df_timeline"),
                         include_toc=include_toc,
                         include_page_numbers=include_pageno,
