@@ -62,6 +62,12 @@ CONNECTOR_PULL = "connector.pull"
 # ب-5: اعتماد كمية اشتقّها النموذج. تُترجَم إلى مال في المظروف المالي، فمن
 # ختمها يُعرَف بالاسم — والسجل هو ما يُسأل عنه حين يختلف المنفَّذ عن المعروض.
 BOQ_QTY_APPROVE = "boq.qty_approve"
+# ب-7: تبديل الشركة الفاعلة وإدارتها. أي عرضٍ يُبنى بعد التبديل يحمل هوية
+# الشركة الجديدة، فمن بدّل ومتى سؤالٌ يُسأل حين يخرج غلافٌ باسمٍ غير متوقَّع.
+COMPANY_SWITCH = "company.switch"
+COMPANY_CREATE = "company.create"
+COMPANY_RENAME = "company.rename"
+COMPANY_DELETE = "company.delete"
 # تغيير مصفوفة الصلاحيات: من منح ماذا لمن. بلا أثرٍ له يصير التحكّم بالوصول
 # قابلاً للتغيير بلا من يُسأل عنه.
 PERMISSION_CHANGE = "permission.change"
@@ -82,6 +88,7 @@ ACTIONS = (
     BLOCK_EDIT, BLOCK_STATUS, BLOCK_REVIEW, BLOCK_DELETE, BLOCK_INSERT,
     GLOSSARY_EDIT, CLARIFY_ADD, CLARIFY_SENT, CLARIFY_ANSWERED,
     DELIVERY_CONVERT, CONNECTOR_PULL, BOQ_QTY_APPROVE, PERMISSION_CHANGE,
+    COMPANY_SWITCH, COMPANY_CREATE, COMPANY_RENAME, COMPANY_DELETE,
     USER_ADD, USER_ROLE, USER_ACTIVE, USER_DELETE, USER_PASSWORD, AUTH_LOGIN,
 )
 

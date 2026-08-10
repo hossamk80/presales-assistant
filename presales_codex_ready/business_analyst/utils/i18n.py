@@ -374,6 +374,45 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "tb.col_strategy": {"ar": "استراتيجية الاستجابة", "en": "Compliance strategy"},
     "tb.col_status": {"ar": "الالتزام", "en": "Compliance"},
     "tb.col_certificate": {"ar": "الشهادة المطلوبة", "en": "Required certificate"},
+    # الشركة الفاعلة (ب-7): الاختيار لكل مستخدم لا لكل عملية
+    "org.title": {"ar": "🏢 الشركة الفاعلة", "en": "🏢 Active company"},
+    "org.hint": {
+        "ar": "المجموعة الواحدة قد تضمّ أكثر من كيان، ولكلٍّ سجله التجاري "
+              "وقالبه وهويته. اختيارك **يخصّك أنت**: زميلك على شركة أخرى في "
+              "الوقت نفسه بلا أن يقلب أحدكما اختيار الآخر.",
+        "en": "One group may hold several legal entities, each with its own CR, "
+              "template and identity. Your choice is **yours alone**: a "
+              "colleague can work on another company at the same time without "
+              "either of you flipping the other's selection.",
+    },
+    "org.active": {"ar": "الشركة التي تكتب باسمها", "en": "Writing on behalf of"},
+    "org.unnamed": {"ar": "شركة بلا اسم (#{id})", "en": "Unnamed company (#{id})"},
+    "org.scope_warning": {
+        "ar": "⚠️ التبديل يغيّر **ملف الشركة** — البيانات النظامية والقالب "
+              "والهوية. ولا يغيّر بعدُ: المنافسات · مستودع المعرفة · سجلات "
+              "الأدلة، فهي مشتركة بين الكيانات. تحقّق من الشهادات والمشاريع "
+              "المرجعية قبل التصدير باسم كيان آخر.",
+        "en": "⚠️ Switching changes the **company profile** — legal details, "
+              "template and identity. It does not yet change: tenders · "
+              "knowledge base · evidence registries, which are shared across "
+              "entities. Check certificates and reference projects before "
+              "exporting under another entity's name.",
+    },
+    "org.new_name": {"ar": "اسم شركة جديدة", "en": "New company name"},
+    "org.create": {"ar": "➕ إنشاء وتبديل", "en": "➕ Create and switch"},
+    "org.rename_to": {"ar": "إعادة تسمية الحالية", "en": "Rename current"},
+    "org.rename": {"ar": "✏️ إعادة التسمية", "en": "✏️ Rename"},
+    "org.delete_confirm": {
+        "ar": "أؤكّد حذف **{name}** وملفها وقالبها — لا رجعة.",
+        "en": "I confirm deleting **{name}**, its profile and template — "
+              "no undo.",
+    },
+    "org.delete": {"ar": "🗑️ حذف الشركة", "en": "🗑️ Delete company"},
+    "org.delete_refused": {
+        "ar": "❌ لا تُحذف آخر شركة — النظام بلا ملف شركة لا يبني عرضاً.",
+        "en": "❌ The last company cannot be deleted — with no company profile "
+              "the system cannot build a proposal.",
+    },
     # مصفوفة الصلاحيات: الافتراض في الشيفرة، والتوزيع قرار المنشأة
     "perm.title": {"ar": "🔑 مصفوفة الصلاحيات", "en": "🔑 Permission matrix"},
     "perm.hint": {

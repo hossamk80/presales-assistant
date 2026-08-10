@@ -477,6 +477,9 @@ _ADDED_COLUMNS = (
     # يُقرأ في `ai_engine` (14-1) ولا يُكتب في أي مكان، فبقيت البرومبتات
     # المخصَّصة لقطاع بلا قطاع يفعّلها.
     ("projects", "sector", "TEXT NOT NULL DEFAULT ''"),
+    # ب-7: الشركة الفاعلة صارت **لكل مستخدم**. تُخزَّن هنا فيجدها كما تركها
+    # عند دخوله التالي، وقيمة فارغة تعني «لم يختر» فيتبع أقدم شركة.
+    ("users", "company_id", "INTEGER"),
 )
 
 # أعمدة جدول الشركة بترتيبها في المخطط الحالي — يستعملها الترحيل لنقل ما
@@ -978,8 +981,10 @@ def count_users(active_only: bool = False) -> int:
 
 def list_users() -> list:
     rows = get_conn().execute(
-        "SELECT id, username, display_name, role, active, created_at, last_login "
-        "FROM users ORDER BY username"
+        # `company_id` لازم هنا لا في `SELECT *` وحده: حذف شركة يمرّ على كل
+        # حساب اختارها لينساها، ولا يعرف من اختارها إن لم يُقرأ العمود
+        "SELECT id, username, display_name, role, active, created_at, "
+        "last_login, company_id FROM users ORDER BY username"
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -1054,10 +1059,23 @@ def delete_user(user_id: int):
 # ─── ملف الشركة ───────────────────────────────────────────────────────────────
 
 
-# الشركة الفاعلة: النظام يعرض ملف شركة واحدة في كل لحظة. حتى تصل المستخدمون
-# (13-2) يبقى الاختيار على مستوى العملية، وقيمته الافتراضية أقدم شركة مسجَّلة —
-# فقاعدة بها شركة واحدة تتصرّف تماماً كما كانت قبل إلغاء القيد.
+# الشركة الفاعلة: النظام يعرض ملف شركة واحدة في كل لحظة.
+#
+# **ب-7 — الاختيار لكل مستخدم لا لكل عملية**: كان متغيّراً عاماً في الوحدة،
+# وخادم Streamlit واحد يخدم كل الجلسات — فجلستان لشركتين تتنازعان قيمة واحدة،
+# ويرى أحدهما ملف شركة الآخر على غلاف عرضه.
+#
+# و`db` **لا تعرف الجلسات ولا المستخدمين** ولا تستورد Streamlit: تسأل مُحلِّلاً
+# يركّبه من يعرف (`utils/companies.py`)، وتسقط إلى المتغيّر العام إن لم يُركَّب
+# — فسكربت أو اختبار بلا جلسة يعمل كما كان.
 _active_company_id: Optional[int] = None
+_company_resolver = None
+
+
+def set_company_resolver(resolver):
+    """يركّب مصدر الشركة الفاعلة. `None` يفكّه فتعود القيمة العامة."""
+    global _company_resolver
+    _company_resolver = resolver
 
 
 def list_companies() -> list:
@@ -1067,20 +1085,46 @@ def list_companies() -> list:
     return [dict(r) for r in rows]
 
 
-def active_company_id() -> Optional[int]:
-    """الشركة المختارة إن كانت لا تزال موجودة، وإلا أقدم شركة، وإلا `None`."""
-    row = get_conn().execute(
-        "SELECT id FROM company WHERE id = ?", (_active_company_id,)
-    ).fetchone() if _active_company_id is not None else None
-    if row is not None:
-        return row["id"]
+def company_exists(company_id: Optional[int]) -> bool:
+    if company_id is None:
+        return False
+    return get_conn().execute(
+        "SELECT 1 FROM company WHERE id = ?", (company_id,)
+    ).fetchone() is not None
+
+
+def oldest_company_id() -> Optional[int]:
+    """أقدم شركة — الافتراض حين لا اختيار. قاعدة بشركة واحدة تتصرّف كما كانت."""
     row = get_conn().execute("SELECT MIN(id) AS id FROM company").fetchone()
     return row["id"] if row and row["id"] is not None else None
 
 
+def active_company_id() -> Optional[int]:
+    """الشركة المختارة إن كانت لا تزال موجودة، وإلا أقدم شركة، وإلا `None`."""
+    chosen = None
+    if _company_resolver is not None:
+        try:
+            chosen = _company_resolver()
+        except Exception:
+            # جلسة غير جاهزة (خيط خلفي · سكربت) لا تُسقط الملف كله
+            chosen = None
+    if chosen is None:
+        chosen = _active_company_id
+
+    return chosen if company_exists(chosen) else oldest_company_id()
+
+
 def set_active_company(company_id: Optional[int]):
+    """الاختيار على مستوى العملية — الاحتياط حين لا مُحلِّل جلسة مركَّباً."""
     global _active_company_id
     _active_company_id = company_id
+
+
+def set_user_company(user_id: int, company_id: Optional[int]):
+    """يحفظ اختيار المستخدم فيجده كما تركه في دخوله التالي."""
+    with transaction() as conn:
+        conn.execute("UPDATE users SET company_id = ? WHERE id = ?",
+                     (company_id, user_id))
 
 
 def create_company(name: str = "", payload: Optional[dict] = None) -> int:

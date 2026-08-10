@@ -2570,3 +2570,146 @@ def test_an_unknown_permission_stays_shut_for_everyone_but_the_admin(temp_db,
 
     assert auth.permission_roles("boq.aprove") == (auth.ADMIN,)
     assert auth.set_permission("boq.aprove", auth.WRITER, True) is False
+
+
+# ─── الشركة الفاعلة لكل مستخدم (ب-7) ───────────────────────────────────────────
+#
+# 13-1 جعل القاعدة تحتمل أكثر من شركة وبقي الاختيار متغيّراً عاماً في `db`،
+# وخادم Streamlit واحد يخدم كل الجلسات. ما يُحرَس هنا أن جلستين لشركتين لا
+# تتنازعان قيمةً واحدة، وأن الاختيار يبقى بعد الخروج، وأن حذف شركة لا يترك
+# معرّفاً ميتاً في حساب زميل.
+
+
+@pytest.fixture()
+def two_companies(temp_db, fake_streamlit):
+    from utils import auth, companies, db
+
+    first = db.create_company("شركة أ")
+    second = db.create_company("شركة ب")
+    db.save_company({"c_name": "شركة أ"}, company_id=first)
+    db.save_company({"c_name": "شركة ب"}, company_id=second)
+    ahmed = db.create_user("ahmed", auth.hash_password("kalimatsirr1"),
+                           role=auth.ADMIN)
+    sara = db.create_user("sara", auth.hash_password("kalimatsirr1"),
+                          role=auth.ADMIN)
+    companies.install()
+    yield {"a": first, "b": second, "ahmed": ahmed, "sara": sara}
+    db.set_company_resolver(None)
+
+
+def _sign_in(user_id: int):
+    import streamlit as st
+
+    st.session_state.clear()
+    st.session_state["auth_user_id"] = user_id
+
+
+def test_two_users_hold_two_companies_at_once(two_companies):
+    """
+    العيب الذي يعالجه ب-7: خادم واحد يخدم الجلسات كلها، ومتغيّرٌ عام يعني أن
+    من يبدّل شركته يقلبها تحت يد زميله — فيخرج اسم شركةٍ أخرى على غلاف عرضه.
+    """
+    from utils import companies, db
+
+    _sign_in(two_companies["ahmed"])
+    assert companies.switch(two_companies["b"])
+    assert db.active_company_id() == two_companies["b"]
+
+    _sign_in(two_companies["sara"])
+    assert db.active_company_id() == two_companies["a"]
+
+    _sign_in(two_companies["ahmed"])
+    assert db.active_company_id() == two_companies["b"]
+
+
+def test_the_choice_outlives_the_session(two_companies):
+    """يجدها كما تركها في دخوله التالي — الاختيار في حسابه لا في جلسته وحدها."""
+    from utils import db
+
+    _sign_in(two_companies["ahmed"])
+    from utils import companies
+
+    companies.switch(two_companies["b"])
+
+    _sign_in(two_companies["ahmed"])   # جلسة جديدة، لا شيء في الذاكرة
+    assert db.active_company_id() == two_companies["b"]
+
+
+def test_switching_swaps_the_whole_profile_not_part_of_it(two_companies):
+    """
+    الحقل الذي تملؤه الشركة الجديدة يُكتب، والذي تتركه فارغاً **يُمحى** —
+    وإلا خرج رقم سجل تجاري لشركة على غلاف عرضٍ لشركة أخرى.
+    """
+    import streamlit as st
+
+    from utils import companies, db
+
+    db.save_company({"c_name": "شركة أ", "c_cr": "1010111111"},
+                    company_id=two_companies["a"])
+    db.save_company({"c_name": "شركة ب"}, company_id=two_companies["b"])
+
+    _sign_in(two_companies["ahmed"])
+    companies.load_into_session()
+    assert st.session_state["c_cr"] == "1010111111"
+
+    companies.switch(two_companies["b"])
+    companies.load_into_session()
+
+    assert st.session_state["c_name"] == "شركة ب"
+    assert st.session_state["c_cr"] == ""
+
+
+def test_deleting_a_company_leaves_no_dead_id_in_a_colleagues_account(two_companies):
+    """
+    معرّفٌ ميت في حساب زميل يعني ملفاً فارغاً بلا تفسير عند دخوله — وقد يملؤه
+    من جديد فوق شركةٍ أخرى.
+    """
+    from utils import companies, db
+
+    _sign_in(two_companies["ahmed"])
+    companies.switch(two_companies["b"])
+
+    _sign_in(two_companies["sara"])
+    assert db.delete_company(two_companies["b"])
+    companies.forget(two_companies["b"])
+
+    assert db.get_user_by_id(two_companies["ahmed"])["company_id"] is None
+    _sign_in(two_companies["ahmed"])
+    assert db.active_company_id() == two_companies["a"]
+
+
+def test_switching_to_a_company_that_is_gone_is_refused(two_companies):
+    """جلسةٌ على معرّف ميت تقرأ ملفاً فارغاً فيُظنّ العمل ضائعاً."""
+    from utils import companies
+
+    _sign_in(two_companies["ahmed"])
+
+    assert companies.switch(9999) is False
+
+
+def test_a_single_company_database_behaves_exactly_as_before(temp_db,
+                                                             fake_streamlit):
+    """تثبيتٌ بشركة واحدة لا يشعر بشيء من هذا — ولا يُطلب منه اختيار."""
+    from utils import companies, db
+
+    only = db.create_company("الشركة")
+    companies.install()
+    try:
+        assert db.active_company_id() == only
+    finally:
+        db.set_company_resolver(None)
+
+
+def test_db_still_works_with_no_session_layer_installed(temp_db):
+    """
+    `db` لا تعرف الجلسات: سكربت أو اختبار أو خيط خلفي بلا Streamlit يعمل كما
+    كان — ولولا ذلك لصارت طبقة التخزين رهينة الواجهة.
+    """
+    from utils import db
+
+    first = db.create_company("أ")
+    db.create_company("ب")
+
+    assert db.active_company_id() == first
+    db.set_active_company(2)
+    assert db.active_company_id() == 2
