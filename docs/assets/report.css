@@ -1,0 +1,230 @@
+/*
+ * docs/assets/report.css — هوية تقارير المشروع (HTML)
+ *
+ * ملف واحد يخدم `status.html` و `guide.html` — لا نسخة ثانية من الأنماط.
+ *
+ * الخطّ **مُضمَّن في المستودع** ويُقرأ بمسار نسبي من `static/fonts/`، فالتقرير
+ * يعمل معزولاً عن الإنترنت كما تعمل واجهة التطبيق (ب-1). وإن فُتح الملف وحده
+ * خارج المستودع يسقط إلى خطوط النظام بلا كسر — تدهورٌ لطيف لا عطل.
+ *
+ * الألوان مشتقّة من هوية التطبيق نفسها: `BRAND_COLOR = #003366`.
+ */
+
+@font-face{
+  font-family:'Plex Arabic';font-style:normal;font-weight:400;font-display:swap;
+  src:url("../../presales_codex_ready/business_analyst/static/fonts/IBMPlexSansArabic-Regular.woff2") format('woff2');
+}
+@font-face{
+  font-family:'Plex Arabic';font-style:normal;font-weight:600;font-display:swap;
+  src:url("../../presales_codex_ready/business_analyst/static/fonts/IBMPlexSansArabic-SemiBold.woff2") format('woff2');
+}
+
+/* ── الرموز ───────────────────────────────────────────────────────────────
+ * الفاتح على `:root` المجرّد، والداكن يُعاد تعريفه مرتين: مرةً لتفضيل النظام
+ * (محروسةً بـ `:not([data-theme="light"])` فيغلب الاختيار الصريح)، ومرةً
+ * للاختيار الصريح. ولا لون يُعرَّف داخل كتلة وسائط وحدها.
+ */
+:root{
+  --brand:#003366;
+  --ink:#10243D;
+  --ink-soft:#4A5C74;
+  --ink-faint:#7A8AA0;
+  --paper:#F5F7FA;
+  --surface:#FFFFFF;
+  --surface-sunk:#EDF1F7;
+  --border:#D8E0EA;
+  --brass:#8C6230;
+  --brass-wash:#F6EFE4;
+  --done:#1E6B4F;
+  --done-wash:#E6F1EC;
+  --guard:#9C3B2E;
+  --guard-wash:#F8ECEA;
+  --code-bg:#0F1D2E;
+  --code-ink:#DCE6F2;
+  --shadow:0 1px 2px rgba(16,36,61,.06), 0 8px 24px -16px rgba(16,36,61,.28);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --brand:#6FA8DC;
+    --ink:#DFE7F0;
+    --ink-soft:#A2B2C6;
+    --ink-faint:#75879E;
+    --paper:#0B1420;
+    --surface:#121D2C;
+    --surface-sunk:#0E1826;
+    --border:#22334A;
+    --brass:#C89B62;
+    --brass-wash:#221A10;
+    --done:#4FA47F;
+    --done-wash:#0F2119;
+    --guard:#D0705F;
+    --guard-wash:#241412;
+    --code-bg:#070E18;
+    --code-ink:#C7D6E8;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --brand:#6FA8DC;
+  --ink:#DFE7F0;
+  --ink-soft:#A2B2C6;
+  --ink-faint:#75879E;
+  --paper:#0B1420;
+  --surface:#121D2C;
+  --surface-sunk:#0E1826;
+  --border:#22334A;
+  --brass:#C89B62;
+  --brass-wash:#221A10;
+  --done:#4FA47F;
+  --done-wash:#0F2119;
+  --guard:#D0705F;
+  --guard-wash:#241412;
+  --code-bg:#070E18;
+  --code-ink:#C7D6E8;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box;}
+html{color-scheme:light dark;}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:'Plex Arabic', system-ui, "Segoe UI", Tahoma, sans-serif;
+  font-size:16px;
+  line-height:1.75;
+  direction:rtl;
+  text-align:right;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:60rem;margin:0 auto;padding:3.5rem 1.5rem 6rem;}
+section{margin-top:3.5rem;}
+
+/* ── الترويسة ─────────────────────────────────────────── */
+.masthead{border-top:3px solid var(--brand);padding-top:1.5rem;
+  display:flex;flex-direction:column;gap:.6rem;}
+.eyebrow{font-size:.75rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--brass);font-weight:600;}
+h1{font-size:clamp(1.7rem,4.2vw,2.5rem);line-height:1.25;margin:0;
+  font-weight:600;text-wrap:balance;letter-spacing:-.01em;}
+.dek{color:var(--ink-soft);max-width:62ch;margin:0;font-size:1.05rem;}
+.stamp{display:inline-flex;align-items:center;gap:.5rem;align-self:flex-start;
+  margin-top:.4rem;padding:.35rem .8rem;border:1px solid var(--done);
+  border-radius:2px;color:var(--done);background:var(--done-wash);
+  font-size:.82rem;font-weight:600;letter-spacing:.02em;}
+.stamp::before{content:"";width:.5rem;height:.5rem;border-radius:50%;background:var(--done);}
+
+/* ── التنقّل بين التقريرين ────────────────────────────── */
+.docnav{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.2rem;}
+.docnav a{
+  font-size:.85rem;text-decoration:none;padding:.3rem .8rem;border-radius:2px;
+  border:1px solid var(--border);background:var(--surface);color:var(--ink-soft);
+}
+.docnav a[aria-current="page"]{border-color:var(--brand);color:var(--brand);font-weight:600;}
+.docnav a:hover{border-color:var(--brand);color:var(--brand);}
+
+/* ── شريط المؤشرات ────────────────────────────────────── */
+.metrics{margin-top:2.5rem;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));
+  gap:1px;background:var(--border);border:1px solid var(--border);
+  border-radius:3px;overflow:hidden;}
+.metric{background:var(--surface);padding:1rem 1.1rem;}
+.metric b{display:block;font-size:1.6rem;font-weight:600;line-height:1.2;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;}
+.metric span{display:block;font-size:.78rem;color:var(--ink-faint);margin-top:.2rem;}
+
+/* ── العناوين ─────────────────────────────────────────── */
+h2{font-size:1.35rem;font-weight:600;margin:0 0 .35rem;padding-bottom:.6rem;
+  border-bottom:1px solid var(--border);text-wrap:balance;}
+h3{font-size:1rem;font-weight:600;margin:0 0 .3rem;}
+.lede{color:var(--ink-soft);margin:.9rem 0 1.6rem;max-width:64ch;}
+p{max-width:68ch;}
+
+/* ── البطاقات ─────────────────────────────────────────── */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:1rem;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:3px;
+  padding:1.1rem 1.2rem;box-shadow:var(--shadow);}
+.card p{margin:.25rem 0 0;color:var(--ink-soft);font-size:.93rem;line-height:1.65;max-width:none;}
+.card .tag{font-size:.72rem;color:var(--brass);font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:.45rem;}
+
+/* ── لوحة القواعد الثابتة ─────────────────────────────── */
+.rules{background:var(--brass-wash);border:1px solid var(--brass);
+  border-radius:3px;padding:1.6rem 1.5rem;}
+.rules .plate{font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--brass);font-weight:600;margin:0 0 1rem;max-width:none;
+  display:flex;align-items:center;gap:.7rem;}
+.rules .plate::after{content:"";flex:1;height:1px;background:var(--brass);opacity:.35;}
+.rules ol{margin:0;padding:0;list-style:none;display:grid;gap:1rem;}
+.rules li{display:grid;grid-template-columns:auto 1fr;gap:.9rem;align-items:start;}
+.rules .mark{width:1.5rem;height:1.5rem;flex:none;margin-top:.2rem;
+  border:1px solid var(--brass);border-radius:50%;display:grid;place-items:center;
+  font-size:.75rem;font-weight:600;color:var(--brass);font-variant-numeric:tabular-nums;}
+.rules strong{display:block;font-weight:600;}
+.rules em{display:block;font-style:normal;color:var(--ink-soft);
+  font-size:.92rem;line-height:1.6;}
+
+/* ── الجداول ──────────────────────────────────────────── */
+.scroll{overflow-x:auto;border:1px solid var(--border);border-radius:3px;
+  background:var(--surface);}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:34rem;}
+th,td{padding:.65rem .9rem;text-align:right;border-bottom:1px solid var(--border);
+  vertical-align:top;}
+th{background:var(--surface-sunk);font-weight:600;font-size:.78rem;
+  letter-spacing:.04em;color:var(--ink-soft);white-space:nowrap;}
+tbody tr:last-child td{border-bottom:none;}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap;}
+code,.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  font-size:.86em;direction:ltr;display:inline-block;color:var(--brand);}
+
+/* ── كتل الأوامر ──────────────────────────────────────── */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:3px;
+  padding:1rem 1.1rem;overflow-x:auto;direction:ltr;text-align:left;
+  font-size:.85rem;line-height:1.7;margin:0;
+  font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+pre code{color:inherit;font-size:1em;display:block;}
+/* التعليق العربي داخل أمرٍ لاتيني: `isolate` تجعله كتلةً واحدة في تدفّق
+ * السطر اللاتيني، فيبقى **بعد** الأمر. بدونها يُعاد ترتيبه فيظهر قبله،
+ * ويقرأ المستخدم الأمر مبتوراً أو ينسخه ناقصاً. */
+pre .c{color:#8FA8C4;unicode-bidi:isolate;direction:rtl;}
+
+/* ── الخطوات المرقّمة ─────────────────────────────────── */
+.steps{display:grid;gap:1.1rem;counter-reset:step;list-style:none;margin:0;padding:0;}
+.steps > li{display:grid;grid-template-columns:auto 1fr;gap:1rem;align-items:start;}
+.steps > li::before{
+  counter-increment:step;content:counter(step);
+  width:1.75rem;height:1.75rem;border-radius:50%;
+  background:var(--brand);color:var(--surface);
+  display:grid;place-items:center;font-size:.8rem;font-weight:600;
+  font-variant-numeric:tabular-nums;margin-top:.15rem;
+}
+:root[data-theme="dark"] .steps > li::before,
+:root:not([data-theme="light"]) .steps > li::before{color:var(--paper);}
+.steps .body{display:grid;gap:.6rem;min-width:0;}
+.steps p{margin:0;color:var(--ink-soft);font-size:.95rem;}
+
+/* ── سجلّ الحالة ──────────────────────────────────────── */
+.ledger{display:grid;gap:.5rem;}
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:.9rem;align-items:baseline;
+  padding:.7rem .9rem;background:var(--surface);border:1px solid var(--border);
+  border-radius:3px;}
+.row .id{font-variant-numeric:tabular-nums;font-weight:600;color:var(--brand);
+  font-size:.85rem;white-space:nowrap;}
+.row .what{color:var(--ink-soft);font-size:.93rem;}
+.pill{font-size:.72rem;font-weight:600;padding:.15rem .55rem;border-radius:2px;
+  white-space:nowrap;background:var(--done-wash);color:var(--done);
+  border:1px solid var(--done);}
+
+/* ── الملاحظات ────────────────────────────────────────── */
+.note,.warn{border-inline-start:3px solid var(--brass);background:var(--brass-wash);
+  padding:1rem 1.2rem;border-radius:0 3px 3px 0;}
+.warn{border-inline-start-color:var(--guard);background:var(--guard-wash);}
+.note p,.warn p{margin:0;font-size:.95rem;line-height:1.7;}
+.note p + p,.warn p + p{margin-top:.6rem;}
+
+footer{margin-top:4rem;padding-top:1.2rem;border-top:1px solid var(--border);
+  color:var(--ink-faint);font-size:.82rem;display:flex;flex-wrap:wrap;gap:.4rem 1.2rem;}
+footer .mono{color:var(--ink-faint);}
+a{color:var(--brand);}
+:focus-visible{outline:2px solid var(--brass);outline-offset:2px;}
+@media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important;}}
