@@ -374,6 +374,32 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "tb.col_strategy": {"ar": "استراتيجية الاستجابة", "en": "Compliance strategy"},
     "tb.col_status": {"ar": "الالتزام", "en": "Compliance"},
     "tb.col_certificate": {"ar": "الشهادة المطلوبة", "en": "Required certificate"},
+    # منافسة المثال: الشاشة الفارغة لا تُعلّم
+    "ex.title": {"ar": "🎓 منافسة مثال — جرّب النظام كاملاً",
+                 "en": "🎓 Example tender — try the whole system"},
+    "ex.hint": {
+        "ar": "منافسة مكتملة بمعطيات من نسج المثال: كرّاسها وجداولها ونصوص "
+              "أقسامها. حمّلها لترى شكل كل مخرَج قبل أن تجرّب على عمل حقيقي. "
+              "وهي **مصنوعة لتُطلق الحُرّاس** لا لتبدو مثاليةً — أربعة منها "
+              "تنتظرك:",
+        "en": "A complete, entirely fictional tender: its document, tables and "
+              "section text. Load it to see the shape of every output before "
+              "trying real work. It is **built to trip the guardrails**, not "
+              "to look perfect — four of them are waiting:",
+    },
+    "ex.disposable": {
+        "ar": "تُحذف كأي منافسة، ولا تمسّ عملك: اسمها يبدأ بـ «مثال».",
+        "en": "Delete it like any tender — it touches nothing of yours; its "
+              "name is marked as an example.",
+    },
+    "ex.load": {"ar": "🎓 تحميل منافسة المثال", "en": "🎓 Load the example tender"},
+    "ex.loaded": {
+        "ar": "✅ حُمِّلت منافسة المثال وفُتحت. تنقّل بين الشاشات وتتبّع "
+              "التحذيرات — كلٌّ منها يشرح ما هو مطلوب منك.",
+        "en": "✅ The example tender is loaded and open. Move through the "
+              "screens and follow the warnings — each says what it needs "
+              "from you.",
+    },
     # دفع أمر البيع (ب-6): العملية الوحيدة التي تكتب في دفاتر جهة أخرى
     "po.title": {"ar": "📤 دفع أمر بيع", "en": "📤 Push a sales order"},
     "po.hint": {

@@ -3142,3 +3142,130 @@ def test_every_scoped_table_is_filtered_in_its_read_paths():
                     continue
                 assert "company_id" in sql or "COUNT(*)" in sql, \
                     f"{node.name} · {table}: {' '.join(sql.split())[:120]}"
+
+
+# ─── منافسة المثال (دليل المستخدم) ────────────────────────────────────────────
+#
+# المثال أداة تعليم: قيمته في أنه **يُطلق الحُرّاس** لا في أنه يبدو مكتملاً.
+# وما يُحرَس هنا أن يبقى كذلك — مثالٌ يُصلَح صامتاً حتى يصير مثالياً يفقد سببه.
+
+
+@pytest.fixture()
+def demo_state(temp_db, fake_streamlit):
+    import streamlit as st
+
+    from utils import demo
+    from utils.state import load_state_snapshot
+
+    load_state_snapshot(demo.payload())
+    return st.session_state
+
+
+def test_the_example_payload_fits_the_state_schema():
+    """
+    كل مفتاح فيه معروف: مفتاحٌ مجهول يُهمَل صامتاً في `load_state_snapshot`،
+    فيبدو المثال ناقصاً بلا سبب ظاهر.
+    """
+    from utils import demo
+    from utils.state import STATE_SCHEMA
+
+    assert set(demo.payload()) <= set(STATE_SCHEMA)
+
+
+def test_the_example_withholds_two_derived_quantities(demo_state):
+    """أول ما يجب أن يراه المستخدم: رقمٌ اشتقّه النموذج لا يخرج حتى يُعتمد."""
+    from utils import quantities
+
+    counts = quantities.counts(demo_state["df_boq"])
+    assert counts["pending"] == 2
+
+    # ولكلٍّ أساسٌ يستحق الاسم — وإلا رُدّ يدويّاً ولم تظهر لوحة الاعتماد
+    for item in quantities.pending(demo_state["df_boq"]):
+        assert len(item["basis"]) >= quantities.MIN_BASIS_LENGTH
+
+    exported = list(quantities.export_df(demo_state["df_boq"])["البند"])
+    assert "نقطة شبكة سلكية" not in exported
+
+
+def test_the_example_shows_a_promise_with_nothing_behind_it(demo_state):
+    from utils import traceability
+
+    gaps = traceability.solution_gaps(demo_state["df_compliance"],
+                                      demo_state["df_solution"])
+    assert any(g["req_id"] == "REQ-002" and g["severity"] == "حرجة" for g in gaps)
+
+
+def test_the_example_blocks_its_own_export(demo_state):
+    """
+    متطلب حرج بلا تغطية — فيرى المستخدم البوابة تُغلق ويعرف متى تُفتح، بدل
+    أن يكتشفها أول مرة على عرضٍ حقيقي قبل الموعد بساعة.
+    """
+    from utils import traceability
+
+    summary = traceability.coverage_summary(demo_state["df_compliance"])
+    assert summary["missing"] >= 1
+    assert any("REQ-006" in item for item in summary["blocking"])
+
+
+def test_the_example_has_a_missing_mandatory_document(demo_state):
+    from utils import submission
+
+    summary = submission.submission_summary(demo_state["df_submission"])
+    assert summary["missing"]
+
+
+def test_the_example_exports_a_real_document(demo_state):
+    """
+    المثال يُصدَّر مستنداً كاملاً — ولولا تفعيل أقسامه لخرج نصفه فارغاً وظنّ
+    المستخدم التصدير معطوباً.
+    """
+    from docx import Document
+
+    from utils.file_handler import build_word_document
+    from utils.state import get_sections, section_content_key
+
+    included = [s for s in get_sections() if s.get("include")]
+    assert len(included) >= 8
+
+    payload = [{**s, "content": demo_state.get(section_content_key(s["key"]), "")}
+               for s in included]
+    document = Document(build_word_document(
+        "شركة المثال", payload,
+        df_compliance=demo_state["df_compliance"],
+        df_boq=demo_state["df_boq"],
+        df_solution=demo_state["df_solution"],
+        df_timeline=demo_state["df_timeline"],
+    ))
+    cells = [c.text for t in document.tables for r in t.rows for c in r.cells]
+
+    assert any("مبدّل شبكة" in c for c in cells)          # كمية معتمدة تخرج
+    assert not any("نقطة شبكة سلكية" in c for c in cells)  # وغير المعتمدة لا
+    assert not any("أساس الاحتساب" in c for c in cells)    # والأساس لا يُنشر
+
+
+def test_the_example_carries_no_price_anywhere():
+    """المثال يُقرأ قدوةً — فلا يُعلّم كسر أول القواعد الثابتة."""
+    from utils import demo
+
+    text = str(demo.payload())
+    for token in ("ريال", "SAR", "سعر الوحدة", "الإجمالي بالريال"):
+        assert token not in text
+
+
+def test_every_announced_guard_is_real(demo_state):
+    """
+    `guards()` تُعرض للمستخدم وعداً بما سيجده. وعدٌ لا يقابله واقع في المعطيات
+    أسوأ من ألّا يُوعَد — فالعدد يُقارَن بما يُرصد فعلاً.
+    """
+    from utils import demo, quantities, submission, traceability
+
+    announced = demo.guards()
+    assert len(announced) == 4
+    for guard in announced:
+        assert guard["what"] and guard["where"] and guard["why"]
+
+    assert quantities.counts(demo_state["df_boq"])["pending"]
+    assert traceability.solution_gaps(demo_state["df_compliance"],
+                                      demo_state["df_solution"])
+    assert traceability.coverage_summary(demo_state["df_compliance"])["blocking"]
+    assert submission.submission_summary(demo_state["df_submission"])["missing"]
