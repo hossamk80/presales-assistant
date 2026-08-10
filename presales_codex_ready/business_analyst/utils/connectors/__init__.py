@@ -1,9 +1,9 @@
 """
 utils/connectors/ — الموصّلات إلى الأنظمة الخارجية (14-10).
 
-**سحب فقط في هذه الدفعة.** الدفع (تحويل المنافسة الفائزة إلى أمر بيع) قرار
-يكتب في نظام العميل المحاسبي، وتُرك عمداً لدفعة تُتّخذ فيها الموافقة صراحةً —
-والطبقة هنا **لا تحمل مساراً له** حتى لا يُستدرَج إليه بتوفّر خانة فارغة.
+**السحب لكل موصّل، والدفع لمن يعلنه** (ب-6). كان الدفع متروكاً في 14-10 حتى
+تُتّخذ الموافقة صراحةً؛ اتُّخذت فصار موجوداً خلف `supports_push` وبوابات
+`utils/orders.py` — ولم يصر افتراضاً في أي موصّل جديد.
 
 الطبقة مجرّدة عن أوديو: `Connector` في `base.py` هي العقد، و `odoo.py` أول
 تحقيق له. موصّل ثانٍ لا يمسّ شيئاً خارج مجلده.
@@ -12,13 +12,17 @@ utils/connectors/ — الموصّلات إلى الأنظمة الخارجية 
 دائماً تُخرج بيانات منافسة لم يقصد أحد ربطها.
 """
 from utils.connectors.base import (
+    DIRECTION_PULL,
+    DIRECTION_PUSH,
     PERSONAL_RESOURCES,
     RESOURCES,
     RESOURCE_CUSTOMERS,
     RESOURCE_EMPLOYEES,
     RESOURCE_PRODUCTS,
+    RESOURCE_SALES_ORDER,
     Connector,
     ConnectorError,
+    PushResult,
 )
 
 # تُصدَّر للمستوردين — `pyflakes` لا يعرف `# noqa`, و `__all__` تُعلن أنّها
@@ -26,6 +30,7 @@ from utils.connectors.base import (
 __all__ = [
     "PERSONAL_RESOURCES", "RESOURCES", "RESOURCE_CUSTOMERS",
     "RESOURCE_EMPLOYEES", "RESOURCE_PRODUCTS", "Connector", "ConnectorError",
+    "PushResult", "DIRECTION_PULL", "DIRECTION_PUSH", "RESOURCE_SALES_ORDER",
     "RESOURCE_REGISTRY", "available", "build", "enabled_for", "set_enabled",
 ]
 

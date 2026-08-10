@@ -64,6 +64,10 @@ CONNECTOR_PULL = "connector.pull"
 BOQ_QTY_APPROVE = "boq.qty_approve"
 # ب-7: تبديل الشركة الفاعلة وإدارتها. أي عرضٍ يُبنى بعد التبديل يحمل هوية
 # الشركة الجديدة، فمن بدّل ومتى سؤالٌ يُسأل حين يخرج غلافٌ باسمٍ غير متوقَّع.
+# ب-6: دفع أمر بيع إلى نظام العميل، ونسيان سجلّه عندنا. الحدث الوحيد الذي
+# يترك أثراً في دفاتر جهة أخرى — فمن فعله ومتى سؤالٌ يُسأل حتماً.
+ORDER_PUSH = "order.push"
+ORDER_FORGET = "order.forget"
 COMPANY_SWITCH = "company.switch"
 COMPANY_CREATE = "company.create"
 COMPANY_RENAME = "company.rename"
@@ -89,6 +93,7 @@ ACTIONS = (
     GLOSSARY_EDIT, CLARIFY_ADD, CLARIFY_SENT, CLARIFY_ANSWERED,
     DELIVERY_CONVERT, CONNECTOR_PULL, BOQ_QTY_APPROVE, PERMISSION_CHANGE,
     COMPANY_SWITCH, COMPANY_CREATE, COMPANY_RENAME, COMPANY_DELETE,
+    ORDER_PUSH, ORDER_FORGET,
     USER_ADD, USER_ROLE, USER_ACTIVE, USER_DELETE, USER_PASSWORD, AUTH_LOGIN,
 )
 

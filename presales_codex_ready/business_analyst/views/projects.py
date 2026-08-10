@@ -5,6 +5,8 @@ views/projects.py — إدارة المنافسات المحفوظة
 التبديل بين المنافسات يحفظ الحالية أولاً حتى لا يضيع عمل.
 """
 import json
+
+import pandas as pd
 import streamlit as st
 
 from utils import audit, auth, db, history
@@ -351,7 +353,129 @@ def _render_connectors(project: dict):
                          registry=t("rec." + registry)))
             st.rerun()
 
-        st.caption(t("cn.pull_only"))
+        st.divider()
+        _render_order_push(project, connector, name)
+
+
+def _render_order_push(project: dict, connector, name: str):
+    """
+    دفع مسودّة أمر بيع إلى نظام العميل (ب-6).
+
+    **العملية الوحيدة في النظام التي تكتب في دفاتر جهة أخرى.** لذلك ثلاثة
+    أشياء تسبق الزرّ ولا تُختصَر: المعاينة الحرفية لما سيُكتب، وإعلان الوجهة،
+    وتأكيد صريح. وسجلّ الدفع يمنع الثانية.
+    """
+    from utils import connectors, orders
+
+    pid = project["id"]
+    if not getattr(connector, "supports_push", False):
+        return
+
+    may_push = auth.can("connector.push")
+    existing = db.connector_order(pid, name)
+
+    st.markdown(f"**{t('po.title')}**")
+    st.caption(t("po.hint"))
+
+    # ── دُفع من قبل: يُعرض ولا يُعاد ─────────────────────────────────────────
+    if existing:
+        st.success(t("po.already", ref=existing["reference"],
+                     remote=existing["remote_id"], at=existing["pushed_at"],
+                     by=existing["pushed_by"] or "—"))
+        try:
+            order = orders.build(project, st.session_state.get("df_boq"),
+                                 customer=_customer_name())
+        except orders.OrderRefused:
+            order = None
+        if order and orders.drift(order, existing["fingerprint"]):
+            # لا نُصحّح في دفاتر غيرنا — لكن أن يُقال إنها اختلفت واجب
+            st.warning(t("po.drifted"))
+        if may_push and st.checkbox(t("po.forget_confirm"), key=f"po_forget_{pid}"):
+            if st.button(t("po.forget"), key=f"po_forget_btn_{pid}"):
+                db.forget_connector_order(pid, name)
+                audit.record(audit.ORDER_FORGET, project_id=pid, detail=name)
+                st.rerun()
+        st.caption(t("po.forget_note"))
+        return
+
+    # ── لم يُدفع بعد: البوابات ثم المعاينة ───────────────────────────────────
+    try:
+        order = orders.build(project, st.session_state.get("df_boq"),
+                             customer=_customer_name())
+    except orders.OrderRefused as e:
+        # سبب الرفض يُقال بنصّه: مَن يُمنع بلا سبب يلتفّ على المنع يدوياً
+        st.info(t("po.refused", reason=e))
+        return
+
+    preview = orders.summary(order)
+    st.dataframe(
+        pd.DataFrame([{
+            t("po.col_item"): line["name"],
+            t("po.col_qty"): line["quantity"],
+            t("po.col_unit"): line["unit"] or "—",
+        } for line in order["lines"]]),
+        hide_index=True, width="stretch",
+    )
+    st.caption(t("po.preview", ref=preview["reference"],
+                 customer=preview["customer"], n=preview["line_count"]))
+
+    notice = connector.egress_notice(connectors.RESOURCE_SALES_ORDER,
+                                     connectors.DIRECTION_PUSH)
+    st.error(t("po.egress", host=notice["endpoint"] or "—"))
+
+    if not may_push:
+        st.caption(t("po.no_permission"))
+        return
+
+    confirmed = st.checkbox(t("po.confirm", customer=preview["customer"]),
+                            key=f"po_ok_{pid}")
+    if st.button(t("po.push"), type="primary", disabled=not confirmed,
+                 key=f"po_push_{pid}"):
+        _push_order(project, connector, name, order)
+
+
+def _customer_name() -> str:
+    """الجهة المشترية كما في منشئ العرض — مصدر واحد لا اسمان."""
+    from views.doc_builder import _entity_name
+
+    return _entity_name()
+
+
+def _push_order(project: dict, connector, name: str, order: dict):
+    from utils import connectors, orders
+
+    pid = project["id"]
+    user = auth.current_user() or {}
+
+    # السجلّ **قبل** الإرسال: يحجز المكان فلا تمرّ ضغطتان متتاليتان بأمرين.
+    # ولو فشل الإرسال بعده يُمحى السجلّ — أثرٌ زائد أهون من أمرٍ مكرَّر في
+    # دفاتر العميل.
+    placed = db.record_connector_order(
+        pid, name, order["reference"], "", orders.fingerprint(order),
+        pushed_by=user.get("display_name") or user.get("username", ""),
+    )
+    if not placed:
+        st.warning(t("po.already_racing"))
+        st.rerun()
+        return
+
+    try:
+        result = connector.push_order(order)
+    except connectors.ConnectorError as e:
+        db.forget_connector_order(pid, name)
+        st.error(t("po.failed", error=e))
+        return
+
+    if not result.ok:
+        db.forget_connector_order(pid, name)
+        st.error(t("po.failed", error=result.message))
+        return
+
+    db.set_connector_order_remote(pid, name, result.remote_id)
+    audit.record(audit.ORDER_PUSH, project_id=pid,
+                 detail=f"{name}:{result.remote_id}:{len(order['lines'])}")
+    st.success(t("po.pushed", message=result.message))
+    st.rerun()
 
 
 # ─── تحويل الفائز إلى مشروع (14-11) ───────────────────────────────────────────

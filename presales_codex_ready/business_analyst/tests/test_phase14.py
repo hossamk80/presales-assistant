@@ -2713,3 +2713,194 @@ def test_db_still_works_with_no_session_layer_installed(temp_db):
     assert db.active_company_id() == first
     db.set_active_company(2)
     assert db.active_company_id() == 2
+
+
+# ─── دفع أمر البيع إلى نظام العميل (ب-6) ───────────────────────────────────────
+#
+# **العملية الوحيدة في النظام التي تكتب في دفاتر جهة أخرى.** ما يُحرَس هنا هو
+# البوابات: الفائزة وحدها · بلا كمية غير معتمدة · بلا سعر · مرة واحدة · ولا
+# يدفع موصّل لم يعلن أنه يدفع.
+
+
+def _won(pid=1, name="منافسة الشبكات"):
+    from utils.history import OUTCOME_WON
+
+    return {"id": pid, "name": name, "outcome": OUTCOME_WON}
+
+
+def _boq_with_pending_derived():
+    return _boq_df([
+        {"البند": "خادم", "الوحدة": "وحدة", "الكمية": 4,
+         "مصدر الكمية": "من الكرّاس", "معتمَد": True},
+        _derived(item="نقطة شبكة", qty=500),
+    ])
+
+
+def test_only_a_won_tender_becomes_a_sales_order():
+    """أمر بيع لمنافسة لم نفز بها التزامٌ لم يقع — ويُفوتَر."""
+    from utils import orders
+
+    for outcome in ("خسر", "قيد التقييم", "", "لم يُقدَّم"):
+        project = {"id": 1, "name": "منافسة", "outcome": outcome}
+        with pytest.raises(orders.OrderRefused):
+            orders.build(project, _boq_with_pending_derived(), customer="وزارة")
+
+
+def test_an_unapproved_derived_quantity_never_reaches_the_clients_books():
+    """
+    الكمية التي اشتقّها النموذج ولم يعتمدها إنسان محجوبة عن المستند (ب-5) —
+    ودخولها دفاتر العميل أسوأ: تُفوتَر وتُسلَّم.
+    """
+    from utils import orders, quantities
+
+    boq = _boq_with_pending_derived()
+    order = orders.build(_won(), boq, customer="وزارة الصحة")
+    assert [line["name"] for line in order["lines"]] == ["خادم"]
+
+    after = orders.build(_won(), quantities.approve(boq, [1]),
+                         customer="وزارة الصحة")
+    assert [line["name"] for line in after["lines"]] == ["خادم", "نقطة شبكة"]
+
+
+def test_the_payload_carries_no_price_at_all():
+    """
+    المظروف الفني بلا سعر، والتسعير عمل الفريق المالي في نظامه. ورقمٌ يعبر من
+    هنا يصير سعراً معتمَداً لم يعتمده أحد.
+    """
+    from utils import orders, quantities
+
+    order = orders.build(
+        _won(), quantities.approve(_boq_with_pending_derived(), [1]),
+        customer="وزارة الصحة")
+
+    assert order["priced"] is False
+    for line in order["lines"]:
+        assert not any("price" in key or "سعر" in key for key in line)
+
+
+def test_a_connector_that_does_not_declare_push_cannot_push():
+    """إضافة موصّل جديد لا تفتح قناة كتابة إلى نظام العميل سهواً."""
+    from utils import connectors, orders, quantities
+
+    class Mute(connectors.Connector):
+        name, label = "mute", "Mute"
+
+        def configured(self):
+            return True
+
+    order = orders.build(
+        _won(), quantities.approve(_boq_with_pending_derived(), [1]),
+        customer="وزارة الصحة")
+
+    assert Mute.supports_push is False
+    with pytest.raises(connectors.ConnectorError):
+        Mute().push_order(order)
+
+
+def test_a_priced_payload_is_refused_at_the_connector_too():
+    """الحراسة عند البناء **وعند الإرسال** — بابان لا باب."""
+    from utils import connectors, orders, quantities
+
+    class Loud(connectors.Connector):
+        name, label, supports_push = "loud", "Loud", True
+
+        def configured(self):
+            return True
+
+        def _push_order(self, order):
+            return connectors.PushResult(True, "77")
+
+    order = orders.build(
+        _won(), quantities.approve(_boq_with_pending_derived(), [1]),
+        customer="وزارة الصحة")
+    order["priced"] = True
+
+    with pytest.raises(connectors.ConnectorError):
+        Loud().push_order(order)
+
+
+def test_the_same_tender_cannot_be_pushed_twice(temp_db):
+    """
+    أمر بيع مكرَّر في دفاتر عميل فوضى مالية: يُفوتَر مرتين ويُسلَّم مرتين.
+    والمنع في **التخزين** لا في الواجهة — ضغطتان متتاليتان تمرّان من الواجهة.
+    """
+    from utils import db
+
+    assert db.record_connector_order(1, "odoo", "BID-1", "77", "abc", "أحمد")
+    assert db.record_connector_order(1, "odoo", "BID-1", "78", "abc", "سارة") is False
+
+    stored = db.connector_order(1, "odoo")
+    assert stored["remote_id"] == "77"          # الأول باقٍ لم يُدهَس
+
+
+def test_forgetting_a_push_record_touches_nothing_remote(temp_db):
+    """«النسيان» يمحو سجلّنا ليسمح بدفع جديد — ولا يدّعي حذفاً في نظام أحد."""
+    from utils import db
+
+    db.record_connector_order(1, "odoo", "BID-1", "77", "abc", "أحمد")
+    db.forget_connector_order(1, "odoo")
+
+    assert db.connector_order(1, "odoo") is None
+    assert db.record_connector_order(1, "odoo", "BID-1", "79", "abc", "أحمد")
+
+
+def test_a_changed_boq_after_the_push_is_announced(temp_db):
+    """لا نُصحّح في دفاتر غيرنا — لكن أن يُقال إنها اختلفت واجب."""
+    from utils import orders, quantities
+
+    boq = quantities.approve(_boq_with_pending_derived(), [1])
+    order = orders.build(_won(), boq, customer="وزارة الصحة")
+    stamped = orders.fingerprint(order)
+
+    assert orders.drift(order, stamped) is False
+
+    changed = boq.copy()
+    changed.loc[0, "الكمية"] = 9
+    assert orders.drift(
+        orders.build(_won(), changed, customer="وزارة الصحة"), stamped) is True
+
+
+def test_pushing_is_the_narrowest_permission_in_the_system(fake_streamlit):
+    """الوحيد الذي يكتب خارج النظام — ولا يُتراجَع عنه من داخله."""
+    from utils import auth
+
+    assert auth.permission_roles("connector.push") == (auth.ADMIN,)
+
+
+def test_the_egress_notice_says_it_writes(fake_streamlit):
+    """السحب يقرأ والدفع يكتب — والفرق لا يُخمَّن من اسم الزرّ."""
+    from utils import connectors
+    from utils.connectors import odoo
+
+    connector = odoo.OdooConnector({"url": "https://erp.example.sa"})
+
+    pull = connector.egress_notice(connectors.RESOURCE_CUSTOMERS)
+    push = connector.egress_notice(connectors.RESOURCE_SALES_ORDER,
+                                   connectors.DIRECTION_PUSH)
+
+    assert pull["writes"] is False
+    assert push["writes"] is True
+    assert push["endpoint"] == "https://erp.example.sa"
+
+
+def test_an_order_without_a_customer_is_refused():
+    """أمر بلا عميل لا يُنشأ — ولا يُخمَّن اسمه."""
+    from utils import orders, quantities
+
+    with pytest.raises(orders.OrderRefused):
+        orders.build(_won(), quantities.approve(_boq_with_pending_derived(), [1]),
+                     customer="   ")
+
+
+def test_zero_and_negative_quantities_are_dropped():
+    """كمية صفر ليست بنداً يُسلَّم، وسالبةٌ خطأ إدخال لا مرتجَع."""
+    from utils import orders
+
+    boq = _boq_df([
+        {"البند": "خادم", "الكمية": 0, "مصدر الكمية": "من الكرّاس", "معتمَد": True},
+        {"البند": "كابل", "الكمية": -3, "مصدر الكمية": "من الكرّاس", "معتمَد": True},
+        {"البند": "مبدّل", "الكمية": 2, "مصدر الكمية": "من الكرّاس", "معتمَد": True},
+    ])
+
+    order = orders.build(_won(), boq, customer="وزارة")
+    assert [line["name"] for line in order["lines"]] == ["مبدّل"]

@@ -353,6 +353,26 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value TEXT NOT NULL DEFAULT ''
 );
 
+-- أوامر البيع المدفوعة إلى نظام خارجي (ب-6).
+--
+-- **المفتاح الأساسي (project_id, connector) هو الحارس**: أمر بيع مكرَّر في
+-- دفاتر عميل فوضى مالية حقيقية — يُفوتَر مرتين ويُسلَّم مرتين. ومنعُه في
+-- الواجهة وحدها يسقط بضغطتين متتاليتين أو بإعادة تحميل الصفحة وقت الإرسال،
+-- فالمنع هنا حيث لا يُلتفّ عليه.
+--
+-- `fingerprint` بصمة ما أُرسل: تغيّر الجدول بعد الدفع يُقال ولا يُصحَّح
+-- تلقائياً — التصحيح في نظام العميل عملُ من يملكه لا عملنا.
+CREATE TABLE IF NOT EXISTS connector_orders (
+    project_id  INTEGER NOT NULL,
+    connector   TEXT NOT NULL,
+    reference   TEXT NOT NULL DEFAULT '',
+    remote_id   TEXT NOT NULL DEFAULT '',
+    fingerprint TEXT NOT NULL DEFAULT '',
+    pushed_at   TEXT NOT NULL,
+    pushed_by   TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (project_id, connector)
+);
+
 -- تجاوزات مصفوفة الصلاحيات: صلاحية × دور ← مسموح أو ممنوع.
 --
 -- المصفوفة في `utils/auth.py` تبقى **الافتراض**، وهذا الجدول يحمل ما غيّره
@@ -2184,6 +2204,70 @@ def clear_permission_override(permission: str, role: str):
 def clear_all_permission_overrides():
     with transaction() as conn:
         conn.execute("DELETE FROM role_permissions")
+
+
+# ─── أوامر البيع المدفوعة (ب-6) ────────────────────────────────────────────────
+
+
+def connector_order(project_id: int, connector: str) -> Optional[dict]:
+    row = get_conn().execute(
+        "SELECT * FROM connector_orders WHERE project_id = ? AND connector = ?",
+        (int(project_id), connector),
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def record_connector_order(project_id: int, connector: str, reference: str,
+                           remote_id: str, fingerprint: str,
+                           pushed_by: str = "") -> bool:
+    """
+    يسجّل أمراً دُفع. يعيد `False` إن كان لهذه المنافسة أمرٌ في هذا النظام.
+
+    `INSERT` بلا `ON CONFLICT`: التكرار **يفشل** ولا يُحدَّث. أمرٌ ثانٍ في
+    دفاتر العميل ليس تحديثاً للأول، وكتابته فوق سجلّه تُخفي الأول ولا تلغيه.
+    """
+    try:
+        with transaction() as conn:
+            conn.execute(
+                "INSERT INTO connector_orders (project_id, connector, reference, "
+                "remote_id, fingerprint, pushed_at, pushed_by) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (int(project_id), connector, reference, str(remote_id),
+                 fingerprint, _now(), pushed_by),
+            )
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
+
+def set_connector_order_remote(project_id: int, connector: str, remote_id: str):
+    """
+    يملأ معرّف الأمر البعيد بعد نجاح الإرسال.
+
+    السجلّ يُحجز **قبل** الإرسال بمعرّف فارغ فلا تمرّ ضغطتان بأمرين، ويُملأ
+    بعده. والحجز ثم التحديث أسلم من الحذف ثم الإدراج: بينهما نافذةٌ تمرّ منها
+    ضغطة ثانية.
+    """
+    with transaction() as conn:
+        conn.execute(
+            "UPDATE connector_orders SET remote_id = ? "
+            "WHERE project_id = ? AND connector = ?",
+            (str(remote_id), int(project_id), connector),
+        )
+
+
+def forget_connector_order(project_id: int, connector: str):
+    """
+    يمحو سجلّ الدفع عندنا — **ولا يمسّ نظام العميل**.
+
+    يُستعمل حين يُحذف الأمر هناك يدوياً فيصير سجلّنا كاذباً يمنع دفعاً مشروعاً.
+    والفصل مقصود: لا نحذف من دفاتر أحد، ولا ندّعي أننا فعلنا.
+    """
+    with transaction() as conn:
+        conn.execute(
+            "DELETE FROM connector_orders WHERE project_id = ? AND connector = ?",
+            (int(project_id), connector),
+        )
 
 
 def expired_cv_documents(months: Optional[int] = None) -> list:
