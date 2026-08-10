@@ -464,16 +464,22 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "org.active": {"ar": "الشركة التي تكتب باسمها", "en": "Writing on behalf of"},
     "org.unnamed": {"ar": "شركة بلا اسم (#{id})", "en": "Unnamed company (#{id})"},
-    "org.scope_warning": {
-        "ar": "⚠️ التبديل يغيّر **ملف الشركة** — البيانات النظامية والقالب "
-              "والهوية. ولا يغيّر بعدُ: المنافسات · مستودع المعرفة · سجلات "
-              "الأدلة، فهي مشتركة بين الكيانات. تحقّق من الشهادات والمشاريع "
-              "المرجعية قبل التصدير باسم كيان آخر.",
-        "en": "⚠️ Switching changes the **company profile** — legal details, "
-              "template and identity. It does not yet change: tenders · "
-              "knowledge base · evidence registries, which are shared across "
-              "entities. Check certificates and reference projects before "
-              "exporting under another entity's name.",
+    "org.scope_note": {
+        "ar": "🔄 التبديل يشمل **كل شيء**: ملف الشركة · المنافسات · مستودع "
+              "المعرفة · سجلات الأدلة. والمنافسة المفتوحة تُحفظ وتُغلق قبل "
+              "الانتقال — لا يعبر عملُ كيانٍ إلى آخر.",
+        "en": "🔄 Switching covers **everything**: company profile · tenders · "
+              "knowledge base · evidence registries. Any open tender is saved "
+              "and closed first — no entity's work crosses into another.",
+    },
+    "org.holdings": {
+        "ar": "📦 هذه الشركة تملك **{projects}** منافسة · **{docs}** مستند "
+              "معرفة · **{records}** صفّ سجلات. **لا تُحذف وهي تملك بيانات** — "
+              "احذفها أو انقلها أولاً وأنت ترى ما تحذف.",
+        "en": "📦 This company holds **{projects}** tenders · **{docs}** "
+              "knowledge documents · **{records}** registry rows. **It cannot "
+              "be deleted while it holds data** — clear or move it first, with "
+              "the contents in front of you.",
     },
     "org.new_name": {"ar": "اسم شركة جديدة", "en": "New company name"},
     "org.create": {"ar": "➕ إنشاء وتبديل", "en": "➕ Create and switch"},
@@ -486,9 +492,11 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     },
     "org.delete": {"ar": "🗑️ حذف الشركة", "en": "🗑️ Delete company"},
     "org.delete_refused": {
-        "ar": "❌ لا تُحذف آخر شركة — النظام بلا ملف شركة لا يبني عرضاً.",
-        "en": "❌ The last company cannot be deleted — with no company profile "
-              "the system cannot build a proposal.",
+        "ar": "❌ لم تُحذف: إمّا أنها آخر شركة (والنظام بلا ملف شركة لا يبني "
+              "عرضاً)، أو أنها تملك منافسات أو معرفةً أو سجلات.",
+        "en": "❌ Not deleted: either it is the last company (with no company "
+              "profile the system cannot build a proposal), or it still holds "
+              "tenders, knowledge or registry rows.",
     },
     # مصفوفة الصلاحيات: الافتراض في الشيفرة، والتوزيع قرار المنشأة
     "perm.title": {"ar": "🔑 مصفوفة الصلاحيات", "en": "🔑 Permission matrix"},

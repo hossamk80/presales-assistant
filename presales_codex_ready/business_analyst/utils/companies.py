@@ -90,11 +90,29 @@ def switch(company_id: int) -> bool:
     if not db.company_exists(company_id):
         return False
 
+    # ب-8: المنافسة المفتوحة تُغلق قبل الانتقال. الجلسة تحمل معرّفها والحفظ
+    # التلقائي يعمل بلا سؤال — فمنافسةٌ تبقى مفتوحة عبر التبديل تُعرض تحت اسم
+    # كيان لا يملكها، ويُكتب فيها من جلسةٍ انتقلت عنه.
+    _close_open_tender()
+
     st.session_state[_SESSION_KEY] = company_id
     user = auth.current_user()
     if user:
         db.set_user_company(user["id"], company_id)
     return True
+
+
+def _close_open_tender():
+    """يحفظ المنافسة المفتوحة ثم يُخليها — لا يضيع عمل ولا يعبر كيانَين."""
+    if st.session_state.get("_project_id") is None:
+        return
+    from views import projects
+
+    projects.save_current()
+    projects._clear_project_state()
+    for key in ("_project_id", "_project_name", "_project_revision",
+                "_saved_fingerprint", "_project_entity"):
+        st.session_state.pop(key, None)
 
 
 def forget(company_id: int):

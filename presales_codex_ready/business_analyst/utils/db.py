@@ -500,7 +500,38 @@ _ADDED_COLUMNS = (
     # ب-7: الشركة الفاعلة صارت **لكل مستخدم**. تُخزَّن هنا فيجدها كما تركها
     # عند دخوله التالي، وقيمة فارغة تعني «لم يختر» فيتبع أقدم شركة.
     ("users", "company_id", "INTEGER"),
+    # ب-8: تقييد البيانات بالشركة. كان تعدّد الشركات يبدّل **ملف الشركة** وحده،
+    # فيرى من انتقل إلى كيان آخر منافساتِ الأول ومعرفتَه وشهاداتِه — ويرفقها
+    # بعرضٍ باسم كيان لا يملكها.
+    #
+    # الصفر يعني «قبل التقييد»: يُملأ في `_backfill_company_scope` بأقدم شركة
+    # لا يُترك — صفٌّ بلا شركة لا يظهر لأحد، فتختفي منافسات المستخدم عند
+    # الترقية وهو يظنّها ضاعت.
+    ("projects", "company_id", "INTEGER NOT NULL DEFAULT 0"),
+    ("kb_documents", "company_id", "INTEGER NOT NULL DEFAULT 0"),
+    ("company_records", "company_id", "INTEGER NOT NULL DEFAULT 0"),
 )
+
+# الجداول المقيَّدة بشركة — يمرّ عليها الترحيل، وتُفحص في الاختبارات
+COMPANY_SCOPED_TABLES = ("projects", "kb_documents", "company_records")
+
+# نطاق «بلا شركة بعد». تثبيتٌ جديد يُنشئ منافسة قبل أن يملأ ملف الشركة، وقاعدة
+# قديمة تُرقّى وهي بلا صفّ شركة — والصفوف حينها تحمل صفراً وتُقرأ به، فلا يختفي
+# شيء. وأول شركة تُنشأ يُنسب إليها كل ذلك في `_backfill_company_scope`.
+UNSCOPED_COMPANY = 0
+
+# «كل الشركات» — يُمرَّر صراحةً حيث يكون تجاوز التقييد **هو الصواب**: حذف
+# بيانات شخص (13-10) يشمل التثبيت كلّه، وصيانة المتجهات لا تقرأ محتوى.
+# لا يُستعمل في أي مسار يعرض بيانات أو يبني سياقاً للنموذج.
+ANY_COMPANY = -1
+
+
+def _scope(company_id: Optional[int] = None) -> int:
+    """نطاق الاستعلام: الشركة المطلوبة، وإلا الفاعلة، وإلا «بلا شركة بعد»."""
+    if company_id is not None:
+        return int(company_id)
+    active = active_company_id()
+    return int(active) if active is not None else UNSCOPED_COMPANY
 
 # أعمدة جدول الشركة بترتيبها في المخطط الحالي — يستعملها الترحيل لنقل ما
 # يوجد منها في القاعدة القديمة ويترك الباقي لقيمته الافتراضية.
@@ -541,6 +572,31 @@ def _migrate_company(conn: sqlite3.Connection):
     conn.execute("ALTER TABLE company_migrated RENAME TO company")
 
 
+def _backfill_company_scope(conn: sqlite3.Connection):
+    """
+    ينسب كل صفّ بلا شركة إلى أقدم شركة (ب-8).
+
+    **هذا هو الجزء الذي لا يجوز أن يُخطئ.** التقييد يعني أن الاستعلامات صارت
+    ترشّح بالشركة؛ وصفٌّ يحمل صفراً لا يطابق أي شركة، فيفتح المستخدم النظام
+    بعد الترقية ولا يجد منافساته ولا مستودعه ولا سجلاته. لا رسالة خطأ — فراغ.
+
+    ويُشغَّل في كل إقلاع لا مرةً واحدة: قاعدة رُقِّيت وهي بلا شركة (تثبيت جديد
+    لم يُنشئ ملفاً بعد) تبقى صفوفها بصفر حتى تُنشأ أول شركة، فتُنسب حينها.
+    """
+    row = conn.execute("SELECT MIN(id) AS id FROM company").fetchone()
+    oldest = row["id"] if row and row["id"] is not None else None
+    if oldest is None:
+        return
+    for table in COMPANY_SCOPED_TABLES:
+        columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if "company_id" in columns:
+            conn.execute(
+                f"UPDATE {table} SET company_id = ? "
+                "WHERE company_id IS NULL OR company_id = 0",
+                (oldest,),
+            )
+
+
 def _migrate(conn: sqlite3.Connection):
     """يُرقّي قاعدة بيانات أُنشئت بإصدار أقدم إلى المخطط الحالي."""
     _migrate_company(conn)
@@ -548,6 +604,7 @@ def _migrate(conn: sqlite3.Connection):
         existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    _backfill_company_scope(conn)
     conn.commit()
 
 
@@ -681,10 +738,19 @@ def _now() -> str:
 # ─── المنافسات ────────────────────────────────────────────────────────────────
 
 
-def list_projects() -> list:
+def list_projects(company_id: Optional[int] = None) -> list:
+    """
+    منافسات الشركة الفاعلة (ب-8).
+
+    الترشيح هنا لا في الواجهة: قائمةٌ تُرشَّح في الشاشة تبقى كاملةً في كل
+    استعلام آخر يمرّ من تحتها — والتقييد يجب أن يكون في الطبقة التي تُقرأ منها.
+    """
+    scope = _scope(company_id)
     rows = get_conn().execute(
         "SELECT id, name, reference, entity, sector, created_at, updated_at, "
-        "outcome, outcome_note FROM projects ORDER BY updated_at DESC"
+        "outcome, outcome_note FROM projects WHERE company_id = ? "
+        "ORDER BY updated_at DESC",
+        (scope,),
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -693,26 +759,36 @@ def set_outcome(project_id: int, outcome: str, note: str = ""):
     """يسجّل نتيجة المنافسة وسببها — مصدر ذاكرة العطاءات الوحيد."""
     with transaction() as conn:
         conn.execute(
-            "UPDATE projects SET outcome = ?, outcome_note = ? WHERE id = ?",
-            (outcome, note, project_id),
+            "UPDATE projects SET outcome = ?, outcome_note = ? "
+            "WHERE id = ? AND company_id = ?",
+            (outcome, note, project_id, _scope()),
         )
 
 
 def create_project(name: str, payload: dict, reference: str = "", entity: str = "",
-                   sector: str = "") -> int:
+                   sector: str = "", company_id: Optional[int] = None) -> int:
+    scope = _scope(company_id)
     with transaction() as conn:
         cur = conn.execute(
             "INSERT INTO projects (name, reference, entity, sector, created_at, "
-            "updated_at, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "updated_at, payload, company_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (name, reference, entity, sector, _now(), _now(),
-             json.dumps(payload, ensure_ascii=False)),
+             json.dumps(payload, ensure_ascii=False), scope),
         )
         return cur.lastrowid
 
 
 def load_project(project_id: int) -> Optional[dict]:
+    """
+    منافسة بمعرّفها — **من الشركة الفاعلة وحدها**.
+
+    المعرّفات تأتي من قائمة مرشَّحة، لكن الجلسة تحمل معرّف المنافسة المفتوحة
+    عبر تبديل الشركة: بلا هذا الشرط يبقى عرض الكيان الأول مفتوحاً تحت اسم
+    الكيان الثاني، ويُحفظ عليه.
+    """
     row = get_conn().execute(
-        "SELECT * FROM projects WHERE id = ?", (project_id,)
+        "SELECT * FROM projects WHERE id = ? AND company_id = ?",
+        (project_id, _scope()),
     ).fetchone()
     if row is None:
         return None
@@ -723,7 +799,8 @@ def load_project(project_id: int) -> Optional[dict]:
 
 def project_revision(project_id: int) -> Optional[int]:
     row = get_conn().execute(
-        "SELECT revision FROM projects WHERE id = ?", (project_id,)
+        "SELECT revision FROM projects WHERE id = ? AND company_id = ?",
+        (project_id, _scope()),
     ).fetchone()
     return None if row is None else int(row["revision"] or 0)
 
@@ -750,8 +827,12 @@ def save_project(project_id: int, payload: dict, name: Optional[str] = None,
             sets.append(f"{column} = ?")
             args.append(value)
     args.append(project_id)
+    args.append(_scope())
 
-    where = "id = ?"
+    # ب-8: الكتابة مقيَّدة كالقراءة. الجلسة تحمل معرّف المنافسة المفتوحة عبر
+    # تبديل الشركة، والحفظ التلقائي يعمل بلا سؤال — فبلا هذا الشرط يُكتب في
+    # منافسة كيانٍ آخر من جلسةٍ انتقلت عنه.
+    where = "id = ? AND company_id = ?"
     if expected_revision is not None:
         where += " AND revision = ?"
         args.append(expected_revision)
@@ -765,7 +846,8 @@ def save_project(project_id: int, payload: dict, name: Optional[str] = None,
 
 def delete_project(project_id: int):
     with transaction() as conn:
-        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        conn.execute("DELETE FROM projects WHERE id = ? AND company_id = ?",
+                     (project_id, _scope()))
 
 
 def duplicate_project(project_id: int, new_name: str) -> Optional[int]:
@@ -1153,7 +1235,11 @@ def create_company(name: str = "", payload: Optional[dict] = None) -> int:
             "INSERT INTO company (name, created_at, payload) VALUES (?, ?, ?)",
             (name, _now(), json.dumps(payload or {}, ensure_ascii=False)),
         )
-        return cur.lastrowid
+        created = cur.lastrowid
+        # التبنّي إلى **أقدم** شركة لا إلى هذه: صفوفٌ سبقت التقييد تخصّ من كان
+        # يعمل قبلها، لا كياناً أُنشئ الآن.
+        _backfill_company_scope(conn)
+        return created
 
 
 def rename_company(company_id: int, name: str):
@@ -1161,10 +1247,35 @@ def rename_company(company_id: int, name: str):
         conn.execute("UPDATE company SET name = ? WHERE id = ?", (name, company_id))
 
 
+def company_holdings(company_id: int) -> dict:
+    """
+    ما تملكه الشركة: منافسات · مستندات معرفة · صفوف سجلات (ب-8).
+
+    يُعرض قبل الحذف: ملف شركة يُحذف وحده خسارةُ نموذج، ومعه منافساتٌ ومستودعُ
+    معرفةٍ خسارةُ شهور. والرقم يُقال قبل الضغط لا بعده.
+    """
+    counts = {}
+    for table in COMPANY_SCOPED_TABLES:
+        row = get_conn().execute(
+            f"SELECT COUNT(*) AS n FROM {table} WHERE company_id = ?",
+            (int(company_id),),
+        ).fetchone()
+        counts[table] = int(row["n"]) if row else 0
+    return counts
+
+
 def delete_company(company_id: int) -> bool:
-    """يحذف شركة. يعيد `False` إن لم تكن موجودة أو كانت الأخيرة الباقية."""
+    """
+    يحذف شركة. يعيد `False` إن لم تكن موجودة أو كانت الأخيرة الباقية.
+
+    **ولا يحذف شركةً تملك بيانات** (ب-8): حذفٌ يجرّ معه منافسات ومستودع معرفة
+    خسارةٌ لا رجعة فيها من ضغطةٍ قصدها «تنظيف قائمة». من أرادها يُفرغها أولاً
+    وهو يرى ما يحذف.
+    """
     ids = [r["id"] for r in list_companies()]
     if company_id not in ids or len(ids) <= 1:
+        return False
+    if any(company_holdings(company_id).values()):
         return False
     with transaction() as conn:
         conn.execute("DELETE FROM company WHERE id = ?", (company_id,))
@@ -1206,7 +1317,11 @@ def save_company(payload: dict, template: Optional[bytes] = None,
                 (company_id, _now(), json.dumps(payload, ensure_ascii=False),
                  template, logo),
             )
-            return company_id if company_id is not None else cur.lastrowid
+            created = company_id if company_id is not None else cur.lastrowid
+            # ب-8: أول شركة تتبنّى ما أُنشئ قبلها. المستخدم يفتح النظام فينشئ
+            # منافسة قبل أن يملأ ملف شركته — ولولا التبنّي اختفت لحظة ملئه.
+            _backfill_company_scope(conn)
+            return created
 
     with transaction() as conn:
         conn.execute(
@@ -1237,9 +1352,9 @@ def add_kb_document(name: str, category: str, char_count: int,
     """`person` (13-10): صاحب السيرة الذاتية — يربط المستند بمن يملك حذفه."""
     with transaction() as conn:
         cur = conn.execute(
-            "INSERT INTO kb_documents (name, category, added_at, char_count, person) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (name, category, _now(), char_count, (person or "").strip()),
+            "INSERT INTO kb_documents (name, category, added_at, char_count, "
+            "person, company_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (name, category, _now(), char_count, (person or "").strip(), _scope()),
         )
         return cur.lastrowid
 
@@ -1258,34 +1373,65 @@ def list_kb_documents() -> list:
     rows = get_conn().execute(
         "SELECT d.*, COUNT(c.id) AS chunks FROM kb_documents d "
         "LEFT JOIN kb_chunks c ON c.doc_id = d.id "
-        "GROUP BY d.id ORDER BY d.added_at DESC"
+        "WHERE d.company_id = ? "
+        "GROUP BY d.id ORDER BY d.added_at DESC",
+        (_scope(),),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
 def all_kb_chunks(categories: Optional[list] = None) -> list:
+    """
+    مقاطع مستودع الشركة الفاعلة — **وهذا أخطر ترشيح في ب-8**.
+
+    هذه هي الدالّة التي يُبنى منها سياق النموذج: مقطعٌ من مستودع كيانٍ آخر لا
+    يُعرض في شاشة ليُلاحَظ، بل يُكتب في عرضٍ باسم كيان لا يملكه — خبرةٌ ليست
+    خبرته وشهادةٌ ليست شهادته.
+    """
     sql = (
         "SELECT c.id, c.text, c.dims, c.embedding, c.embed_model, "
         "d.name AS doc_name, d.category "
-        "FROM kb_chunks c JOIN kb_documents d ON d.id = c.doc_id"
+        "FROM kb_chunks c JOIN kb_documents d ON d.id = c.doc_id "
+        "WHERE d.company_id = ?"
     )
-    args: list[Any] = []
+    args: list[Any] = [_scope()]
     if categories:
-        sql += f" WHERE d.category IN ({','.join('?' * len(categories))})"
-        args = list(categories)
+        sql += f" AND d.category IN ({','.join('?' * len(categories))})"
+        args += list(categories)
     return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
 
 
-def delete_kb_document(doc_id: int):
+def delete_kb_document(doc_id: int, company_id: Optional[int] = None):
+    """
+    يحذف مستنداً ومقاطعه من مستودع الشركة الفاعلة.
+
+    `company_id=ANY_COMPANY` للحذف عبر التثبيت كلّه — لحقّ الشخص في الحذف
+    (13-10) وحده. ولولا هذا المسار لصار «حُذفت بياناتك» إقراراً كاذباً:
+    الحذف المقيَّد يترك سيرته في مستودع كيانٍ لم يكن المستخدم عليه.
+    """
+    scope = _scope(company_id)
+    if scope == ANY_COMPANY:
+        with transaction() as conn:
+            conn.execute("DELETE FROM kb_chunks WHERE doc_id = ?", (doc_id,))
+            conn.execute("DELETE FROM kb_documents WHERE id = ?", (doc_id,))
+        return
+
     with transaction() as conn:
-        conn.execute("DELETE FROM kb_chunks WHERE doc_id = ?", (doc_id,))
-        conn.execute("DELETE FROM kb_documents WHERE id = ?", (doc_id,))
+        conn.execute(
+            "DELETE FROM kb_chunks WHERE doc_id IN "
+            "(SELECT id FROM kb_documents WHERE id = ? AND company_id = ?)",
+            (doc_id, scope),
+        )
+        conn.execute("DELETE FROM kb_documents WHERE id = ? AND company_id = ?",
+                     (doc_id, scope))
 
 
 def kb_stats() -> dict:
     row = get_conn().execute(
-        "SELECT (SELECT COUNT(*) FROM kb_documents) AS docs, "
-        "(SELECT COUNT(*) FROM kb_chunks) AS chunks"
+        "SELECT (SELECT COUNT(*) FROM kb_documents WHERE company_id = ?) AS docs, "
+        "(SELECT COUNT(*) FROM kb_chunks c JOIN kb_documents d ON d.id = c.doc_id "
+        " WHERE d.company_id = ?) AS chunks",
+        (_scope(), _scope()),
     ).fetchone()
     return dict(row)
 
@@ -2285,20 +2431,26 @@ def expired_cv_documents(months: Optional[int] = None) -> list:
     rows = get_conn().execute(
         "SELECT d.*, COUNT(c.id) AS chunks FROM kb_documents d "
         "LEFT JOIN kb_chunks c ON c.doc_id = d.id "
-        "WHERE d.category = 'cv' AND d.added_at < ? "
+        "WHERE d.category = 'cv' AND d.added_at < ? AND d.company_id = ? "
         "GROUP BY d.id ORDER BY d.added_at",
-        (limit,),
+        (limit, _scope()),
     ).fetchall()
     return [dict(r) for r in rows]
 
 
 def person_footprint(name: str) -> dict:
-    """ما يخصّ هذا الشخص في النظام — يُعرض قبل الحذف لا بعده."""
+    """
+    ما يخصّ هذا الشخص في النظام — يُعرض قبل الحذف لا بعده.
+
+    **يُحصى على التثبيت كلّه** لا على الشركة الفاعلة، لأن `forget_person` يحذف
+    كذلك: عددٌ يقول «صفّ واحد» ثم يُحذف صفّان يجعل ما عُرض قبل فعلٍ لا رجعة
+    فيه كاذباً — وهو أسوأ من ألّا يُعرض.
+    """
     name = (name or "").strip()
     if not name:
         return {"records": 0, "documents": 0, "chunks": 0}
 
-    records = [r for r in list_records("people")
+    records = [r for r in list_records("people", company_id=ANY_COMPANY)
                if str(r.get("name", "")).strip() == name]
     docs = _person_documents(name)
     return {
@@ -2315,9 +2467,13 @@ def _person_documents(name: str) -> list:
     الاثنان معاً لأن الربط الصريح أُضيف في 13-10: سيرة رُفعت قبله لا تحمل ربطاً،
     وحقّ الشخص في حذفها لا ينتظر ترقية.
     """
+    # ب-8 — **استثناء مقصود من التقييد بالشركة**: حقّ الشخص في حذف بياناته
+    # (13-10) لا يقف عند حدود كيانٍ اختاره مستخدم في جلسته. سيرةٌ تبقى في
+    # مستودع كيان آخر بعد «حُذفت بياناتك» تجعل الإقرار كاذباً — والبحث هنا
+    # على التثبيت كلّه عمداً، وكذلك `list_records` أدناه.
     linked_names = {
         str(r.get("cv_document", "")).strip()
-        for r in list_records("people")
+        for r in list_records("people", company_id=ANY_COMPANY)
         if str(r.get("name", "")).strip() == name and str(r.get("cv_document", "")).strip()
     }
     rows = get_conn().execute(
@@ -2346,15 +2502,19 @@ def forget_person(name: str) -> dict:
 
     documents = _person_documents(name)
     for doc in documents:
-        delete_kb_document(doc["id"])
+        # ANY_COMPANY: الحذف يشمل التثبيت كلّه — انظر `_person_documents`
+        delete_kb_document(doc["id"], company_id=ANY_COMPANY)
         removed["documents"] += 1
         removed["chunks"] += doc["chunks"]
 
-    people = list_records("people")
-    kept = [r for r in people if str(r.get("name", "")).strip() != name]
-    removed["records"] = len(people) - len(kept)
-    if removed["records"]:
-        save_records("people", kept)
+    # سجلّ الكوادر يُنقّى **في كل شركة**: صفٌّ باسمه في كيانٍ آخر يبقى بعد
+    # الحذف فيصير الإقرار كاذباً — والمرور على الشركات هنا مقصود لا سهو.
+    for company in list_companies() or [{"id": UNSCOPED_COMPANY}]:
+        people = list_records("people", company_id=company["id"])
+        kept = [r for r in people if str(r.get("name", "")).strip() != name]
+        if len(kept) != len(people):
+            removed["records"] += len(people) - len(kept)
+            _replace_records("people", kept, company["id"])
 
     return removed
 
@@ -2422,13 +2582,22 @@ def delete_attachment_version(version_id: int):
 # ─── سجلات الأدلة (المرحلة 12) ───────────────────────────────────────────────
 
 
-def list_records(registry: str) -> list:
-    """صفوف السجل بترتيبها المحفوظ."""
-    rows = get_conn().execute(
-        "SELECT payload FROM company_records WHERE registry = ? "
-        "ORDER BY ordinal, id",
-        (registry,),
-    ).fetchall()
+def list_records(registry: str, company_id: Optional[int] = None) -> list:
+    """
+    صفوف السجل بترتيبها المحفوظ — لشركة واحدة (ب-8).
+
+    `company_id=ANY_COMPANY` يتجاوز التقييد، ولا يُمرَّر إلا حيث يكون التجاوز
+    هو الصواب: حذف بيانات شخص عبر التثبيت كلّه (13-10).
+    """
+    scope = _scope(company_id)
+    sql = ("SELECT payload FROM company_records WHERE registry = ? "
+           "ORDER BY ordinal, id")
+    args: list[Any] = [registry]
+    if scope != ANY_COMPANY:
+        sql = ("SELECT payload FROM company_records "
+               "WHERE registry = ? AND company_id = ? ORDER BY ordinal, id")
+        args.append(scope)
+    rows = get_conn().execute(sql, args).fetchall()
     out = []
     for row in rows:
         try:
@@ -2445,11 +2614,33 @@ def save_records(registry: str, rows: list):
     الاستبدال الكامل يطابق محرر الجداول في الواجهة: المستخدم يحرّر الجدول كله
     ثم يحفظ، فالمزامنة صفاً صفاً تُعقّد بلا مكسب على عشرات الصفوف.
     """
+    scope = _scope()
     with transaction() as conn:
-        conn.execute("DELETE FROM company_records WHERE registry = ?", (registry,))
+        # الحذف مقيَّد كالإدراج: استبدالٌ غير مقيَّد يمحو سجلّ كيانٍ آخر
+        # بالكامل لأن مستخدماً حرّر جدوله هو.
+        conn.execute(
+            "DELETE FROM company_records WHERE registry = ? AND company_id = ?",
+            (registry, scope),
+        )
         conn.executemany(
-            "INSERT INTO company_records (registry, ordinal, payload) VALUES (?, ?, ?)",
-            [(registry, i, json.dumps(row, ensure_ascii=False))
+            "INSERT INTO company_records (registry, ordinal, payload, company_id) "
+            "VALUES (?, ?, ?, ?)",
+            [(registry, i, json.dumps(row, ensure_ascii=False), scope)
+             for i, row in enumerate(rows or [])],
+        )
+
+
+def _replace_records(registry: str, rows: list, company_id: int):
+    """استبدال صفوف سجلّ شركة بعينها — مسار داخلي للحذف عبر الشركات."""
+    with transaction() as conn:
+        conn.execute(
+            "DELETE FROM company_records WHERE registry = ? AND company_id = ?",
+            (registry, company_id),
+        )
+        conn.executemany(
+            "INSERT INTO company_records (registry, ordinal, payload, company_id) "
+            "VALUES (?, ?, ?, ?)",
+            [(registry, i, json.dumps(row, ensure_ascii=False), company_id)
              for i, row in enumerate(rows or [])],
         )
 
@@ -2457,7 +2648,9 @@ def save_records(registry: str, rows: list):
 def record_counts() -> dict:
     """عدد الصفوف في كل سجل — لمؤشرات الاكتمال."""
     rows = get_conn().execute(
-        "SELECT registry, COUNT(*) AS n FROM company_records GROUP BY registry"
+        "SELECT registry, COUNT(*) AS n FROM company_records "
+        "WHERE company_id = ? GROUP BY registry",
+        (_scope(),),
     ).fetchall()
     return {r["registry"]: r["n"] for r in rows}
 
