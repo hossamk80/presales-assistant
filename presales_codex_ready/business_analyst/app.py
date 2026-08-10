@@ -16,22 +16,17 @@ st.set_page_config(
 
 # ─── Imports (after page config) ──────────────────────────────────────────────
 from components import theme
-from utils.state import init_state, load_company_snapshot
+from utils.state import init_state
 from utils.ai_engine import estimate_tokens
-from utils import auth, db, providers
+from utils import auth, companies, providers
 from utils.i18n import t, ui_is_rtl
 
 # ─── Initialize Session State ─────────────────────────────────────────────────
 init_state()
 
-# ملف الشركة يُحمَّل من القرص مرة واحدة لكل جلسة
-if not st.session_state.get("_company_loaded"):
-    _company, _template, _logo = db.load_company()
-    if _company:
-        load_company_snapshot(_company)
-    if _template:
-        st.session_state["c_word_template_bytes"] = _template
-    st.session_state["_company_loaded"] = True
+# ب-7: الشركة الفاعلة تُقرأ من الجلسة لا من متغيّر عام تتنازعه الجلسات.
+# التركيب قبل أي استدعاء لـ `db.load_company`.
+companies.install()
 
 # ─── الهوية البصرية ───────────────────────────────────────────────────────────
 # كل الأنماط في `components/theme.py`. الاتجاه يتبع لغة الواجهة: عربي/كليهما
@@ -47,6 +42,11 @@ if not auth.is_authenticated():
     from views import login
     login.render()
     st.stop()
+
+# ب-7: ملف الشركة يُحمَّل **بعد** الدخول لا قبله — الشركة الفاعلة تتبع
+# المستخدم، ولا تُعرف قبل أن يُعرف هو.
+if not st.session_state.get("_company_loaded"):
+    companies.load_into_session()
 
 
 # ─── سجل الصفحات ──────────────────────────────────────────────────────────────

@@ -9,11 +9,92 @@ import re
 import pandas as pd
 import streamlit as st
 
-from utils import audit, auth, db, knowledge, local_content, providers, records, submission
+from utils import (
+    audit, auth, companies, db, knowledge, local_content, providers, records,
+    submission,
+)
 from utils.file_handler import BRAND_COLOR, BRAND_FONT_AR
 from components import theme
 from utils.i18n import t
 from utils.state import get_company_snapshot
+
+
+def _render_company_switcher():
+    """
+    منتقي الشركة الفاعلة (ب-7): تبديل · إنشاء · إعادة تسمية · حذف.
+
+    **الاختيار لكل مستخدم**: مجموعةٌ بعدة كيانات، وكلٌّ يكتب لكيانه في جلسته
+    بلا أن يقلب اختيارَ زميله تحت يده.
+    """
+    rows = db.list_companies()
+    # قاعدة بشركة واحدة لا تحتاج منتقياً — الشاشة تبقى كما كانت
+    if len(rows) <= 1 and not auth.can("company.edit"):
+        return
+
+    editable = auth.can("company.edit")
+    current = companies.active_id()
+    names = {r["id"]: (r["name"] or t("org.unnamed", id=r["id"])) for r in rows}
+
+    with st.expander(t("org.title"), expanded=len(rows) > 1):
+        st.caption(t("org.hint"))
+
+        if len(rows) > 1:
+            ids = [r["id"] for r in rows]
+            chosen = st.selectbox(
+                t("org.active"), ids,
+                index=ids.index(current) if current in ids else 0,
+                format_func=lambda i: names.get(i, str(i)),
+                key="company_picker",
+            )
+            if chosen != current and companies.switch(chosen):
+                # الملف الجديد يُحمَّل فوراً: جلسةٌ تحمل بيانات شركة واسم أخرى
+                # تُصدِّر غلافاً مختلطاً
+                companies.load_into_session()
+                audit.record(audit.COMPANY_SWITCH, target=names.get(chosen, ""))
+                st.rerun()
+
+            # ما يُبدَّل وما لا يُبدَّل — الظنّ بأن كل شيء تبدّل يُرفق شهادات
+            # شركة بعرض شركة أخرى
+            st.warning(t("org.scope_warning"))
+
+        if not editable:
+            return
+
+        c_new, c_rename = st.columns(2)
+        with c_new:
+            new_name = st.text_input(t("org.new_name"), key="company_new_name")
+            if st.button(t("org.create"), disabled=not new_name.strip(),
+                         width="stretch"):
+                created = db.create_company(name=new_name.strip())
+                companies.switch(created)
+                companies.load_into_session()
+                audit.record(audit.COMPANY_CREATE, target=new_name.strip())
+                st.rerun()
+
+        with c_rename:
+            rename_to = st.text_input(
+                t("org.rename_to"), key="company_rename",
+                value=next((r["name"] for r in rows if r["id"] == current), ""),
+            )
+            if st.button(t("org.rename"), disabled=current is None, width="stretch"):
+                db.rename_company(current, rename_to.strip())
+                audit.record(audit.COMPANY_RENAME, target=rename_to.strip())
+                st.rerun()
+
+        # الحذف آخر شيء وبتأكيد: ملف شركة عملُ شهور، ولا نسخة ثانية منه
+        if len(rows) > 1 and current is not None:
+            confirm = st.checkbox(t("org.delete_confirm", name=names.get(current, "")),
+                                  key="company_delete_confirm")
+            if st.button(t("org.delete"), disabled=not confirm, type="secondary"):
+                gone = names.get(current, "")
+                if db.delete_company(current):
+                    # لا يُترك معرّف ميت في حساب زميل يدخل غداً
+                    companies.forget(current)
+                    companies.load_into_session()
+                    audit.record(audit.COMPANY_DELETE, target=gone)
+                    st.rerun()
+                else:
+                    st.error(t("org.delete_refused"))
 
 
 def render():
@@ -22,6 +103,8 @@ def render():
     # يعدّلها مدير النظام ومدير العطاءات. الباقون يقرأون.
     if not auth.can("company.edit"):
         st.info(t("role.company_read_only"))
+
+    _render_company_switcher()
 
     # ── Legal Info ─────────────────────────────────────────────────────────────
     with st.expander(t("co.legal"), expanded=True):
