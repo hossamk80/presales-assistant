@@ -2904,3 +2904,241 @@ def test_zero_and_negative_quantities_are_dropped():
 
     order = orders.build(_won(), boq, customer="وزارة")
     assert [line["name"] for line in order["lines"]] == ["مبدّل"]
+
+
+# ─── تقييد البيانات بالشركة (ب-8) ──────────────────────────────────────────────
+#
+# ب-7 جعل **ملف الشركة** لكل مستخدم، وبقيت المنافسات والمعرفة وسجلات الأدلة
+# مشتركة. هنا تُقيَّد الثلاثة. وأخطر ما في هذه الدفعة ليس التسريب بل **الاختفاء**:
+# استعلامٌ صار يرشّح بالشركة وصفوفٌ بلا شركة لا تطابق شيئاً — فيفتح المستخدم
+# النظام بعد الترقية ولا يجد عمله، بلا رسالة خطأ، فراغاً.
+
+
+@pytest.fixture()
+def scoped(temp_db, fake_streamlit):
+    from utils import auth, companies, db
+
+    user = db.create_user("ahmed", auth.hash_password("kalimatsirr1"),
+                          role=auth.ADMIN)
+    import streamlit as st
+
+    st.session_state["auth_user_id"] = user
+    companies.install()
+    yield db
+    db.set_company_resolver(None)
+
+
+def _chunk(text="نص"):
+    import struct
+
+    return [(0, text, 3, struct.pack("3f", 1.0, 2.0, 3.0))]
+
+
+def test_data_created_before_scoping_is_adopted_by_the_first_company(scoped):
+    """
+    **الاختفاء أخطر من التسريب**: منافسةٌ أُنشئت قبل ملء ملف الشركة تحمل صفراً،
+    والاستعلام يرشّح بالشركة — فتختفي لحظة إنشاء الملف بلا رسالة.
+    """
+    db = scoped
+    db.create_project("منافسة قديمة", {"x": 1})
+    doc = db.add_kb_document("ملف.pdf", "profile", 100)
+    db.add_kb_chunks(doc, _chunk())
+    db.save_records("entities", [{"name": "وزارة"}])
+
+    db.create_company("شركة أ")
+
+    assert [p["name"] for p in db.list_projects()] == ["منافسة قديمة"]
+    assert len(db.list_kb_documents()) == 1
+    assert len(db.list_records("entities")) == 1
+
+
+def test_each_company_sees_only_its_own_tenders(scoped):
+    from utils import companies
+
+    db = scoped
+    first = db.create_company("شركة أ")
+    second = db.create_company("شركة ب")
+
+    companies.switch(first)
+    db.create_project("منافسة أ", {})
+    companies.switch(second)
+    db.create_project("منافسة ب", {})
+
+    assert [p["name"] for p in db.list_projects()] == ["منافسة ب"]
+    companies.switch(first)
+    assert [p["name"] for p in db.list_projects()] == ["منافسة أ"]
+
+
+def test_knowledge_of_one_entity_never_reaches_another_proposal(scoped):
+    """
+    أخطر ترشيح في ب-8: `all_kb_chunks` هي ما يُبنى منه سياق النموذج. مقطعٌ من
+    مستودع كيانٍ آخر لا يُعرض في شاشة ليُلاحَظ — يُكتب في عرضٍ باسم كيان لا
+    يملك تلك الخبرة ولا تلك الشهادة.
+    """
+    from utils import companies
+
+    db = scoped
+    first = db.create_company("شركة أ")
+    second = db.create_company("شركة ب")
+
+    companies.switch(first)
+    doc = db.add_kb_document("خبراتنا.pdf", "profile", 100)
+    db.add_kb_chunks(doc, _chunk("مشروع نفّذته شركة أ"))
+
+    companies.switch(second)
+    assert db.all_kb_chunks() == []
+    assert db.kb_stats()["chunks"] == 0
+
+    companies.switch(first)
+    assert len(db.all_kb_chunks()) == 1
+
+
+def test_editing_one_registry_does_not_wipe_anothers(scoped):
+    """الاستبدال الكامل مقيَّد: تحرير جدولٍ لا يمحو سجلّ كيان آخر."""
+    from utils import companies
+
+    db = scoped
+    first = db.create_company("شركة أ")
+    second = db.create_company("شركة ب")
+
+    companies.switch(first)
+    db.save_records("entities", [{"name": "وزارة الصحة"}])
+    companies.switch(second)
+    db.save_records("entities", [{"name": "وزارة النقل"}])
+
+    companies.switch(first)
+    assert [r["name"] for r in db.list_records("entities")] == ["وزارة الصحة"]
+
+
+def test_a_tender_cannot_be_opened_from_another_entity(scoped):
+    """
+    الجلسة تحمل معرّف المنافسة المفتوحة عبر التبديل — ولولا الشرط لبقي عرض
+    الكيان الأول مفتوحاً تحت اسم الثاني، ويُحفظ عليه.
+    """
+    from utils import companies
+
+    db = scoped
+    first = db.create_company("شركة أ")
+    second = db.create_company("شركة ب")
+
+    companies.switch(first)
+    pid = db.create_project("منافسة أ", {"sec": "نص"})
+
+    companies.switch(second)
+    assert db.load_project(pid) is None
+    assert db.save_project(pid, {"sec": "عبث"}) is None
+
+    companies.switch(first)
+    assert db.load_project(pid)["payload"]["sec"] == "نص"
+
+
+def test_a_company_holding_data_is_not_deleted(scoped):
+    """
+    حذفٌ يجرّ منافسات ومستودع معرفة خسارةٌ لا رجعة فيها من ضغطةٍ قصدها
+    «تنظيف قائمة».
+    """
+    from utils import companies
+
+    db = scoped
+    db.create_company("شركة أ")
+    second = db.create_company("شركة ب")
+
+    companies.switch(second)
+    db.create_project("منافسة ب", {})
+
+    assert db.company_holdings(second)["projects"] == 1
+    assert db.delete_company(second) is False
+
+    db.delete_project(db.list_projects()[0]["id"])
+    assert db.delete_company(second) is True
+
+
+def test_erasing_a_person_crosses_every_entity(scoped):
+    """
+    **استثناء مقصود من التقييد**: حقّ الشخص في الحذف (13-10) لا يقف عند حدود
+    كيانٍ اختاره مستخدم في جلسته. سيرةٌ تبقى في مستودع كيان آخر بعد «حُذفت
+    بياناتك» تجعل الإقرار كاذباً.
+    """
+    from utils import companies
+
+    db = scoped
+    first = db.create_company("شركة أ")
+    second = db.create_company("شركة ب")
+
+    for company in (first, second):
+        companies.switch(company)
+        doc = db.add_kb_document(f"سيرة-{company}.pdf", "cv", 50, person="أحمد")
+        db.add_kb_chunks(doc, _chunk("سيرة أحمد"))
+        db.save_records("people", [{"name": "أحمد", "role": "مهندس"}])
+
+    # ما يُعرض قبل الحذف يطابق ما يُحذف — وإلا صار العرض كاذباً
+    footprint = db.person_footprint("أحمد")
+    assert footprint["documents"] == 2
+    assert footprint["records"] == 2
+
+    removed = db.forget_person("أحمد")
+    assert removed["documents"] == 2
+    assert removed["records"] == 2
+
+    for company in (first, second):
+        companies.switch(company)
+        assert db.list_records("people") == []
+        assert db.list_kb_documents() == []
+
+
+def test_switching_closes_the_open_tender(scoped):
+    """عملُ كيانٍ لا يعبر إلى آخر — والمفتوح يُحفظ قبل أن يُغلق."""
+    import streamlit as st
+
+    from utils import companies
+
+    db = scoped
+    first = db.create_company("شركة أ")
+    second = db.create_company("شركة ب")
+
+    companies.switch(first)
+    pid = db.create_project("منافسة أ", {})
+    st.session_state["_project_id"] = pid
+    st.session_state["_project_name"] = "منافسة أ"
+
+    companies.switch(second)
+
+    assert st.session_state.get("_project_id") is None
+
+
+def test_every_scoped_table_is_filtered_in_its_read_paths():
+    """
+    حارس ارتداد: استعلامٌ جديد على جدول مقيَّد بلا `company_id` تسريبٌ أو
+    اختفاء. يفحص **الشيفرة المحلَّلة** لا نصّها، فلا يُخدَع بتعليق يذكر العمود.
+    """
+    import ast
+    import re
+
+    from utils import db as db_module
+
+    tree = ast.parse(open(db_module.__file__, encoding="utf-8").read())
+
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        body = ast.unparse(node)
+        # تجاوز التقييد مسموح حيث يكون هو الصواب — ويُعلَن بـ `ANY_COMPANY`
+        # صراحةً في الدالّة نفسها، فلا يمرّ سهواً.
+        if "ANY_COMPANY" in body:
+            continue
+        # الاستعلامات نصوص ثابتة: نفحصها كاملةً بدل قصّها بتعبير نمطي يتعثّر
+        # بأول علامة اقتباس داخلية (`d.category = 'cv'`).
+        for literal in ast.walk(node):
+            if isinstance(literal, ast.Constant) and isinstance(literal.value, str):
+                sql = literal.value
+            elif isinstance(literal, ast.JoinedStr):
+                sql = ast.unparse(literal)
+            else:
+                continue
+            if not re.search(r"\b(SELECT|DELETE FROM|INSERT INTO)\b", sql):
+                continue
+            for table in ("projects", "kb_documents", "company_records"):
+                if not re.search(rf"\b{table}\b", sql):
+                    continue
+                assert "company_id" in sql or "COUNT(*)" in sql, \
+                    f"{node.name} · {table}: {' '.join(sql.split())[:120]}"

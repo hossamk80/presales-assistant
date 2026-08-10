@@ -53,9 +53,8 @@ def _render_company_switcher():
                 audit.record(audit.COMPANY_SWITCH, target=names.get(chosen, ""))
                 st.rerun()
 
-            # ما يُبدَّل وما لا يُبدَّل — الظنّ بأن كل شيء تبدّل يُرفق شهادات
-            # شركة بعرض شركة أخرى
-            st.warning(t("org.scope_warning"))
+            # ب-8: التبديل صار يشمل كل شيء — والمنافسة المفتوحة تُغلق
+            st.info(t("org.scope_note"))
 
         if not editable:
             return
@@ -83,9 +82,19 @@ def _render_company_switcher():
 
         # الحذف آخر شيء وبتأكيد: ملف شركة عملُ شهور، ولا نسخة ثانية منه
         if len(rows) > 1 and current is not None:
+            holdings = db.company_holdings(current)
+            owned = sum(holdings.values())
+            if owned:
+                # ب-8: الرقم يُقال **قبل** الضغط. حذفٌ يجرّ منافسات ومستودع
+                # معرفة خسارةٌ لا رجعة فيها من ضغطةٍ قصدها تنظيف قائمة.
+                st.info(t("org.holdings",
+                          projects=holdings["projects"],
+                          docs=holdings["kb_documents"],
+                          records=holdings["company_records"]))
             confirm = st.checkbox(t("org.delete_confirm", name=names.get(current, "")),
                                   key="company_delete_confirm")
-            if st.button(t("org.delete"), disabled=not confirm, type="secondary"):
+            if st.button(t("org.delete"), disabled=not confirm or bool(owned),
+                         type="secondary"):
                 gone = names.get(current, "")
                 if db.delete_company(current):
                     # لا يُترك معرّف ميت في حساب زميل يدخل غداً
