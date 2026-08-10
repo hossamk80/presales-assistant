@@ -374,6 +374,83 @@ UI_STRINGS: dict[str, dict[str, str]] = {
     "tb.col_strategy": {"ar": "استراتيجية الاستجابة", "en": "Compliance strategy"},
     "tb.col_status": {"ar": "الالتزام", "en": "Compliance"},
     "tb.col_certificate": {"ar": "الشهادة المطلوبة", "en": "Required certificate"},
+    # دفع أمر البيع (ب-6): العملية الوحيدة التي تكتب في دفاتر جهة أخرى
+    "po.title": {"ar": "📤 دفع أمر بيع", "en": "📤 Push a sales order"},
+    "po.hint": {
+        "ar": "يُنشئ **مسودّة** أمر بيع في نظامك المحاسبي من جدول كميات "
+              "المنافسة الفائزة. بلا أسعار — التسعير عندك — وبلا تأكيد: "
+              "التأكيد فعل تجاري يخصّك. ولا يُنشئ عميلاً ولا يربط بمنتج من "
+              "كتالوجك، فمطابقةٌ بالاسم تُسعّر بنداً بسعر آخر.",
+        "en": "Creates a **draft** sales order in your accounting system from "
+              "the winning tender's BOQ. No prices — pricing is yours — and "
+              "no confirmation: confirming is a commercial act that belongs "
+              "to you. It creates no customer and links no catalogue product, "
+              "since name matching would price a line from the wrong item.",
+    },
+    "po.refused": {"ar": "🚫 {reason}", "en": "🚫 {reason}"},
+    "po.col_item": {"ar": "البند", "en": "Item"},
+    "po.col_qty": {"ar": "الكمية", "en": "Quantity"},
+    "po.col_unit": {"ar": "الوحدة", "en": "Unit"},
+    "po.preview": {
+        "ar": "المرجع **{ref}** · العميل **{customer}** · **{n}** بنداً · "
+              "بلا أسعار · مسودّة.",
+        "en": "Reference **{ref}** · customer **{customer}** · **{n}** lines · "
+              "no prices · draft.",
+    },
+    "po.egress": {
+        "ar": "🚨 هذه العملية **تكتب** في `{host}` — لا تقرأ منه. راجع "
+              "البنود أعلاه: ما يُكتب هناك يُصحَّح هناك لا من هنا.",
+        "en": "🚨 This operation **writes** to `{host}` — it does not read. "
+              "Check the lines above: what lands there is corrected there, "
+              "not from here.",
+    },
+    "po.confirm": {
+        "ar": "أؤكّد إنشاء مسودّة أمر بيع لـ **{customer}** في نظامي المحاسبي.",
+        "en": "I confirm creating a draft sales order for **{customer}** in my "
+              "accounting system.",
+    },
+    "po.push": {"ar": "📤 إنشاء المسودّة", "en": "📤 Create the draft"},
+    "po.pushed": {"ar": "✅ {message}", "en": "✅ {message}"},
+    "po.failed": {
+        "ar": "❌ لم يُنشأ الأمر: {error} — لم يُكتب شيء في نظامك.",
+        "en": "❌ The order was not created: {error} — nothing was written.",
+    },
+    "po.no_permission": {
+        "ar": "🔒 الدفع ليس من صلاحيتك — أضيق صلاحيات النظام لأنه الوحيد الذي "
+              "يكتب خارجه. تُمنح من مصفوفة الصلاحيات في الإعدادات.",
+        "en": "🔒 Pushing is not in your permissions — the narrowest in the "
+              "system, being the only thing that writes outside it. Granted "
+              "from the permission matrix in Settings.",
+    },
+    "po.already": {
+        "ar": "✅ دُفع من قبل: **{ref}** · رقمه هناك **#{remote}** · "
+              "{at} · بواسطة {by}. لا يُدفع ثانيةً — أمرٌ مكرَّر يُفوتَر مرتين.",
+        "en": "✅ Already pushed: **{ref}** · remote **#{remote}** · {at} · "
+              "by {by}. It will not be pushed again — a duplicate order gets "
+              "invoiced twice.",
+    },
+    "po.already_racing": {
+        "ar": "⚠️ سُجّل أمر لهذه المنافسة للتوّ — لم يُرسل أمر ثانٍ.",
+        "en": "⚠️ An order for this tender was just recorded — no second one "
+              "was sent.",
+    },
+    "po.drifted": {
+        "ar": "⚠️ تغيّر جدول الكميات بعد الدفع. **لا نُصحّح في نظامك** — "
+              "عدّل الأمر هناك إن لزم.",
+        "en": "⚠️ The BOQ changed after the push. **We do not edit your "
+              "system** — amend the order there if needed.",
+    },
+    "po.forget_confirm": {
+        "ar": "حُذف الأمر في نظامي المحاسبي وأريد السماح بدفعٍ جديد.",
+        "en": "The order was deleted in my accounting system and I want to "
+              "allow a new push.",
+    },
+    "po.forget": {"ar": "🗑️ نسيان سجلّ الدفع", "en": "🗑️ Forget push record"},
+    "po.forget_note": {
+        "ar": "«النسيان» يمحو سجلّنا فقط — **ولا يحذف شيئاً من نظامك**.",
+        "en": "\"Forget\" clears our record only — it **deletes nothing from "
+              "your system**.",
+    },
     # الشركة الفاعلة (ب-7): الاختيار لكل مستخدم لا لكل عملية
     "org.title": {"ar": "🏢 الشركة الفاعلة", "en": "🏢 Active company"},
     "org.hint": {
