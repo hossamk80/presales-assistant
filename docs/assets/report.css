@@ -3,20 +3,26 @@
  *
  * ملف واحد يخدم `status.html` و `guide.html` — لا نسخة ثانية من الأنماط.
  *
- * الخطّ **مُضمَّن في المستودع** ويُقرأ بمسار نسبي من `static/fonts/`، فالتقرير
- * يعمل معزولاً عن الإنترنت كما تعمل واجهة التطبيق (ب-1). وإن فُتح الملف وحده
- * خارج المستودع يسقط إلى خطوط النظام بلا كسر — تدهورٌ لطيف لا عطل.
+ * الخطّ **مُضمَّن في `docs/assets/fonts/`** ويُقرأ بمسار نسبي، فالتقرير يعمل
+ * معزولاً عن الإنترنت كما تعمل واجهة التطبيق (ب-1). وإن فُتح الملف وحده خارج
+ * المستودع يسقط إلى خطوط النظام بلا كسر — تدهورٌ لطيف لا عطل.
+ *
+ * **ولماذا نسخة ثانية من الخطّ هنا وفي `static/fonts/`؟** لأن لكلٍّ خادمه
+ * وجذره: التطبيق يقدّمه عبر خدمة الملفات الساكنة في Streamlit، وهذه الصفحات
+ * تُقدَّم من `docs/` جذراً في GitHub Pages. مسارٌ يخرج من `docs` إلى مجلد
+ * التطبيق (`../../presales_codex_ready/...`) يعمل من المستودع المستنسَخ
+ * **ولا يعمل من الموقع المنشور** — فيسقط الخطّ العربي بلا سبب ظاهر.
  *
  * الألوان مشتقّة من هوية التطبيق نفسها: `BRAND_COLOR = #003366`.
  */
 
 @font-face{
   font-family:'Plex Arabic';font-style:normal;font-weight:400;font-display:swap;
-  src:url("../../presales_codex_ready/business_analyst/static/fonts/IBMPlexSansArabic-Regular.woff2") format('woff2');
+  src:url("fonts/IBMPlexSansArabic-Regular.woff2") format('woff2');
 }
 @font-face{
   font-family:'Plex Arabic';font-style:normal;font-weight:600;font-display:swap;
-  src:url("../../presales_codex_ready/business_analyst/static/fonts/IBMPlexSansArabic-SemiBold.woff2") format('woff2');
+  src:url("fonts/IBMPlexSansArabic-SemiBold.woff2") format('woff2');
 }
 
 /* ── الرموز ───────────────────────────────────────────────────────────────

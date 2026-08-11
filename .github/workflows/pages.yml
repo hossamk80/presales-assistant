@@ -1,0 +1,65 @@
+# نشر وثائق المشروع على GitHub Pages
+#
+# المصدر مجلد `docs/` وحده — لا الشيفرة ولا بيانات العطاءات. والمستودع عامّ
+# أصلاً، فالنشر لا يكشف ما لم يكن مكشوفاً.
+#
+# `enablement: true` **يفعّل Pages تلقائياً** عند أول تشغيل إن لم يكن مفعّلاً،
+# فلا يحتاج أحد إلى فتح الإعدادات يدوياً.
+name: نشر الوثائق
+
+on:
+  push:
+    branches: [main]
+    # لا يعمل إلا حين تتغيّر الوثائق فعلاً — دفعةٌ تمسّ الشيفرة وحدها لا
+    # تُشغّل نشراً بلا جديد.
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# نشرةٌ واحدة في كل لحظة، ولا تُلغى الجارية: نصف موقع منشور أسوأ من نشرة
+# تنتظر دورها.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: بناء ونشر
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: تهيئة Pages وتفعيله إن لزم
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: التحقّق من اكتمال الوثائق قبل النشر
+        # موقعٌ يُنشر بملف أنماط مفقود أو خطّ مفقود يخرج بلا هوية ولا يُلاحَظ
+        # إلا بعد أن يُشارَك الرابط.
+        run: |
+          for f in index.html status.html guide.html manual.html \
+                   assets/report.css \
+                   assets/fonts/IBMPlexSansArabic-Regular.woff2 \
+                   assets/fonts/IBMPlexSansArabic-SemiBold.woff2; do
+            test -f "docs/$f" || { echo "❌ ناقص: docs/$f"; exit 1; }
+          done
+          echo "✅ كل ملفات الموقع موجودة"
+
+      - name: رفع مجلد الوثائق
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: النشر
+        id: deployment
+        uses: actions/deploy-pages@v4

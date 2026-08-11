@@ -7,9 +7,11 @@
 الكميات، اقتراح هيكل العرض، الكتابة قسماً بقسم، مراجعة من لجنة وكلاء، ثم
 التصدير إلى Word و PDF.
 
-> 📋 **[تقرير الحالة](docs/status.html)** · 📖 **[دليل المميزات والتشغيل](docs/guide.html)**
-> · 🎓 **[دليل المستخدم بمثال محلول](docs/manual.html)**
-> — تقارير HTML تُفتح في المتصفح بعد استنساخ المستودع.
+> 📚 **الوثائق منشورة:** <https://hossamk80.github.io/presales-assistant/>
+> — 🎓 [دليل المستخدم](https://hossamk80.github.io/presales-assistant/manual.html)
+> · 📖 [المميزات والتشغيل](https://hossamk80.github.io/presales-assistant/guide.html)
+> · 📋 [حالة المشروع](https://hossamk80.github.io/presales-assistant/status.html)
+> (تُنشَر آلياً من `docs/` مع كل دفعة إلى `main`.)
 >
 > **جديد للمستخدم الأول:** من شاشة **المنافسات** اضغط
 > **🎓 تحميل منافسة المثال** — منافسة كاملة بمعطيات من نسج المثال، مصنوعة
