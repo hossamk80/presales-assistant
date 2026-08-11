@@ -14,7 +14,6 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="${REPO_ROOT}/presales_codex_ready/business_analyst"
 VENV="${REPO_ROOT}/.venv"
 
 echo "▶ حزم النظام / system packages…"
@@ -35,7 +34,7 @@ PY="${VENV}/bin/python"
 
 echo "▶ مكتبات Python / Python packages…"
 "${PY}" -m pip install --upgrade pip --quiet
-"${PY}" -m pip install --quiet -r "${APP_DIR}/requirements.txt"
+"${PY}" -m pip install --quiet -r "${REPO_ROOT}/requirements.txt"
 
 # اختيارية في requirements لكنها مطلوبة لتشغيل مسار OCR فعلياً
 "${PY}" -m pip install --quiet pytesseract pdf2image

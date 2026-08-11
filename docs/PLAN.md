@@ -2,7 +2,7 @@
 
 ## System Status & Execution Plan
 
-> **آخر تحديث: 2026-08-09** · النظام: `presales_codex_ready/business_analyst`
+> **آخر تحديث: 2026-08-09** · النظام: `جذر المستودع`
 > · 898 اختباراً · CI أخضر · **المراحل 10 … 14 مكتملة** · **والخطة مُنجَزة** · **وجردها كذلك: ب-1 … ب-8 ✅**
 >
 > **هذا الملف هو المرجع الوحيد** لمميزات النظام ومقارنته بالسوق ونواقصه وخطة
@@ -489,7 +489,7 @@
 
 1. ادفع المستودع إلى GitHub، ثم **Create Repl → Import from GitHub**.
 2. ضع المفتاح في **Secrets** باسم `GEMINI_API_KEY` — لا في الكود ولا في `.replit`.
-3. `pip install -r presales_codex_ready/business_analyst/requirements.txt`
+3. `pip install -r requirements.txt`
    وللـ OCR: `pip install pytesseract pdf2image`.
 4. اضغط **Run**. الربط بـ `0.0.0.0` ضروري؛ `127.0.0.1` يجعل التطبيق غير مرئي.
 

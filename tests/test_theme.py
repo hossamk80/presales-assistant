@@ -261,12 +261,12 @@ def test_a_missing_font_file_degrades_instead_of_breaking(theme, tmp_path,
 
 def test_static_serving_is_enabled_where_the_app_runs():
     """
-    الخطّ يُقدَّم من `static/` عبر خدمة الملفات الساكنة. `run.sh` يشغّل من جذر
-    المستودع، فالإعداد هناك هو الفاعل — ونسخة مجلد التطبيق لمن يشغّل من داخله.
+    الخطّ يُقدَّم من `static/` عبر خدمة الملفات الساكنة، و`config.toml` يُقرأ من
+    مجلد العمل. كان الملف نسختين — واحدة في الجذر وأخرى في مجلد التطبيق —
+    فصارتا واحدة بعد نقل التطبيق إلى الجذر.
     """
-    for config in (APP_DIR.parent.parent / ".streamlit" / "config.toml",
-                   APP_DIR / ".streamlit" / "config.toml"):
-        assert "enableStaticServing = true" in config.read_text(encoding="utf-8"), config
+    config = APP_DIR / ".streamlit" / "config.toml"
+    assert "enableStaticServing = true" in config.read_text(encoding="utf-8"), config
 
 
 def test_the_font_lives_next_to_the_app_script(theme):

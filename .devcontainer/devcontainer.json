@@ -27,7 +27,7 @@
         "python.terminal.activateEnvironment": true,
         "python.testing.pytestEnabled": true,
         "python.testing.pytestArgs": [
-          "presales_codex_ready/business_analyst/tests"
+          "tests"
         ]
       }
     }

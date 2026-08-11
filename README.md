@@ -8,8 +8,6 @@
 التصدير إلى Word و PDF.
 
 > 📚 **الوثائق:** <https://hossamk80.github.io/presales-assistant/>
-> — تعمل بعد تفعيل Pages مرة واحدة:
-> **Settings ← Pages ← Source: GitHub Actions**.
 > — 🎓 [دليل المستخدم](https://hossamk80.github.io/presales-assistant/manual.html)
 > · 📖 [المميزات والتشغيل](https://hossamk80.github.io/presales-assistant/guide.html)
 > · 📋 [حالة المشروع](https://hossamk80.github.io/presales-assistant/status.html)
@@ -49,27 +47,30 @@
 ## هيكل المشروع المختصر
 
 ```text
-presales_codex_ready/
-├── README.md
-└── business_analyst/
-    ├── app.py                 # ملف التشغيل الرئيسي لتطبيق Streamlit
-    ├── requirements.txt       # مكتبات Python المطلوبة
-    ├── .streamlit/            # سمة Streamlit الأساسية (ألوان الهوية)
-    ├── components/            # مكونات واجهة قابلة لإعادة الاستخدام
-    │   ├── theme.py           # نظام التصميم: الرموز اللونية والأنماط والشريط العلوي
-    │   ├── icons.py           # أيقونات SVG مدمجة (Bootstrap Icons، رخصة MIT)
-    │   └── ui.py              # عناصر مشتركة: بطاقة، شارة، زر توليد
-    ├── views/                 # شاشات التطبيق الداخلية
-    ├── tests/                 # مجموعة الاختبارات التي يشغّلها CI
-    └── utils/
-        ├── ai_engine.py       # المحرك: نص حر ومخرجات JSON مُهيكلة عبر طبقة الموفّرين
-        ├── providers/         # طبقة الموفّرين: Gemini · Claude · OpenAI · متوافق · محلي
-        ├── db.py              # التخزين الدائم (SQLite): المنافسات والشركة والمعرفة
-        ├── knowledge.py       # مستودع المعرفة: تقسيم وتضمين واسترجاع
-        ├── document_blocks.py # تحويل Markdown المولَّد إلى كتل مستند
-        ├── file_handler.py    # الاستخراج (مع OCR) وبناء Word و PDF
-        ├── i18n.py            # نصوص الواجهة بالعربية والإنجليزية
-        └── state.py           # حالة الجلسة وهيكل العرض
+.
+├── app.py                     # ملف التشغيل الرئيسي لتطبيق Streamlit
+├── requirements.txt           # مكتبات Python المطلوبة
+├── .streamlit/                # إعدادات Streamlit وسمتها (ألوان الهوية)
+├── static/fonts/              # الخطّ العربي مُضمَّناً — لا مورد بعيد
+├── components/                # مكونات واجهة قابلة لإعادة الاستخدام
+│   ├── theme.py               # نظام التصميم: الرموز اللونية والأنماط والشريط العلوي
+│   ├── icons.py               # أيقونات SVG مدمجة (Bootstrap Icons، رخصة MIT)
+│   └── ui.py                  # عناصر مشتركة: بطاقة، شارة، زر توليد
+├── views/                     # شاشات التطبيق الداخلية
+├── tests/                     # مجموعة الاختبارات التي يشغّلها CI
+├── docs/                      # الوثائق المنشورة على GitHub Pages
+├── scripts/                   # run.sh · test.sh — يعملان من أي مجلد
+└── utils/
+    ├── ai_engine.py           # المحرك: نص حر ومخرجات JSON مُهيكلة عبر طبقة الموفّرين
+    ├── providers/             # طبقة الموفّرين: Gemini · Claude · OpenAI · متوافق · محلي
+    ├── connectors/            # الموصّلات الخارجية: سحب · ودفع مسودّة أمر بيع
+    ├── db.py                  # التخزين الدائم (SQLite): المنافسات والشركة والمعرفة
+    ├── knowledge.py           # مستودع المعرفة: تقسيم وتضمين واسترجاع
+    ├── demo.py                # منافسة المثال التي تُحمَّل بضغطة
+    ├── document_blocks.py     # تحويل Markdown المولَّد إلى كتل مستند
+    ├── file_handler.py        # الاستخراج (مع OCR) وبناء Word و PDF
+    ├── i18n.py                # نصوص الواجهة بالعربية والإنجليزية
+    └── state.py               # حالة الجلسة وهيكل العرض
 ```
 
 ## سير العمل
@@ -275,7 +276,7 @@ presales_codex_ready/
 
 ## التخزين والخصوصية
 
-كل شيء يُحفظ في ملف SQLite واحد محلي: `presales_codex_ready/business_analyst/data/analyst.db`
+كل شيء يُحفظ في ملف SQLite واحد محلي: `data/analyst.db`
 (يمكن تغيير مساره بمتغيّر البيئة `ANALYST_DB_PATH`). لا يغادر أي من محتوى
 العطاءات الجهاز إلا في استدعاءات موفّر الذكاء الاصطناعي الذي تختاره — ومع
 الموفّر المحلي (Ollama / vLLM) لا يغادر الجهاز إطلاقاً. مفاتيح API تبقى في الذاكرة ولا
@@ -585,18 +586,12 @@ Both scripts work from any directory: they locate the repo root themselves,
 use `.venv` when present, and run from the correct working directory. If your
 Codespace predates the devcontainer, run `bash .devcontainer/setup.sh` once.
 
-## مجلد التطبيق الرئيسي
+## ملف التشغيل الرئيسي
 
-مجلد التطبيق الرئيسي هو:
-
-```bash
-presales_codex_ready/business_analyst
-```
-
-وملف التشغيل الرئيسي هو:
+التطبيق **في جذر المستودع** — لا مجلد وسيط:
 
 ```bash
-presales_codex_ready/business_analyst/app.py
+app.py
 ```
 
 ## أوامر التشغيل من جذر المستودع
@@ -616,8 +611,8 @@ cd <جذر المستودع>
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r presales_codex_ready/business_analyst/requirements.txt
-python -m streamlit run presales_codex_ready/business_analyst/app.py \
+python -m pip install -r requirements.txt
+python -m streamlit run app.py \
   --server.address 0.0.0.0 --server.port 8501 --server.headless true
 ```
 

@@ -1,8 +1,8 @@
-entrypoint = "presales_codex_ready/business_analyst/app.py"
+entrypoint = "app.py"
 modules = ["python-3.11"]
 
 run = [
-  "streamlit", "run", "presales_codex_ready/business_analyst/app.py",
+  "streamlit", "run", "app.py",
   "--server.address", "0.0.0.0",
   "--server.port", "8501",
   "--server.headless", "true",
@@ -27,7 +27,7 @@ externalPort = 80
 # الملفات عند كل إعادة تشغيل فتضيع بيانات العطاءات.
 deploymentTarget = "vm"
 run = [
-  "streamlit", "run", "presales_codex_ready/business_analyst/app.py",
+  "streamlit", "run", "app.py",
   "--server.address", "0.0.0.0",
   "--server.port", "8501",
   "--server.headless", "true",

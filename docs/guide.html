@@ -62,9 +62,9 @@
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r presales_codex_ready/business_analyst/requirements.txt
+python -m pip install -r requirements.txt
 
-python -m streamlit run presales_codex_ready/business_analyst/app.py \
+python -m streamlit run app.py \
   --server.address 0.0.0.0 --server.port 8501 --server.headless true</code></pre>
   <p>ثم افتح <code>http://localhost:8501</code>. في Codespaces استعمل رابط
   <strong>المنافذ / Ports</strong> لا <code>localhost</code>.</p>
@@ -77,7 +77,7 @@ python -m streamlit run presales_codex_ready/business_analyst/app.py \
     </p>
     <p>
       قاعدة البيانات في
-      <code>presales_codex_ready/business_analyst/data/analyst.db</code>،
+      <code>data/analyst.db</code>،
       ومسارها يتغيّر بمتغيّر البيئة <code>ANALYST_DB_PATH</code>. وهي
       <strong>مستثناة من git</strong> فلا تُدفع بيانات عطاءات إلى المستودع.
     </p>
@@ -459,7 +459,7 @@ python -m streamlit run presales_codex_ready/business_analyst/app.py \
 
 <footer>
   <span><span class="mono">hossamk80/presales-assistant</span></span>
-  <span>التطبيق: <span class="mono">presales_codex_ready/business_analyst/app.py</span></span>
+  <span>التطبيق: <span class="mono">app.py</span></span>
   <span>Python 3.11 · 3.12</span>
 </footer>
 
