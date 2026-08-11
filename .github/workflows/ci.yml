@@ -10,8 +10,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-
 jobs:
   test:
     name: اختبارات (Python ${{ matrix.python-version }})
