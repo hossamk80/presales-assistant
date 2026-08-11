@@ -1,7 +1,7 @@
 # تعليمات المشروع الدائمة / Standing Project Instructions
 
 المشروع: **محلل متطلبات الأعمال الذكي / Smart Business Requirements Analyst**.
-مجلد التطبيق `presales_codex_ready/business_analyst`.
+التطبيق **في جذر المستودع**: `app.py` · `utils/` · `views/` · `components/` · `tests/`.
 
 ## 1. ثنائية اللغة إلزامية / Bilingual is mandatory
 
@@ -58,7 +58,7 @@ is safe to delete — one line.
 
 - التشغيل والتحقق يتمّان عبر GitHub Actions — لا يُشترط تشغيل محلي.
 - ملفات Replit موجودة لكنها خاملة حتى نقل المشروع لاحقاً.
-- قاعدة البيانات `presales_codex_ready/business_analyst/data/analyst.db` مُستثناة من git،
+- قاعدة البيانات `data/analyst.db` مُستثناة من git،
   ومسارها قابل للتغيير بمتغيّر البيئة `ANALYST_DB_PATH`.
 
 ### قواعد ثابتة في المنتج / Fixed product rules

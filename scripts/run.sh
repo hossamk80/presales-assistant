@@ -2,14 +2,14 @@
 # تشغيل التطبيق — من أي مجلد / Run the app from any directory.
 #
 # ثلاثة أخطاء تكرّرت وهذا السكربت يمنعها:
-#   · مسار نسبي من داخل مجلد التطبيق («File does not exist»).
+#   · مسار نسبي خاطئ إلى `app.py` («File does not exist»).
 #   · `streamlit` من بايثون النظام بينما المكتبات في `.venv`.
 #   · التشغيل من مجلد لا يحوي `.streamlit/config.toml` فتضيع إعداداته
 #     (حد الرفع 400MB وإعدادات الوكيل) بلا رسالة.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP="${REPO_ROOT}/presales_codex_ready/business_analyst/app.py"
+APP="${REPO_ROOT}/app.py"
 VENV_PY="${REPO_ROOT}/.venv/bin/python"
 
 # البيئة الافتراضية إن وُجدت، وإلا بايثون المتاح

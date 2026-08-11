@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # تشغيل الاختبارات — من أي مجلد / Run the test suite from any directory.
 #
-# الاختبارات تستورد `utils` و `views` كحزم عليا، فلا بدّ أن يكون مجلد التطبيق
-# هو مجلد العمل. تشغيلها من جذر المستودع يفشل بلا سبب ظاهر.
+# الاختبارات تستورد `utils` و `views` كحزم عليا، فلا بدّ أن يكون جذر المستودع
+# هو مجلد العمل — وهو مجلد التطبيق نفسه بعد نقله إلى الجذر.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_DIR="${REPO_ROOT}/presales_codex_ready/business_analyst"
 VENV_PY="${REPO_ROOT}/.venv/bin/python"
 
 PY="${VENV_PY}"
@@ -18,5 +17,5 @@ if ! "${PY}" -c "import pytest" 2>/dev/null; then
   exit 1
 fi
 
-cd "${APP_DIR}"
+cd "${REPO_ROOT}"
 exec "${PY}" -m pytest tests/ "${@:--q}"

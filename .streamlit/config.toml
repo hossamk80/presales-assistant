@@ -1,5 +1,9 @@
-# إعدادات Streamlit للتشغيل خلف وكيل (Replit وغيره).
-# Streamlit يقرأ هذا الملف من مجلد العمل، وReplit يشغّل من جذر المستودع.
+# إعدادات Streamlit. يُقرأ من مجلد العمل، والتشغيل من جذر المستودع.
+#
+# كان هناك ملفان: هذا، وآخر داخل مجلد التطبيق يحمل السمة الصحيحة. والتشغيل من
+# الجذر يعني أن **سمة هذا الملف وحدها كانت تسري** — بألوانٍ لا تطابق
+# `components/theme.py`. دُمجا هنا بعد نقل التطبيق إلى الجذر، والسمة أدناه هي
+# سمة التطبيق الفعلية.
 
 [server]
 address = "0.0.0.0"
@@ -22,9 +26,17 @@ enableStaticServing = true
 [browser]
 gatherUsageStats = false
 
+# السمة الأساسية. الألوان هنا هي نفسها في `components/theme.py`: عناصر
+# Streamlit الداخلية (تحديد التبويب، مربّع الاختيار، المنزلق، أزرار النماذج)
+# تُلوَّن من السمة لا من CSS المحقون — فلو خالفتها ظهرت ألوان غريبة وسط
+# الهوية الزرقاء.
 [theme]
 base = "light"
-primaryColor = "#1D4ED8"
-backgroundColor = "#F1F5F9"
-secondaryBackgroundColor = "#FFFFFF"
-textColor = "#1E293B"
+primaryColor = "#2270c1"
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#111827"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"

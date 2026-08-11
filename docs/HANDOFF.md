@@ -19,7 +19,7 @@
 **أول أمر تنفّذه:**
 
 ```bash
-cd presales_codex_ready/business_analyst && python -m pytest tests/ -q
+cd جذر المستودع && python -m pytest tests/ -q
 ```
 
 يجب أن يُخرج `898 passed`. إن لم يفعل، أصلح قبل أي شيء آخر.
@@ -565,7 +565,7 @@ Word و PDF معاً (الصيغتان لا تختلفان أمام لجنة ا�
 
 ## 4. خريطة الشيفرة — اقرأ ما تحتاجه فقط
 
-مجلد التطبيق: `presales_codex_ready/business_analyst/`
+مجلد التطبيق: ``
 
 ```
 utils/
@@ -616,7 +616,7 @@ views/
 ## 6. أوامر
 
 ```bash
-cd presales_codex_ready/business_analyst
+cd جذر المستودع
 
 python -m pytest tests/ -q                    # كل الاختبارات
 python -m pytest tests/test_phase12.py -q     # ملف واحد
