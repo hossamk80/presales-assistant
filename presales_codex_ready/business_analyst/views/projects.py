@@ -283,6 +283,41 @@ def _render_pipeline():
 # و**تحذير خروج البيانات يُعرض عند القرار** لا في صفحة إعدادات تُقرأ مرة وتُنسى.
 
 
+def _render_demo_loader():
+    """
+    منافسة مثال تُحمَّل بضغطة (دليل المستخدم).
+
+    الشاشة الفارغة لا تُعلّم: من يفتح النظام أول مرة يرى أزراراً لا يعرف ما
+    تُخرجه، فيجرّب على كرّاس حقيقي — وأول تجربة على عمل حقيقي أسوأ مكان
+    للتعلّم. والمثال **مصنوع ليُطلق الحُرّاس** لا ليبدو مكتملاً.
+    """
+    from utils import demo
+
+    with st.expander(t("ex.title"), expanded=False):
+        st.caption(t("ex.hint"))
+        for guard in demo.guards():
+            st.markdown(f"- **{guard['what']}** — {guard['where']}. {guard['why']}")
+
+        st.caption(t("ex.disposable"))
+        if st.button(t("ex.load"), type="primary",
+                     disabled=auth.blocked("projects.create")):
+            save_current()
+            _clear_project_state()
+            load_state_snapshot(demo.payload())
+            new_id = db.create_project(
+                demo.DEMO_NAME, get_project_snapshot(), demo.DEMO_REFERENCE,
+                demo.DEMO_ENTITY, demo.DEMO_SECTOR,
+            )
+            st.session_state["_project_id"] = new_id
+            st.session_state["_project_name"] = demo.DEMO_NAME
+            st.session_state["_project_revision"] = db.project_revision(new_id)
+            st.session_state["_saved_fingerprint"] = _fingerprint(get_project_snapshot())
+            audit.record(audit.PROJECT_CREATE, project_id=new_id,
+                         project_name=demo.DEMO_NAME, detail="demo")
+            st.success(t("ex.loaded"))
+            st.rerun()
+
+
 def _render_connectors(project: dict):
     """سحب من نظام خارجي إلى سجلات الأدلة — سحب فقط، بلا دفع."""
     from utils import connectors
@@ -825,6 +860,8 @@ def render():
                                  project_name=name.strip())
                     st.success(t("proj.created", name=name.strip()))
                     st.rerun()
+
+    _render_demo_loader()
 
     # ── قائمة المنافسات ───────────────────────────────────────────────────────
     projects = db.list_projects()
