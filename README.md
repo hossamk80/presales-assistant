@@ -7,7 +7,9 @@
 الكميات، اقتراح هيكل العرض، الكتابة قسماً بقسم، مراجعة من لجنة وكلاء، ثم
 التصدير إلى Word و PDF.
 
-> 📚 **الوثائق منشورة:** <https://hossamk80.github.io/presales-assistant/>
+> 📚 **الوثائق:** <https://hossamk80.github.io/presales-assistant/>
+> — تعمل بعد تفعيل Pages مرة واحدة:
+> **Settings ← Pages ← Source: GitHub Actions**.
 > — 🎓 [دليل المستخدم](https://hossamk80.github.io/presales-assistant/manual.html)
 > · 📖 [المميزات والتشغيل](https://hossamk80.github.io/presales-assistant/guide.html)
 > · 📋 [حالة المشروع](https://hossamk80.github.io/presales-assistant/status.html)

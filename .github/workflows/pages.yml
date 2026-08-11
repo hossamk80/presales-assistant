@@ -3,8 +3,13 @@
 # المصدر مجلد `docs/` وحده — لا الشيفرة ولا بيانات العطاءات. والمستودع عامّ
 # أصلاً، فالنشر لا يكشف ما لم يكن مكشوفاً.
 #
-# `enablement: true` **يفعّل Pages تلقائياً** عند أول تشغيل إن لم يكن مفعّلاً،
-# فلا يحتاج أحد إلى فتح الإعدادات يدوياً.
+# **تفعيل Pages أول مرة نقرةٌ يدوية لا مفرّ منها**: إنشاء الموقع يحتاج صلاحية
+# إدارة المستودع، و`GITHUB_TOKEN` لا يملكها — و`enablement: true` تفشل بـ
+# «Resource not accessible by integration». فالمرة الأولى:
+#
+#     Settings ← Pages ← Build and deployment ← Source: **GitHub Actions**
+#
+# وبعدها ينشر هذا الملف مع كل دفعة بلا تدخّل.
 name: نشر الوثائق
 
 on:
@@ -38,10 +43,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: تهيئة Pages وتفعيله إن لزم
+      - name: تهيئة Pages
+        id: pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
+        continue-on-error: true
+
+      - name: تعليمات التفعيل إن لم يكن مفعّلاً
+        # الفشل بلا تفسير يُقرأ عطلاً في الشيفرة، والعلّة إعدادٌ لم يُفتح بعد.
+        if: steps.pages.outcome == 'failure'
+        run: |
+          echo "::error::GitHub Pages غير مفعّل لهذا المستودع."
+          echo "افتح: Settings ← Pages ← Build and deployment"
+          echo "واختر Source: GitHub Actions ثم أعد تشغيل هذه النشرة."
+          exit 1
 
       - name: التحقّق من اكتمال الوثائق قبل النشر
         # موقعٌ يُنشر بملف أنماط مفقود أو خطّ مفقود يخرج بلا هوية ولا يُلاحَظ
