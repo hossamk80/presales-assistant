@@ -3169,36 +3169,56 @@ def test_every_scoped_table_is_filtered_in_its_read_paths():
     اختفاء. يفحص **الشيفرة المحلَّلة** لا نصّها، فلا يُخدَع بتعليق يذكر العمود.
     """
     import ast
+    import pathlib
     import re
 
     from utils import db as db_module
 
-    tree = ast.parse(open(db_module.__file__, encoding="utf-8").read())
+    # `db` صارت حزمةً، و`__file__` صار `__init__.py` — وهو واجهة إعادة تصدير
+    # بلا استعلام واحد. الفحص عليه وحده يمرّ دائماً **وهو لا يفحص شيئاً**،
+    # فنمرّ على كل وحدة في الحزمة. ووجود الوحدات شرطٌ مُتحقَّق منه أدناه حتى
+    # لا يتحوّل مجلّد فارغ إلى نجاح.
+    package = pathlib.Path(db_module.__file__).parent
+    modules = sorted(p for p in package.glob("*.py") if p.name != "__init__.py")
+    assert len(modules) >= 5, f"لم يُعثر على وحدات الحزمة في {package}"
 
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        body = ast.unparse(node)
-        # تجاوز التقييد مسموح حيث يكون هو الصواب — ويُعلَن بـ `ANY_COMPANY`
-        # صراحةً في الدالّة نفسها، فلا يمرّ سهواً.
-        if "ANY_COMPANY" in body:
-            continue
-        # الاستعلامات نصوص ثابتة: نفحصها كاملةً بدل قصّها بتعبير نمطي يتعثّر
-        # بأول علامة اقتباس داخلية (`d.category = 'cv'`).
-        for literal in ast.walk(node):
-            if isinstance(literal, ast.Constant) and isinstance(literal.value, str):
-                sql = literal.value
-            elif isinstance(literal, ast.JoinedStr):
-                sql = ast.unparse(literal)
-            else:
+    checked = 0
+    for path in modules:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            if not re.search(r"\b(SELECT|DELETE FROM|INSERT INTO)\b", sql):
+            body = ast.unparse(node)
+            # تجاوز التقييد مسموح حيث يكون هو الصواب — ويُعلَن بـ `ANY_COMPANY`
+            # صراحةً في الدالّة نفسها، فلا يمرّ سهواً.
+            if "ANY_COMPANY" in body:
                 continue
-            for table in ("projects", "kb_documents", "company_records"):
-                if not re.search(rf"\b{table}\b", sql):
+            # الاستعلامات نصوص ثابتة: نفحصها كاملةً بدل قصّها بتعبير نمطي يتعثّر
+            # بأول علامة اقتباس داخلية (`d.category = 'cv'`).
+            for literal in ast.walk(node):
+                if isinstance(literal, ast.Constant) and isinstance(literal.value, str):
+                    sql = literal.value
+                elif isinstance(literal, ast.JoinedStr):
+                    sql = ast.unparse(literal)
+                else:
                     continue
-                assert "company_id" in sql or "COUNT(*)" in sql, \
-                    f"{node.name} · {table}: {' '.join(sql.split())[:120]}"
+                if not re.search(r"\b(SELECT|DELETE FROM|INSERT INTO)\b", sql):
+                    continue
+                for table in ("projects", "kb_documents", "company_records"):
+                    if not re.search(rf"\b{table}\b", sql):
+                        continue
+                    checked += 1
+                    assert "company_id" in sql or "COUNT(*)" in sql, \
+                        f"{path.name} · {node.name} · {table}: " \
+                        f"{' '.join(sql.split())[:120]}"
+
+    # عدّادٌ حارسٌ للحارس: تقسيمٌ لاحق ينقل الاستعلامات حيث لا يصل الفحص
+    # يُسقط هذا الرقم إلى الصفر، فيمرّ الاختبار وهو أعمى.
+    #
+    # الرقم **مقيس لا مُقدَّر**: ١٥ استعلاماً في `utils/db.py` قبل تقسيمها،
+    # و١٥ في وحدات الحزمة بعده — تطابقٌ هو الدليل على أن التقسيم لم يُخرج
+    # استعلاماً واحداً من مرمى الحارس.
+    assert checked >= 15, f"لم يُفحص إلا {checked} استعلاماً — الحارس لا يرى الشيفرة"
 
 
 # ─── منافسة المثال (دليل المستخدم) ────────────────────────────────────────────
