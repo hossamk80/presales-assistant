@@ -124,7 +124,10 @@ def temp_db(tmp_path, monkeypatch):
     for name in [m for m in list(sys.modules) if m.startswith("utils")]:
         monkeypatch.delitem(sys.modules, name, raising=False)
     from utils import db
-    monkeypatch.setattr(db, "DB_PATH", str(path))
+    # الترقيع على `db._core` لا على `db`: الأخيرة حزمةٌ تعيد التصدير، وضبط
+    # الصفة عليها يغيّر **نسختها** من الاسم بينما `_connect` يقرأ الأصل —
+    # ترقيعٌ صامتٌ بلا أثر، والاختبار يكتب في قاعدة المطوّر الحقيقية.
+    monkeypatch.setattr(db._core, "DB_PATH", str(path))
     db._local.__dict__.pop("conn", None)
     yield db
     db._local.__dict__.pop("conn", None)

@@ -62,7 +62,7 @@ def test_database_created_before_this_feature_is_migrated(tmp_path, monkeypatch)
     for name in [m for m in list(sys.modules) if m.startswith("utils")]:
         monkeypatch.delitem(sys.modules, name, raising=False)
     from utils import db as fresh
-    monkeypatch.setattr(fresh, "DB_PATH", str(path))
+    monkeypatch.setattr(fresh._core, "DB_PATH", str(path))
     fresh._local.__dict__.pop("conn", None)
 
     projects = fresh.list_projects()
