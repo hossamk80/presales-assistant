@@ -5,6 +5,7 @@
 تاريخ هجري بلا قراءة · فشل عابر يُسقط تحليلاً كاملاً.
 """
 import datetime
+import importlib.util
 
 import pytest
 
@@ -121,15 +122,11 @@ def submission():
 
 
 def _hijri_available() -> bool:
-    try:
-        import hijridate  # noqa: F401
-        return True
-    except ImportError:
-        try:
-            import hijri_converter  # noqa: F401
-            return True
-        except ImportError:
-            return False
+    # `find_spec` لا استيراد يُرمى: pyflakes لا يفهم `# noqa` ويعدّه بلا استعمال.
+    return any(
+        importlib.util.find_spec(module) is not None
+        for module in ("hijridate", "hijri_converter")
+    )
 
 
 hijri_only = pytest.mark.skipif(

@@ -14,7 +14,7 @@ import streamlit as st
 from utils import audit, auth, backup, db, knowledge, providers, savings
 from utils.i18n import UI_LANGUAGES, t
 from utils.providers import catalog
-from utils.state import get_state_snapshot, load_state_snapshot
+from utils.state import get_state_snapshot, load_state_snapshot, strip_credentials
 from utils.ai_engine import LANGUAGES
 
 
@@ -921,9 +921,9 @@ def render_data():
     with st.expander(t("dm.export"), expanded=True):
         st.markdown(t("dm.export_hint"))
 
-        snapshot = get_state_snapshot()
-        # Remove API keys from export for security
-        export_data = {k: v for k, v in snapshot.items() if "api_" not in k}
+        # نسخة مساحة العمل تغادر الجهاز، فلا تحمل بيانات اعتماد. الترشيح من
+        # `state.strip_credentials` لا هنا: قاعدة واحدة لكل مسارات التصدير.
+        export_data = strip_credentials(get_state_snapshot())
 
         json_str = json.dumps(export_data, ensure_ascii=False, indent=2)
         st.download_button(

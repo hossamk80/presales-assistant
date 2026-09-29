@@ -1434,7 +1434,7 @@ def test_the_forecast_does_not_feed_the_measured_win_rate(temp_db, fake_streamli
     """
     from utils import history
 
-    pid = temp_db.create_project("م", {"win_probability": 90})
+    temp_db.create_project("م", {"win_probability": 90})
     metrics = history.performance(temp_db.list_projects())
 
     assert metrics["win"]["rate"] is None      # لا نتيجة مسجَّلة ⇒ لا قياس
@@ -1688,7 +1688,7 @@ def test_a_missing_matrix_does_not_crash_the_unit(temp_db, clarify):
 
 
 def test_the_summary_counts_what_the_panel_shows(temp_db, clarify, clarify_matrix):
-    unsent = temp_db.add_clarification(1, "لم يُرسَل", req_id="REQ-1")
+    temp_db.add_clarification(1, "لم يُرسَل", req_id="REQ-1")
     late = temp_db.add_clarification(1, "متأخّر", req_id="REQ-2", due_at="2020-01-01")
     done = temp_db.add_clarification(1, "مُجاب", req_id="REQ-2")
     temp_db.mark_clarification_sent(late)
@@ -2144,6 +2144,63 @@ def test_credentials_never_enter_the_project_snapshot(fake_streamlit):
     snapshot = state.get_project_snapshot()
 
     assert "سرّ" not in str(snapshot)
+
+
+def test_the_workspace_export_carries_no_credential_at_all(fake_streamlit):
+    """
+    كانت شاشة الإعدادات ترشّح بـ `"api_" not in k` — احتواءً لا بادئة. أسقط
+    ذلك `cn_odoo_api_key` بالمصادفة، وأبقى **عنوان الموصّل واسم قاعدته واسم
+    مستخدمه** في ملف `analyst_workspace.json` الذي يغادر الجهاز.
+    """
+    from utils import state
+
+    secrets = {
+        "api_gemini": "مفتاح-جيميناي",
+        "api_claude": "مفتاح-كلود",
+        "cn_odoo_api_key": "سرّ-الموصّل",
+        "cn_odoo_url": "https://erp.example.sa",
+        "cn_odoo_db": "قاعدة-العميل",
+        "cn_odoo_username": "اسم-المستخدم",
+    }
+    for key, value in secrets.items():
+        state.st.session_state[key] = value
+
+    exported = str(state.strip_credentials(state.get_state_snapshot()))
+
+    for key, value in secrets.items():
+        assert key not in exported, key
+        assert value not in exported, key
+
+
+def test_the_export_screen_does_not_reinvent_the_credential_filter():
+    """
+    قاعدة الترشيح واحدة في `state.strip_credentials`. من يكتب ترشيحاً ثانياً
+    في الشاشة يكتبه ناقصاً — وهو ما حدث فعلاً. الحارس يمنع تكراره.
+    """
+    import ast
+    import pathlib
+
+    source = pathlib.Path("views/settings.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    called = {
+        node.func.id for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "strip_credentials" in called
+
+    # الشكل الذي أخطأ: `"api_" not in k`. أي مقارنة احتواء طرفها الأيسر بادئة
+    # سرّ هي ترشيح يدوي — بادئة مكتوبة داخل f-string لمفتاح حقل ليست كذلك.
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        if not isinstance(node.left, ast.Constant):
+            continue
+        if not any(isinstance(op, (ast.In, ast.NotIn)) for op in node.ops):
+            continue
+        assert node.left.value not in ("api_", "cn_"), (
+            "ترشيح بيانات اعتماد مكتوب يدوياً — استعمل strip_credentials"
+        )
 
 
 def test_switching_tenders_does_not_wipe_the_credentials(fake_streamlit):

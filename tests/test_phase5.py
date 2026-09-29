@@ -172,3 +172,29 @@ def test_brand_settings_persist_with_the_company_profile(fake_streamlit):
     snap = get_company_snapshot()
     assert snap["c_brand_color"] == "#8A1538"
     assert snap["c_doc_font"] == "Sakkal Majalla"
+
+
+# ─── جسّ توفّر أدوات الـ OCR الاختيارية ────────────────────────────────────────
+
+
+def test_missing_ocr_packages_report_unavailable_without_raising(fh, monkeypatch):
+    """حزمة ناقصة تعني «لا OCR» لا انهياراً في منتصف قراءة كراسة."""
+    monkeypatch.setattr(fh.importlib.util, "find_spec", lambda name: None)
+    assert fh.ocr_available() is False
+
+
+def test_present_packages_get_past_the_probe_to_the_binary_check(fh, monkeypatch):
+    """
+    الجسّ يجيب عن «هل الحزمة مثبّتة»، وبرنامج tesseract نفسه سؤال ثانٍ.
+    حزمتان موجودتان بلا البرنامج ⇒ `False` كذلك، لكن **بعد** تجاوز الجسّ.
+    """
+    probed = []
+
+    def _find_spec(name):
+        probed.append(name)
+        return object()
+
+    monkeypatch.setattr(fh.importlib.util, "find_spec", _find_spec)
+    fh.ocr_available()
+
+    assert set(probed) == {"pytesseract", "pdf2image"}

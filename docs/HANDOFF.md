@@ -12,7 +12,7 @@
 | الفرع | `claude/14-4-start-iprz2c` (يحمل **منافسة المثال ودليل المستخدم**) |
 | PR | لا PR بعد لهذا الفرع · و **#26 … #44 مدموجة** |
 | `main` | يحمل المراحل **1 … 14 كاملة** و **ب-1 … ب-8** وتقارير `docs/*.html` |
-| الاختبارات | **898** تمر · CI أخضر |
+| الاختبارات | **902** تمر · CI أخضر · pyflakes نظيف |
 | المراحل المكتملة | **الخطة مُنجَزة وجردها كذلك: ب-1 … ب-8 ✅** |
 | التالي | **لا بند مفتوح.** الخطة وجردها مُنجَزان — ما يأتي بطلب المستخدم |
 
@@ -22,7 +22,7 @@
 cd جذر المستودع && python -m pytest tests/ -q
 ```
 
-يجب أن يُخرج `898 passed`. إن لم يفعل، أصلح قبل أي شيء آخر.
+يجب أن يُخرج `902 passed`. إن لم يفعل، أصلح قبل أي شيء آخر.
 
 ---
 
@@ -620,7 +620,7 @@ cd جذر المستودع
 
 python -m pytest tests/ -q                    # كل الاختبارات
 python -m pytest tests/test_phase12.py -q     # ملف واحد
-python -m pyflakes views/*.py utils/*.py      # تحقق سريع
+python -m pyflakes app.py utils views components tests   # نفس أمر CI
 
 cd /home/user/presales-assistant
 ./scripts/run.sh                              # تشغيل التطبيق
@@ -638,8 +638,12 @@ cd /home/user/presales-assistant
   `records.parse_date` لا `datetime.strptime`.
 - أي جدول جديد في `STATE_SCHEMA` يحتاج ثلاثة أشياء: قيمة افتراضية،
   سطر في `reset_analysis`، وفرع في `load_state_snapshot`.
-- `pyflakes` يُبلّغ عن استيرادين غير مستعملين في `doc_builder.py` و `tables.py` —
-  **سابقان لهذا العمل**، لا تخلطهما بخطأ جديد.
+- **`pyflakes` صار خطوةً في CI** تسبق الاختبارات، والشجرة نظيفة عندها. أي
+  بلاغ منه اليوم **خطأ جديد** أدخلته أنت — لم يعد هناك ضجيج سابق تتجاهله.
+- **`pyflakes` لا يفهم `# noqa`.** استيراد لمجرّد جسّ توفّر حزمة اختيارية
+  يظهر عنده «مستورَد بلا استعمال» فيُسقط CI مهما وسمته. اكتبه
+  `importlib.util.find_spec("pkg") is not None` — هكذا `file_handler.ocr_available`
+  و `test_phase10._hijri_available`.
 - جدول يبدأ بصفٍّ فارغ (مصفوفة الحلّ · الكوادر) **لا يُصدَّر كما هو**: صفٌّ
   أبيض في العرض أمام لجنة الفتح. `_solution_table_block` يُسقط الفارغ قبل
   البناء — أي جدول جديد على هذا النمط يحتاج مثله.
