@@ -33,14 +33,19 @@ fi
 PY="${VENV}/bin/python"
 
 echo "▶ مكتبات Python / Python packages…"
+# `-c constraints.txt` هو ما يجعل بيئتك المحلية **نفس** بيئة CI. بدونه تثبّت
+# اليوم نسخاً غير التي يثبّتها CI، فيمرّ عندك ما يسقط عنده — أو العكس.
+CONSTRAINTS="${REPO_ROOT}/constraints.txt"
 "${PY}" -m pip install --upgrade pip --quiet
-"${PY}" -m pip install --quiet -r "${REPO_ROOT}/requirements.txt"
+"${PY}" -m pip install --quiet -r "${REPO_ROOT}/requirements.txt" -c "${CONSTRAINTS}"
 
 # اختيارية في requirements لكنها مطلوبة لتشغيل مسار OCR فعلياً
-"${PY}" -m pip install --quiet pytesseract pdf2image
+"${PY}" -m pip install --quiet -c "${CONSTRAINTS}" pytesseract pdf2image
 
-# أدوات الاختبار — CI يشغّلها، ومن المفيد تشغيلها هنا قبل الدفع
-"${PY}" -m pip install --quiet pytest pytest-timeout
+# أدوات الفحص — CI يشغّلها، ومن المفيد تشغيلها هنا قبل الدفع.
+# pyflakes ليس رفاهية: يكشف المفتاح المكرَّر في القاموس الذي تمرّ عليه
+# الاختبارات بصمت، وهو خطوة حاجزة في CI.
+"${PY}" -m pip install --quiet -c "${CONSTRAINTS}" pytest pytest-timeout pyflakes
 
 # قاعدة البيانات خارج شجرة الكود وتبقى ما بقيت الحاوية
 mkdir -p /workspaces/data
