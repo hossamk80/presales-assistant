@@ -8,7 +8,6 @@ tests/conftest.py — تهيئة مشتركة للاختبارات.
 اختبار إقلاع التطبيق ككل يستخدم streamlit الحقيقي عبر AppTest — انظر
 test_app_smoke.py.
 """
-import os
 import sys
 import types
 from pathlib import Path

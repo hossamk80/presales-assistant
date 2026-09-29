@@ -10,7 +10,6 @@ import streamlit as st
 from utils import knowledge, quantities, submission, traceability
 from utils.ai_engine import (
     DEFAULT_LANGUAGE,
-    EXTRACT_PROMPTS,
     MANDATORY_OUTLINE_SECTIONS,
     OUTLINE_SCHEMA,
     PROMPTS,

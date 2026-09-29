@@ -44,7 +44,6 @@ from utils.ai_engine import (
     ai_generate_json,
     language_instruction,
 )
-from components.ui import status_badge
 from components import theme
 from utils.i18n import t
 

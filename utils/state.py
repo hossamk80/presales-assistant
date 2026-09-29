@@ -1091,19 +1091,30 @@ def load_company_snapshot(data: dict):
             st.session_state[key] = data[key]
 
 
-def get_project_snapshot() -> dict:
-    """
-    حالة المنافسة وحدها — بلا ملف الشركة وبلا أي بيانات اعتماد.
+# بادئات بيانات الاعتماد: `api_` مفاتيح الموفّرين، و `cn_` بيانات اعتماد
+# الموصّلات الخارجية (14-10). كلاهما إعداد للمنشأة لا للمنافسة، وإدخالهما أي
+# حمولة تُحفظ أو تُصدَّر يعني أن نسخةً من السرّ تسافر مع الملف.
+CREDENTIAL_PREFIXES = ("api_", "cn_")
 
-    `api_` مفاتيح الموفّرين، و `cn_` بيانات اعتماد الموصّلات الخارجية (14-10).
-    كلاهما إعداد للمنشأة لا للمنافسة، وإدخالهما الحمولة يعني أن **كل** منافسة
-    محفوظة تحمل نسخة من المفتاح — فتُنسخ مع تكرار المنافسة وتُصدَّر مع نسخة
-    مساحة العمل، ويكفي أن يغادر ملفٌّ واحدٌ الجهاز.
+
+def strip_credentials(snapshot: dict) -> dict:
     """
-    snapshot = get_state_snapshot()
+    نسخة من الحمولة بلا أي بيانات اعتماد — القاعدة الوحيدة في النظام.
+
+    كانت شاشة الإعدادات تُعيد كتابة الترشيح بنفسها (`"api_" not in k`)، وهو
+    فحص احتواء لا بادئة: أسقط `cn_odoo_api_key` بالمصادفة وأبقى `cn_odoo_url`
+    و`cn_odoo_db` و`cn_odoo_username` في ملف التصدير. القاعدة هنا وحدها،
+    ومن يضيف بادئة سرّ جديدة يضيفها في مكان واحد.
+    """
+    return {
+        key: value for key, value in snapshot.items()
+        if not key.startswith(CREDENTIAL_PREFIXES)
+    }
+
+
+def get_project_snapshot() -> dict:
+    """حالة المنافسة وحدها — بلا ملف الشركة وبلا أي بيانات اعتماد."""
+    snapshot = strip_credentials(get_state_snapshot())
     for key in COMPANY_KEYS:
         snapshot.pop(key, None)
-    for key in list(snapshot):
-        if key.startswith(("api_", "cn_")):
-            snapshot.pop(key)
     return snapshot

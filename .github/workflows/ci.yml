@@ -39,13 +39,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-timeout
+          pip install pytest pytest-timeout pyflakes
           # اختيارية: تفعّل مسار OCR في الاختبارات
           pip install pytesseract pdf2image
 
       - name: فحص بناء الجملة لكل الملفات
         # -x يستثني بيئة افتراضية محلية إن وُجدت (غير موجودة في CI)
         run: python -m compileall -q -x '(\.venv|__pycache__)' .
+
+      - name: فحص pyflakes
+        # `compileall` يقبل ما يقبله المفسّر، والاختبارات تمرّ بصمت على
+        # **مفتاح مكرّر في قاموس** — وهو عطبنا المتكرّر: تصادم أسماء نطاقات
+        # `utils/i18n.py` (`pm.` · `cs.` · `dm.`) لم يكشفه إلا pyflakes.
+        # الأداة التي تجد عطبنا الأكثر تكراراً يجب أن تحرس `main`.
+        run: python -m pyflakes app.py utils views components tests
 
       - name: تشغيل الاختبارات
         run: python -m pytest tests/ -v --timeout=300

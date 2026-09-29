@@ -2,11 +2,12 @@
 utils/file_handler.py — File I/O: Extraction & Export
 """
 import glob
+import importlib.util
 import os
 import streamlit as st
 import pandas as pd
 from io import BytesIO
-from typing import List, Optional
+from typing import Optional
 
 from utils.document_blocks import parse_blocks
 from utils import figures as _figures_util
@@ -20,10 +21,9 @@ MIN_CHARS_PER_PAGE = 40
 
 def ocr_available() -> bool:
     """هل أدوات الـ OCR الاختيارية مثبّتة؟"""
-    try:
-        import pytesseract  # noqa: F401
-        from pdf2image import convert_from_bytes  # noqa: F401
-    except ImportError:
+    # `find_spec` بدل استيرادٍ يُرمى: pyflakes **لا يفهم** `# noqa`، فاستيراد
+    # لمجرّد الجسّ يظهر عنده «مستورَد بلا استعمال» ويُسقط الفحص في CI.
+    if any(importlib.util.find_spec(m) is None for m in ("pytesseract", "pdf2image")):
         return False
     try:
         import pytesseract
