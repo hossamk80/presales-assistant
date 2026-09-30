@@ -1948,17 +1948,46 @@ def connected(odoo):
     })
 
 
-def test_the_layer_has_no_push_path_at_all(fake_streamlit):
+def test_the_only_way_into_the_client_books_is_the_gated_one(fake_streamlit):
     """
-    **القرار المركزي**: الدفع غير موجود في الشيفرة — لا جذعاً يرفع
-    `NotImplementedError`. الجذع دعوةٌ لملئه لاحقاً بلا إعادة اتّخاذ القرار،
-    والدفع يكتب في نظام العميل المحاسبي.
+    **القرار انعكس، والحارس يتبعه.** كان هذا الاختبار يؤكّد أن الدفع غير موجود
+    في الشيفرة — ثم أُعطيت الموافقة ونُفِّذ في ب-6. وبقي الاختبار أخضر لأنه
+    يفحص الأسماء `push` و `write` بينما الدالّة اسمها `push_order`: **مرّ
+    بالمصادفة لا بالصحّة**، ووثّق قراراً مُلغى. واختبارٌ أخضر يؤكّد ما ليس
+    صحيحاً أسوأ من غيابه لأنه يُطمئن.
+
+    ما يُحرَس الآن هو ما بقي من نيّته: **مَعبرٌ واحد إلى دفاتر العميل** تُفحص
+    عنده الشروط. اسمٌ عامٌّ ثانٍ للكتابة يفتح قناةً تتخطّى البوابات.
     """
     from utils.connectors import base, odoo
 
-    for name in ("push", "create", "write", "send", "export"):
+    # المعبر موجود ومُعلَن
+    assert hasattr(base.Connector, "push_order")
+    assert base.Connector.supports_push is False, "الافتراض لا يدفع"
+    assert odoo.OdooConnector.supports_push is True
+
+    # ولا معبر ثانٍ بلا بوابات
+    for name in ("push", "create", "write", "send", "export", "post", "commit"):
         assert not hasattr(base.Connector, name), name
         assert not hasattr(odoo.OdooConnector, name), name
+
+
+def test_the_gates_are_in_the_shared_path_not_in_each_connector(fake_streamlit):
+    """
+    البوابات في `push_order` بالصنف الأساس، و`_push_order` وحدها ما يملؤه
+    الوارث. موصّلٌ يعيد تعريف `push_order` يتخطّى الفحوص الأربعة كلّها —
+    ويبدو من الخارج موصّلاً عادياً.
+    """
+    import inspect
+
+    from utils.connectors import base, odoo
+
+    assert "push_order" not in odoo.OdooConnector.__dict__, \
+        "الموصّل يعيد تعريف المعبر فيتخطّى بواباته"
+
+    source = inspect.getsource(base.Connector.push_order)
+    for gate in ("supports_push", "configured", "lines", "priced"):
+        assert gate in source, gate
 
 
 def test_every_pull_declares_where_the_data_goes(connected):
