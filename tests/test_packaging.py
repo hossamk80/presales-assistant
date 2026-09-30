@@ -92,3 +92,59 @@ def test_ci_installs_through_the_constraints_file():
     assert installs, "لم يُعثر على أي تثبيت في CI"
     for line in installs:
         assert "-c constraints.txt" in line, f"تثبيت بلا قيود: {line}"
+
+
+# ─── الوثائق مقابل الشيفرة ────────────────────────────────────────────────────
+#
+# خمسة ادّعاءات في `PLAN.md` و `HANDOFF.md` بقيت تقول «غير منفَّذ» بعد أن
+# نُفِّذ ما تصفه. الوثيقة لا يشغّلها أحد فلا يكشف قِدَمها إلا القارئ — وهو
+# يثق بها. ما يلي يربط الادّعاءات القابلة للفحص بالشيفرة نفسها.
+
+DOCS = (REPO / "docs" / "PLAN.md", REPO / "docs" / "HANDOFF.md", REPO / "README.md")
+
+
+def _docs_text() -> str:
+    return "\n".join(p.read_text(encoding="utf-8") for p in DOCS)
+
+
+def test_no_document_still_claims_the_connector_cannot_push():
+    """
+    الدفع نُفِّذ في ب-6. جملةٌ تقول إن الطبقة «لا تحمل مساراً له» تجعل من
+    يقرأها يبني مساراً ثانياً — بلا البوابات الأربع.
+    """
+    from utils.connectors import base, odoo
+
+    assert hasattr(base.Connector, "push_order") and odoo.OdooConnector.supports_push
+
+    text = _docs_text()
+    for claim in ("لا تحمل\nمساراً له أصلاً",
+                  "الطبقة لا تحمل مساراً له",
+                  "**الدفع مؤجَّل بقرار المستخدم — والطبقة لا تحمل مساراً له.**"):
+        assert claim not in text, claim
+
+
+def test_no_document_still_claims_prompt_management_is_unbuilt():
+    """إدارة البرومبتات (14-1) منفَّذة خلف صلاحية `prompts.manage`."""
+    from utils import db
+
+    for name in ("prompt_override", "save_prompt", "set_prompt_enabled"):
+        assert hasattr(db, name), name
+
+    settings = (REPO / "views" / "settings.py").read_text(encoding="utf-8")
+    assert "_prompts_section" in settings
+
+    assert "الشيفرة) فلم يُنفَّذ بعد." not in _docs_text()
+
+
+def test_the_plan_does_not_reopen_what_its_own_inventory_closed():
+    """
+    كانت الخطة تناقض نفسها: سطرٌ يقول «يبقى دفع الموصّل» وآخر بعده بثلاثين
+    سطراً يقول إنه نُفِّذ. المتناقضان معاً أسوأ من أحدهما خطأً، إذ لا يُعرف
+    أيّهما المعتمد.
+    """
+    plan = (REPO / "docs" / "PLAN.md").read_text(encoding="utf-8")
+
+    assert "يبقى من الخطة: **دفع** الموصّل حين يُقرَّر" not in plan
+    assert "**ما بقي مفتوحاً من المرحلة 13**" not in plan
+    # والجرد نفسه لا يزال يعلن إغلاقه
+    assert "ب-8 أُنجز، ولا بند مفتوح في النظام كلّه" in plan
