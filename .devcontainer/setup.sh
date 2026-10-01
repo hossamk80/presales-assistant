@@ -39,13 +39,11 @@ CONSTRAINTS="${REPO_ROOT}/constraints.txt"
 "${PY}" -m pip install --upgrade pip --quiet
 "${PY}" -m pip install --quiet -r "${REPO_ROOT}/requirements.txt" -c "${CONSTRAINTS}"
 
-# اختيارية في requirements لكنها مطلوبة لتشغيل مسار OCR فعلياً
-"${PY}" -m pip install --quiet -c "${CONSTRAINTS}" pytesseract pdf2image
-
-# أدوات الفحص — CI يشغّلها، ومن المفيد تشغيلها هنا قبل الدفع.
-# pyflakes ليس رفاهية: يكشف المفتاح المكرَّر في القاموس الذي تمرّ عليه
-# الاختبارات بصمت، وهو خطوة حاجزة في CI.
-"${PY}" -m pip install --quiet -c "${CONSTRAINTS}" pytest pytest-timeout pyflakes
+# أدوات الفحص ومسار OCR — من `requirements-dev.txt` لا بأسماءٍ مكتوبة هنا.
+# كانت الأسماء في ثلاثة مواضع (هذا الملف · خطوة CI · requirements)، فأداةٌ
+# تُضاف في أحدها وتُنسى في الآخرين: نظيفٌ محلياً وأحمرُ في CI أو العكس.
+"${PY}" -m pip install --quiet -r "${REPO_ROOT}/requirements-dev.txt" \
+  -c "${CONSTRAINTS}"
 
 # قاعدة البيانات خارج شجرة الكود وتبقى ما بقيت الحاوية
 mkdir -p /workspaces/data

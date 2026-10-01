@@ -12,7 +12,7 @@
 | الفرع | `claude/14-4-start-iprz2c` (يحمل **منافسة المثال ودليل المستخدم**) |
 | PR | لا PR بعد لهذا الفرع · و **#26 … #44 مدموجة** |
 | `main` | يحمل المراحل **1 … 14 كاملة** و **ب-1 … ب-8** وتقارير `docs/*.html` |
-| الاختبارات | **918** تمر · CI أخضر · pyflakes نظيف |
+| الاختبارات | **923** تمر · CI أخضر · pyflakes نظيف · تغطية **72.8%** |
 | المراحل المكتملة | **الخطة مُنجَزة وجردها كذلك: ب-1 … ب-8 ✅** |
 | التالي | **لا بند مفتوح.** الخطة وجردها مُنجَزان — ما يأتي بطلب المستخدم |
 
@@ -22,7 +22,7 @@
 cd جذر المستودع && python -m pytest tests/ -q
 ```
 
-يجب أن يُخرج `918 passed`. إن لم يفعل، أصلح قبل أي شيء آخر.
+يجب أن يُخرج `923 passed`. إن لم يفعل، أصلح قبل أي شيء آخر.
 
 ---
 
@@ -636,7 +636,8 @@ cd جذر المستودع
 
 python -m pytest tests/ -q                    # كل الاختبارات
 python -m pytest tests/test_phase12.py -q     # ملف واحد
-python -m pyflakes app.py utils views components tests   # نفس أمر CI
+python -m pyflakes app.py utils views components tests scripts   # نفس أمر CI
+./scripts/test.sh --cov                       # الاختبارات + أرضيات التغطية
 
 cd /home/user/presales-assistant
 ./scripts/run.sh                              # تشغيل التطبيق
@@ -654,6 +655,17 @@ cd /home/user/presales-assistant
   `records.parse_date` لا `datetime.strptime`.
 - أي جدول جديد في `STATE_SCHEMA` يحتاج ثلاثة أشياء: قيمة افتراضية،
   سطر في `reset_analysis`، وفرع في `load_state_snapshot`.
+- **تبعيات الفحص في `requirements-dev.txt` لا في `requirements.txt`**، ولا
+  مكتوبةً في خطوة CI. أداةٌ جديدة تُعلَن هناك **ونسختها في `constraints.txt`** —
+  واختبار في `tests/test_packaging.py` يرفض نسيان أحدهما. ومنها
+  `pytesseract`/`pdf2image`: **اختياريتان للتشغيل** (`ocr_available()` ترجع
+  `False` بلا كسر) **وإلزاميتان للفحص**.
+- **أرضيات التغطية لكل طبقة** في `scripts/check_coverage.py`، لا رقماً عامّاً
+  واحداً: رقمٌ واحد يجعل ارتفاع `views` يغطّي انخفاض `utils` فيُرى مستقراً
+  والمنطق يتعرّى. الأرضيات **مقيسة** من تشغيل فعليّ ثم أُنزلت قليلاً.
+  و`.coveragerc` **لا يستثني `__init__.py` جملةً**:
+  `utils/providers/__init__.py` فيه ١٦٩ جملة من منطق، واستثناؤه يرفع نسبة
+  الطبقة من ٣٦٪ إلى ٥٠٪ بلا أن يُفحَص سطر.
 - **التبعيات مثبَّتة في `constraints.txt`.** لا تثبّت بـ
   `pip install -r requirements.txt` وحده — تحصل على نسخٍ غير نسخ CI فيمرّ
   عندك ما يسقط عنده. مرّر `-c constraints.txt` دائماً. وتبعية جديدة تحتاج

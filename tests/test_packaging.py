@@ -12,6 +12,7 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 REQUIREMENTS = REPO / "requirements.txt"
+DEV_REQUIREMENTS = REPO / "requirements-dev.txt"
 CONSTRAINTS = REPO / "constraints.txt"
 CI = REPO / ".github" / "workflows" / "ci.yml"
 
@@ -63,21 +64,32 @@ def test_every_declared_dependency_is_pinned():
     بنا إلى `>=` المفتوحة — لهذه الحزمة وحدها، وهو أخبث من غياب الملف كلّه
     لأنه لا يظهر.
     """
-    missing = sorted(_declared(REQUIREMENTS) - _declared(CONSTRAINTS))
+    declared = _declared(REQUIREMENTS) | _declared(DEV_REQUIREMENTS)
+    missing = sorted(declared - _declared(CONSTRAINTS))
     assert missing == [], (
         "تبعيات معلنة بلا نسخة مثبَّتة — أضِفها إلى constraints.txt: "
         f"{missing}"
     )
 
 
-def test_the_tools_ci_installs_are_pinned_too():
+def test_the_dev_tools_are_declared_in_one_file_and_pinned():
     """
-    أدوات الفحص تُثبَّت في خطوة CI لا في `requirements.txt`. إصدار pytest
-    أو pyflakes كاسر يُسقط البناء كما يُسقطه إصدار streamlit — فتُقيَّد مثله.
+    أدوات الفحص كانت أسماؤها مكتوبةً في ثلاثة مواضع — خطوة CI و `setup.sh`
+    و`requirements.txt` معطَّلةً بتعليق — فأداةٌ تُضاف في أحدها وتُنسى في
+    الآخرين: نظيفٌ محلياً وأحمرُ في CI أو العكس. الإعلان صار في ملف واحد.
     """
+    declared = _declared(DEV_REQUIREMENTS)
     pinned = _declared(CONSTRAINTS)
-    for tool in ("pytest", "pytest-timeout", "pyflakes", "pytesseract", "pdf2image"):
-        assert _normalize(tool) in pinned, tool
+
+    for tool in ("pytest", "pytest-timeout", "pyflakes", "pytest-cov",
+                 "pytesseract", "pdf2image"):
+        assert _normalize(tool) in declared, f"{tool} ليس في requirements-dev.txt"
+        assert _normalize(tool) in pinned, f"{tool} بلا نسخة مثبَّتة"
+
+    # ولا تُعلَن أداة فحص في ملف التشغيل: مستخدمٌ يثبّت التشغيل لا يحتاجها
+    runtime = _declared(REQUIREMENTS)
+    for tool in ("pytest", "pyflakes", "pytest-cov"):
+        assert _normalize(tool) not in runtime, f"{tool} في requirements.txt"
 
 
 def test_ci_installs_through_the_constraints_file():
@@ -92,6 +104,41 @@ def test_ci_installs_through_the_constraints_file():
     assert installs, "لم يُعثر على أي تثبيت في CI"
     for line in installs:
         assert "-c constraints.txt" in line, f"تثبيت بلا قيود: {line}"
+
+
+def test_ci_installs_the_dev_tools_from_their_file():
+    """
+    خطوة CI تقرأ `requirements-dev.txt` ولا تكتب أسماء الأدوات بنفسها —
+    وإلا عاد الإعلان متفرّقاً ولو بقي الملف موجوداً.
+    """
+    text = CI.read_text(encoding="utf-8")
+    assert "-r requirements-dev.txt" in text
+
+    for tool in ("pytest-timeout", "pyflakes", "pytesseract", "pdf2image"):
+        for line in text.splitlines():
+            if "pip install" in line:
+                assert tool not in line, f"{tool} مكتوب في خطوة CI: {line.strip()}"
+
+
+def test_ocr_is_optional_at_runtime_and_required_for_the_checks():
+    """
+    البند 10 من الجرد: كانت `pytesseract` و `pdf2image` معطَّلتين بتعليق في
+    ملف التشغيل بوصفهما «اختياريتين» وتُثبَّتهما خطوة CI وتهيئة الحاوية —
+    الإعلان يقول شيئاً والتشغيل يقول غيره.
+
+    الحقيقة: اختياريتان للتشغيل (`ocr_available()` ترجع `False` بلا كسر)
+    وإلزاميتان للفحص. فمكانهما ملف الفحص وحده.
+    """
+    from utils import file_handler
+
+    runtime = _declared(REQUIREMENTS)
+    dev = _declared(DEV_REQUIREMENTS)
+    for tool in ("pytesseract", "pdf2image"):
+        assert _normalize(tool) not in runtime, tool
+        assert _normalize(tool) in dev, tool
+
+    # والشيفرة تحتمل غيابهما فعلاً لا بالتعليق
+    assert isinstance(file_handler.ocr_available(), bool)
 
 
 # ─── الوثائق مقابل الشيفرة ────────────────────────────────────────────────────
@@ -148,3 +195,54 @@ def test_the_plan_does_not_reopen_what_its_own_inventory_closed():
     assert "**ما بقي مفتوحاً من المرحلة 13**" not in plan
     # والجرد نفسه لا يزال يعلن إغلاقه
     assert "ب-8 أُنجز، ولا بند مفتوح في النظام كلّه" in plan
+
+
+# ─── قياس التغطية (البند 9) ───────────────────────────────────────────────────
+
+COVERAGERC = REPO / ".coveragerc"
+COV_SCRIPT = REPO / "scripts" / "check_coverage.py"
+
+
+def test_coverage_is_configured_in_one_place():
+    """
+    بلا `.coveragerc` يقيس CI شيئاً والتشغيل المحلي شيئاً آخر لنفس الشيفرة،
+    فلا يُعرف أيّ الرقمين يُقارَن بالأرضية.
+    """
+    assert COVERAGERC.exists()
+    text = COVERAGERC.read_text(encoding="utf-8")
+
+    for layer in ("app", "utils", "views", "components"):
+        assert layer in text, layer
+    assert "tests/*" in text, "الاختبارات تُقاس وترفع النسبة بلا معنى"
+
+    # `app.py` بالمسار يجعل coverage يستورد الملف وقت الجمع فيُحمَّل numpy
+    # مرّتين — وقع فعلاً. الاسم `app` وحده.
+    assert "\n    app.py\n" not in text
+
+
+def test_the_floors_cover_every_measured_layer():
+    """
+    طبقةٌ لا تذكرها `FLOORS` تمرّ بلا أرضية. السكربت يرفضها، وهذا يتأكّد أن
+    الطبقات المعلَنة هي طبقات المستودع فعلاً لا أسماء قديمة.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("check_coverage", COV_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    declared = {name for name, *_ in module.FLOORS}
+    assert declared == {"utils", "utils/db", "app.py", "components",
+                        "views", "utils/providers"}, declared
+
+    # وكل أرضية دون المقيس وقت الضبط: أرضيةٌ تساويه تُسقط البناء بأول تذبذب
+    for name, floor, measured, _why in module.FLOORS:
+        assert floor < measured, f"{name}: الأرضية {floor} لا تحتمل تذبذباً"
+        assert floor > 0, name
+
+
+def test_ci_enforces_the_coverage_floors():
+    """ملفُّ أرضياتٍ لا يشغّله أحد لا يمنع انحداراً."""
+    text = CI.read_text(encoding="utf-8")
+    assert "--cov" in text
+    assert "scripts/check_coverage.py" in text
