@@ -122,7 +122,9 @@ def test_the_rules_are_not_repeated(engine, sent):
 
 def test_the_split_and_merge_path_keeps_the_rules(engine, sent, monkeypatch):
     """كراسة أكبر من نافذة السياق: كل جزء ودمجه يحمل القواعد."""
-    monkeypatch.setattr(engine, "CONTEXT_CHAR_BUDGET", 50)
+    # `engine.engine` هي من تقرأ الميزانية؛ الترقيع على الحزمة أو على
+    # `models` لا يصل إليها — الاسم نُسخ إلى فضائها وقت الاستيراد.
+    monkeypatch.setattr(engine.engine, "CONTEXT_CHAR_BUDGET", 50)
     engine.ai_generate("حلّل", rfp_context="نص طويل جداً " * 40)
 
     assert len(sent.prompts) >= 2          # أجزاء + دمج

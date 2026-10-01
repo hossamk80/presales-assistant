@@ -262,7 +262,7 @@ def test_scalar_fields_survive_chunked_merge(ae, monkeypatch):
         return {"readiness_score": 71, "assessment": "جيد",
                 "recommendations": ["توصية"], "findings": [{"issue": "x"}]}
 
-    monkeypatch.setattr(ae, "_call_json", fake_call_json)
+    monkeypatch.setattr(ae.engine, "_call_json", fake_call_json)
     big = "ح" * (ae.CONTEXT_CHAR_BUDGET * 2 + 10)
     out = ae.ai_generate_json("p", ae.REVIEW_SCHEMA, rfp_context=big,
                               merge_key="findings")

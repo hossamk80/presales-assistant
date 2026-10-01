@@ -74,7 +74,7 @@ def test_json_merge_concatenates_across_chunks(ae, monkeypatch):
         calls["n"] += 1
         return {"requirements": [{"requirement": f"req-{calls['n']}"}]}
 
-    monkeypatch.setattr(ae, "_call_json", fake_call_json)
+    monkeypatch.setattr(ae.engine, "_call_json", fake_call_json)
 
     big = "ح" * (ae.CONTEXT_CHAR_BUDGET * 3 + 500)
     result = ae.ai_generate_json(
@@ -91,7 +91,7 @@ def test_json_single_call_when_context_fits(ae, monkeypatch):
         calls["n"] += 1
         return {"requirements": []}
 
-    monkeypatch.setattr(ae, "_call_json", fake_call_json)
+    monkeypatch.setattr(ae.engine, "_call_json", fake_call_json)
     ae.ai_generate_json("p", ae.COMPLIANCE_SCHEMA, rfp_context="نص قصير",
                         merge_key="requirements")
     assert calls["n"] == 1
