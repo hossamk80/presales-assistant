@@ -246,3 +246,19 @@ def test_ci_enforces_the_coverage_floors():
     text = CI.read_text(encoding="utf-8")
     assert "--cov" in text
     assert "scripts/check_coverage.py" in text
+
+
+def test_no_document_still_claims_anthropic_cannot_stream():
+    """
+    ب-2 اكتمل: الموفّرون الثلاثة كلهم يبثّون. جملةٌ تقول إن Anthropic «لم
+    يُنفَّذ بعد» تدفع من يقرؤها إلى تنفيذٍ ثانٍ لما هو قائم.
+    """
+    from utils.providers.anthropic_provider import AnthropicProvider
+    from utils.providers.gemini import GeminiProvider
+    from utils.providers.openai_compat import OpenAICompatProvider
+
+    for provider in (AnthropicProvider, GeminiProvider, OpenAICompatProvider):
+        assert provider.streams is True, provider.__name__
+        assert "generate_stream" in provider.__dict__, provider.__name__
+
+    assert "**Anthropic لم يُنفَّذ بعد**" not in _docs_text()
