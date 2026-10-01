@@ -1,0 +1,56 @@
+Copyright (c) 2026 Hossam. All rights reserved.
+حقوق النشر (c) 2026 حسام. جميع الحقوق محفوظة.
+
+                         ENGLISH
+
+This software and its accompanying documentation (the "Software") are
+proprietary and confidential. The Software is made publicly readable on
+GitHub for reference and review only.
+
+No licence is granted. In particular, no permission is given to any person
+to use, copy, modify, merge, publish, distribute, sublicense, sell, or
+create derivative works of the Software, in whole or in part, by any means
+and in any form, except under a separate written agreement signed by the
+copyright holder.
+
+Reading this repository does not grant any right to use it. Forking,
+cloning, or mirroring it for any purpose other than reviewing the code, and
+training machine-learning models on it, are not permitted.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Third-party components bundled with or required by the Software remain under
+their own licences. In particular the bundled Arabic typeface, IBM Plex Sans
+Arabic, is licensed under the SIL Open Font License 1.1 — see
+static/fonts/LICENSE.txt. Nothing in this notice restricts rights granted by
+those licences in respect of those components.
+
+                          العربية
+
+هذه البرمجية ووثائقها المرافقة (**البرمجية**) مملوكة وسرّية. وإتاحتها
+للقراءة على GitHub للاطّلاع والمراجعة فقط.
+
+**لا يُمنح أيّ ترخيص.** ولا يجوز لأيّ شخص استعمال البرمجية أو نسخها أو
+تعديلها أو دمجها أو نشرها أو توزيعها أو الترخيص من الباطن بها أو بيعها أو
+اشتقاق أعمال منها — كلّها أو بعضها، بأيّ وسيلة وفي أيّ صورة — إلا باتفاق
+مكتوب منفصل يوقّعه صاحب الحقوق.
+
+وقراءة هذا المستودع لا تمنح حقّ استعماله. ولا يُسمح باستنساخه أو نسخه أو
+مرآته لغير غرض مراجعة الشيفرة، ولا بتدريب نماذج تعلّم آلي عليه.
+
+تُقدَّم البرمجية **كما هي** بلا ضمان من أيّ نوع، صريحٍ أو ضمني، بما في ذلك
+على سبيل المثال لا الحصر ضمانات القابلية للتسويق والملاءمة لغرض معيّن وعدم
+انتهاك حقوق الغير. ولا يتحمّل صاحب الحقوق بأيّ حال مسؤولية أيّ مطالبة أو
+ضرر أو التزام آخر، سواءٌ في دعوى تعاقدية أو تقصيرية أو غيرها، ينشأ عن
+البرمجية أو عن استعمالها أو التعامل بها.
+
+وتبقى مكوّنات الأطراف الثالثة المرفقة بالبرمجية أو التي تحتاجها خاضعةً
+لتراخيصها هي. ومنها الخطّ العربي المُضمَّن IBM Plex Sans Arabic، وهو تحت
+رخصة SIL Open Font License 1.1 — انظر static/fonts/LICENSE.txt. ولا شيء في هذا
+الإشعار يقيّد ما تمنحه تلك التراخيص في حقّ تلك المكوّنات.
