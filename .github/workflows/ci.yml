@@ -29,6 +29,7 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements.txt
+            requirements-dev.txt
             constraints.txt
 
       - name: حزم النظام (خط عربي لتصدير PDF + أدوات OCR)
@@ -40,12 +41,12 @@ jobs:
       - name: تثبيت المكتبات
         # `-c constraints.txt` يثبّت النسخ — المباشرة وغير المباشرة معاً.
         # بدونه كانت خضرة CI رهينة يوم التشغيل لا حالة الشيفرة.
+        #
+        # وأدوات الفحص من `requirements-dev.txt` لا مكتوبةً هنا: كانت أسماؤها
+        # في ثلاثة مواضع، فأداةٌ تُضاف في أحدها وتُنسى في الآخرين.
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -c constraints.txt
-          pip install -c constraints.txt pytest pytest-timeout pyflakes
-          # اختيارية: تفعّل مسار OCR في الاختبارات
-          pip install -c constraints.txt pytesseract pdf2image
+          pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
 
       - name: فحص بناء الجملة لكل الملفات
         # -x يستثني بيئة افتراضية محلية إن وُجدت (غير موجودة في CI)
@@ -56,10 +57,17 @@ jobs:
         # **مفتاح مكرّر في قاموس** — وهو عطبنا المتكرّر: تصادم أسماء نطاقات
         # `utils/i18n.py` (`pm.` · `cs.` · `dm.`) لم يكشفه إلا pyflakes.
         # الأداة التي تجد عطبنا الأكثر تكراراً يجب أن تحرس `main`.
-        run: python -m pyflakes app.py utils views components tests
+        run: python -m pyflakes app.py utils views components tests scripts
 
-      - name: تشغيل الاختبارات
-        run: python -m pytest tests/ -v --timeout=300
+      - name: تشغيل الاختبارات مع قياس التغطية
+        run: |
+          python -m pytest tests/ -v --timeout=300 \
+            --cov --cov-report=term --cov-report=json:coverage.json
+
+      - name: أرضيات التغطية لكل طبقة
+        # رقمٌ عامٌّ واحد يجعل ارتفاع `views` يغطّي انخفاض `utils` — فيُرى
+        # مستقراً والمنطق يتعرّى. الأرضيات لكل طبقة في السكربت، وهي **مقيسة**.
+        run: python scripts/check_coverage.py coverage.json
 
   boot:
     name: إقلاع التطبيق فعلياً

@@ -28,10 +28,16 @@ python-docx>=1.1.0
 cryptography>=42.0.0
 
 # ─── اختياري: OCR للملفات الممسوحة ضوئياً ──────────────────────────────────
-# يتطلب أيضاً حزم نظام:
+# `pytesseract` و `pdf2image` **مُعلَنتان في `requirements-dev.txt`** لا هنا:
+# اختياريتان للتشغيل — `file_handler.ocr_available()` ترجع `False` بلا كسر إن
+# غابتا — وإلزاميتان للفحص، إذ يترك غيابهما مسار الكراسات الممسوحة بلا اختبار.
+#
+# كانتا هنا معطَّلتين بتعليق بوصفهما «اختياريتين» وفي الوقت نفسه تُثبَّتهما
+# خطوة CI وتهيئة الحاوية: الإعلان يقول شيئاً والتشغيل يقول غيره.
+#
+# لتفعيل OCR عند التشغيل تحتاج الحزمتين **وحزم نظام**:
+#   pip install pytesseract pdf2image -c constraints.txt
 #   sudo apt install tesseract-ocr tesseract-ocr-ara poppler-utils
-# pytesseract>=0.3.10
-# pdf2image>=1.17.0
 
 # تصدير PDF (اختياري — تصدير Word لا يحتاجه)
 reportlab>=4.0.0
