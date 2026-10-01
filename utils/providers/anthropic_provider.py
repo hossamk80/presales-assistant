@@ -2,6 +2,7 @@
 utils/providers/anthropic_provider.py — موفّر Anthropic Claude (SDK الرسمية)
 
 - المخرجات المُهيكلة عبر `output_config.format` بمخطط JSON قياسي.
+- البثّ التدريجي (ب-2) عبر `messages.stream` — العدّادات من الرسالة النهائية.
 - التخزين المؤقت (11-12): `cache_control` تلقائي على مستوى الطلب حين تكون
   التعليمات كبيرة، وقراءة `cache_read_input_tokens` من الاستهلاك.
 """
@@ -22,6 +23,9 @@ DEFAULT_MAX_TOKENS = 16_000
 
 class AnthropicProvider(Provider):
     name = "anthropic"
+
+    # ب-2 مكتمل: كان هذا آخر موفّر يسقط إلى استدعاء عادي بلا بثّ.
+    streams = True
 
     def _get_client(self):
         api_key = st.session_state.get("api_claude")
@@ -45,20 +49,40 @@ class AnthropicProvider(Provider):
             output_tokens=int(getattr(usage, "output_tokens", 0) or 0),
         )
 
-    def _create(self, model_id, prompt, temperature, max_tokens, output_config=None):
-        client = self._get_client()
+    def _kwargs(self, model_id, prompt, temperature, max_tokens,
+                output_config=None) -> dict:
+        """
+        وسائط الطلب — مشتركة بين الاستدعاء العادي والبثّ.
+
+        **`temperature` كانت تُستقبَل وتُهمَل**: المعامل في التوقيع ولم يدخل
+        الوسائط قطّ، فمستخدمٌ يضبط الحرارة في الإعدادات يراها تسري على Gemini
+        و OpenAI ولا تسري على Claude — بلا خطأ يُرفع. وقياس التغطية هو ما
+        كشفها: الملف كان بلا سطرٍ مفحوص.
+        """
         kwargs = {
             "model": model_id,
             "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
             "messages": [{"role": "user", "content": prompt}],
         }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         if output_config is not None:
             kwargs["output_config"] = output_config
         if len(prompt) >= CACHE_MIN_CHARS:
             kwargs["cache_control"] = {"type": "ephemeral"}
-        response = client.messages.create(**kwargs)
+        return kwargs
+
+    @staticmethod
+    def _refuse_if_refused(response):
         if getattr(response, "stop_reason", None) == "refusal":
             raise ProviderError("رفض النموذج الطلب (safety refusal)")
+
+    def _create(self, model_id, prompt, temperature, max_tokens, output_config=None):
+        client = self._get_client()
+        response = client.messages.create(
+            **self._kwargs(model_id, prompt, temperature, max_tokens, output_config)
+        )
+        self._refuse_if_refused(response)
         text = "".join(
             block.text for block in response.content
             if getattr(block, "type", "") == "text"
@@ -71,6 +95,50 @@ class AnthropicProvider(Provider):
         return GenResult(
             text=text or None, provider=self.name, model=model_id,
             usage=self._usage(response),
+            elapsed_ms=int((time.monotonic() - started) * 1000),
+        )
+
+    def generate_stream(self, model_id, prompt, temperature=None, max_tokens=None):
+        """
+        بثّ تدريجي عبر `client.messages.stream` (ب-2، آخر موفّر بلا بثّ).
+
+        ثلاثة أشياء تُحسم هنا لا في المستدعي:
+
+        · **العدّادات من الرسالة النهائية** لا من جمعٍ محليّ: Anthropic ترسل
+          `input_tokens` في `message_start` و `output_tokens` في
+          `message_delta`، و`get_final_message()` تجمعها كما أرسلها الموفّر.
+          الفوترة لا تُبنى على تقدير (11-8).
+
+        · **الرفض يُرفع بعد انتهاء الدفق**: `stop_reason == "refusal"` لا يظهر
+          إلا في النهاية، فنصٌّ جزئيٌّ قد يكون وصل قبله. يُرفع استثناءً كما في
+          الاستدعاء العادي فلا يُسلَّم نصُّ رفضٍ منقوصاً كأنه جواب.
+
+        · **المولِّد يُغلِق الاتصال**: `with` يضمن ذلك ولو رُفع استثناءٌ في
+          منتصف الدفق أو تُرك المولِّد بلا استنفاد.
+        """
+        client = self._get_client()
+        started = time.monotonic()
+        usage, final = Usage(), None
+
+        with client.messages.stream(
+            **self._kwargs(model_id, prompt, temperature, max_tokens)
+        ) as stream:
+            for event in stream:
+                if getattr(event, "type", "") != "content_block_delta":
+                    continue
+                delta = getattr(event, "delta", None)
+                piece = getattr(delta, "text", None) if delta is not None else None
+                if piece:
+                    yield piece
+            # تُقرأ **داخل** `with`: الرسالة النهائية تُجمَّع من أحداث الدفق
+            final = stream.get_final_message()
+
+        if final is not None:
+            self._refuse_if_refused(final)
+            usage = self._usage(final)
+
+        return GenResult(
+            provider=self.name, model=model_id, usage=usage,
             elapsed_ms=int((time.monotonic() - started) * 1000),
         )
 
