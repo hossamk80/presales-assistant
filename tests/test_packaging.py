@@ -262,3 +262,98 @@ def test_no_document_still_claims_anthropic_cannot_stream():
         assert "generate_stream" in provider.__dict__, provider.__name__
 
     assert "**Anthropic لم يُنفَّذ بعد**" not in _docs_text()
+
+
+# ─── الترخيص ونسخ الإجراءات (البندان 11 و12) ─────────────────────────────────
+
+LICENCE = REPO / "LICENSE"
+WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
+
+
+def test_the_repository_declares_its_licence():
+    """
+    مستودعٌ عامٌّ بلا ملف ترخيص يُقرأ على وجهين: من يراه يفترض الإباحة، ومن
+    يملكه يظنّ حقّه محفوظاً. والملف هو ما يحسم.
+    """
+    assert LICENCE.is_file(), "لا ملف LICENSE"
+    text = LICENCE.read_text(encoding="utf-8")
+
+    assert "All rights reserved" in text
+    assert "جميع الحقوق محفوظة" in text
+    assert "No licence is granted" in text
+    assert "لا يُمنح أيّ ترخيص" in text
+
+
+def test_the_licence_does_not_point_at_a_file_that_is_not_there():
+    """
+    الترخيص يحيل إلى رخصة الخطّ المُضمَّن. إحالةٌ إلى مسارٍ غير موجود تُسقط
+    الاستثناء الذي تَعِد به: الخطّ تحت OFL، وإعادة توزيعه مشروطة بمرافقة نصّه.
+    """
+    import re
+
+    text = LICENCE.read_text(encoding="utf-8")
+    # الامتداد صريح حتى لا تُبتلع نقطة نهاية الجملة جزءاً من المسار
+    referenced = set(re.findall(r"(static/fonts/[A-Za-z0-9_-]+\.[A-Za-z0-9]+)", text))
+
+    assert referenced, "الترخيص لا يذكر رخصة الخطّ أصلاً"
+    for path in sorted(referenced):
+        assert (REPO / path).is_file(), path
+
+
+def test_the_readme_points_at_the_licence():
+    """ترخيصٌ لا يذكره الملفّ الأول لا يراه أحد."""
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+
+    assert "(LICENSE)" in readme
+    assert "جميع الحقوق محفوظة" in readme
+
+
+def test_no_workflow_runs_an_action_on_a_retired_node():
+    """
+    البند 12: `checkout@v4` و `setup-python@v5` على Node 20 المهجور — يعملان
+    اليوم لأن الرانر يُجبرهما على Node 24، ويكسران يوم يُسحب الإجبار **بلا
+    تغييرٍ منّا**. النسخ المحظورة أدناه مُتحقَّق من زمن تشغيلها من `action.yml`
+    في مستودع كل إجراء، لا من الذاكرة.
+    """
+    import re
+
+    retired = {
+        "actions/checkout": 4,          # v4 node20 · v5+ node24
+        "actions/setup-python": 5,      # v5 node20 · v6+ node24
+        "actions/configure-pages": 5,   # v5 node20 · v6 node24
+        "actions/deploy-pages": 4,      # v4 node20 · v5 node24
+    }
+
+    found = 0
+    for workflow in WORKFLOWS:
+        for line in workflow.read_text(encoding="utf-8").splitlines():
+            match = re.search(r"uses:\s*(actions/[\w-]+)@v(\d+)", line)
+            if not match:
+                continue
+            action, major = match.group(1), int(match.group(2))
+            found += 1
+            limit = retired.get(action)
+            if limit is not None:
+                assert major > limit, (
+                    f"{workflow.name}: {action}@v{major} على Node مهجور — "
+                    f"ارفعها فوق v{limit}"
+                )
+    assert found >= 5, f"لم يُعثر إلا على {found} إجراءات — هل تغيّر الشكل؟"
+
+
+def test_every_action_is_pinned_to_a_major_version():
+    """
+    `@main` أو `@master` يعني أن بناءنا يتغيّر بتغيير مستودعٍ لا نملكه —
+    وهو نفس العطب الذي عالجه `constraints.txt` في حزم Python.
+    """
+    import re
+
+    for workflow in WORKFLOWS:
+        for line in workflow.read_text(encoding="utf-8").splitlines():
+            if "uses:" not in line:
+                continue
+            ref = line.split("uses:")[1].strip()
+            assert "@" in ref, f"{workflow.name}: إجراء بلا وسم: {ref}"
+            tag = ref.split("@")[1]
+            assert re.fullmatch(r"v\d+(\.\d+)*|[0-9a-f]{40}", tag), \
+                f"{workflow.name}: وسم غير مثبَّت: {ref}"

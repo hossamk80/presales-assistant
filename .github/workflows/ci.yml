@@ -10,6 +10,14 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# نسخ الإجراءات: كلّها على **Node 24**. كان `checkout@v4` و `setup-python@v5`
+# على Node 20 المهجور، فكان كل تشغيل يحمل تحذيراً ويُجبرهما الرانر على Node 24
+# — يعمل اليوم ويكسر يوم يُسحب الإجبار، بلا تغييرٍ منّا.
+#
+# والنسخة تُتحقَّق من المصدر لا من الذاكرة:
+#   curl -s https://raw.githubusercontent.com/actions/<الإجراء>/<الوسم>/action.yml | grep using:
+# يقول `node24` إن كانت حديثة، و 404 إن كان الوسم غير موجود أصلاً.
+
 jobs:
   test:
     name: اختبارات (Python ${{ matrix.python-version }})
@@ -20,10 +28,10 @@ jobs:
         python-version: ["3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: تهيئة Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -73,9 +81,9 @@ jobs:
     name: إقلاع التطبيق فعلياً
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
